@@ -6,13 +6,13 @@ Documento vivo para acompanhar o desenvolvimento. Atualize os checkboxes e o log
 
 ## Status Geral
 
-**Fase atual:** Fase 2 — Organização e Identidade (🟡)
+**Fase atual:** Fase 3 — Service Desk (⚪)
 
 | Módulo | Backend | Frontend | Testes |
 |--------|---------|----------|--------|
 | MOD-01 Core | ✅ | ✅ (layout, auth, interceptor) | ✅ |
-| MOD-02 Organização | ✅ | 🟡 | ✅ |
-| MOD-03 Identidade | ✅ | 🟡 | ✅ |
+| MOD-02 Organização | ✅ | ✅ | ✅ |
+| MOD-03 Identidade | ✅ | ✅ | ✅ |
 | MOD-04 Service Desk | ⚪ | ⚪ | ⚪ |
 | MOD-05 Ativos | ⚪ | ⚪ | ⚪ |
 | MOD-06 Movimentações | ⚪ | ⚪ | ⚪ |
@@ -36,7 +36,7 @@ Documento vivo para acompanhar o desenvolvimento. Atualize os checkboxes e o log
 - [x] Seed (empresa, matriz, permissões, perfil Administrador, usuário admin)
 - [x] Frontend: Angular + Material, shell/sidebar/header, login, interceptor JWT
 
-## Fase 2: Organização e Identidade 🟡
+## Fase 2: Organização e Identidade ✅
 
 **Backend**
 - [x] MOD-02: CRUD de empresa, unidades, setores, colaboradores
@@ -46,6 +46,7 @@ Documento vivo para acompanhar o desenvolvimento. Atualize os checkboxes e o log
 - [x] Endpoint `GET /identity/permissions` (necessário para a tela de perfis)
 - [x] Endpoint para o próprio usuário trocar senha (`must_change_password`)
 - [x] Testes de integração de MOD-02 e MOD-03
+- [x] Setup inicial e publicação no GitHub
 
 **Frontend**
 - [x] Corrigir `authGuard` (desloga o usuário ao recarregar a página)
@@ -53,6 +54,7 @@ Documento vivo para acompanhar o desenvolvimento. Atualize os checkboxes e o log
 - [x] Telas CRUD: unidades, setores, colaboradores
 - [x] Telas CRUD: usuários e perfis (com atribuição de permissões)
 - [x] Fluxo de troca de senha obrigatória no primeiro login
+- [x] Tela de setup inicial e proteções via guards
 
 ## Fase 3: Service Desk (MOD-04) ⚪
 - [ ] Documentação do módulo (`docs/modules/service-desk`)
@@ -93,3 +95,4 @@ Documento vivo para acompanhar o desenvolvimento. Atualize os checkboxes e o log
 - **05/10/2026:** Roadmap corrigido após análise do código. A versão inicial marcava a "estrutura base" de MOD-04 a MOD-12 como concluída, mas essas pastas estão vazias. Bugs identificados foram adicionados à Fase 2.
 - **05/10/2026:** Backend da Fase 2 estabilizado, testes de integração implementados, falhas de segurança e regras de negócio corrigidas. Iniciando implementação Frontend.
 - **05/10/2026:** Frontend da Fase 2 concluído: AuthGuard corrigido, fluxo de troca de senha inicial implementado, telas de CRUD (Unidades, Setores, Colaboradores, Usuários, Perfis) integradas aos serviços do backend. Fase 2 totalmente finalizada.
+- **07/10/2026:** Removido o admin padrão (hardcoded) do seed. Implementada tela e backend de Setup Inicial para o primeiro uso do sistema. Repositório publicado privadamente no GitHub, juntamente com `.gitattributes`, LICENSE e workflow de CI com GitHub Actions. Fase 2 100% encerrada.
