@@ -1,0 +1,57 @@
+# Plataforma de Gestão de TI — .gitignore
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# --- Virtual environments ---
+.venv/
+venv/
+ENV/
+
+# --- IDE ---
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# --- Environment ---
+.env
+*.env.local
+
+# --- Node / Angular ---
+node_modules/
+frontend/dist/
+frontend/.angular/
+
+# --- Docker ---
+*.log
+
+# --- OS ---
+.DS_Store
+Thumbs.db
+
+# --- Backups ---
+backups/
+
+# --- Pytest ---
+.pytest_cache/
+.coverage
+htmlcov/
+
+# --- MyPy ---
+.mypy_cache/
+
+# --- Ruff ---
+.ruff_cache/
+
+# --- Bancos de dados locais / testes ---
+*.db
+*.sqlite
+*.sqlite3

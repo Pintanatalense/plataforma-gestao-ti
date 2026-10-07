@@ -1,0 +1,88 @@
+import { Component, Inject, inject, OnInit } from '@angular/core';
+import { CommonModule } from '@angular/common';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
+import { MatFormFieldModule } from '@angular/material/form-field';
+import { MatInputModule } from '@angular/material/input';
+import { MatSelectModule } from '@angular/material/select';
+import { MatButtonModule } from '@angular/material/button';
+import { IdentityService, Role, Permission } from '../../../core/services/identity.service';
+
+@Component({
+  selector: 'app-role-dialog',
+  standalone: true,
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    MatDialogModule,
+    MatFormFieldModule,
+    MatInputModule,
+    MatSelectModule,
+    MatButtonModule
+  ],
+  template: `
+    <h2 mat-dialog-title>{{ data ? 'Editar' : 'Novo' }} Perfil</h2>
+    <mat-dialog-content>
+      <form [formGroup]="form" class="dialog-form">
+        
+        <mat-form-field appearance="outline">
+          <mat-label>Nome</mat-label>
+          <input matInput formControlName="name" required>
+        </mat-form-field>
+        
+        <mat-form-field appearance="outline">
+          <mat-label>Descrição</mat-label>
+          <input matInput formControlName="description">
+        </mat-form-field>
+
+        <mat-form-field appearance="outline">
+          <mat-label>Permissões</mat-label>
+          <mat-select formControlName="permission_ids" multiple>
+            <mat-option *ngFor="let perm of permissions" [value]="perm.id">{{ perm.code }} ({{ perm.description }})</mat-option>
+          </mat-select>
+        </mat-form-field>
+
+      </form>
+    </mat-dialog-content>
+    <mat-dialog-actions align="end">
+      <button mat-button mat-dialog-close>Cancelar</button>
+      <button mat-flat-button color="primary" [disabled]="form.invalid" (click)="save()">Salvar</button>
+    </mat-dialog-actions>
+  `,
+  styles: [`
+    .dialog-form {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+      margin-top: 8px;
+      min-width: 400px;
+    }
+  `]
+})
+export class RoleDialogComponent implements OnInit {
+  private fb = inject(FormBuilder);
+  private identityService = inject(IdentityService);
+  dialogRef = inject(MatDialogRef<RoleDialogComponent>);
+
+  permissions: Permission[] = [];
+
+  form: any;
+
+  constructor(@Inject(MAT_DIALOG_DATA) public data: Role | null) {
+    this.form = this.fb.group({
+      name: [this.data?.name || '', Validators.required],
+      description: [this.data?.description || ''],
+      permission_ids: [this.data?.permissions?.map((p: any) => p.id) || []]
+    });
+  }
+
+  ngOnInit(): void {
+    this.identityService.getPermissions().subscribe((perms: any) => this.permissions = perms);
+  }
+
+  save() {
+    if (this.form.valid) {
+      this.dialogRef.close(this.form.value);
+    }
+  }
+}

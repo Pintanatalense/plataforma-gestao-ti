@@ -1,0 +1,55 @@
+<div class="page-container">
+  <div class="page-header">
+    <h1>Colaboradores</h1>
+    <button mat-flat-button color="primary" (click)="openDialog()">
+      <mat-icon>add</mat-icon> Novo Colaborador
+    </button>
+  </div>
+
+  <table mat-table [dataSource]="dataSource" class="mat-elevation-z1">
+    
+    <ng-container matColumnDef="sector">
+      <th mat-header-cell *matHeaderCellDef> Setor </th>
+      <td mat-cell *matCellDef="let element"> {{element.sector?.name}} ({{element.sector?.unit?.name}}) </td>
+    </ng-container>
+
+    <ng-container matColumnDef="registration">
+      <th mat-header-cell *matHeaderCellDef> Matrícula </th>
+      <td mat-cell *matCellDef="let element"> {{element.registration}} </td>
+    </ng-container>
+
+    <ng-container matColumnDef="name">
+      <th mat-header-cell *matHeaderCellDef> Nome </th>
+      <td mat-cell *matCellDef="let element"> {{element.name}} </td>
+    </ng-container>
+
+    <ng-container matColumnDef="job_title">
+      <th mat-header-cell *matHeaderCellDef> Cargo </th>
+      <td mat-cell *matCellDef="let element"> {{element.job_title}} </td>
+    </ng-container>
+
+    <ng-container matColumnDef="status">
+      <th mat-header-cell *matHeaderCellDef> Status </th>
+      <td mat-cell *matCellDef="let element">
+        <span class="status-badge" [class.active]="element.is_active">
+          {{element.is_active ? 'Ativo' : 'Inativo'}}
+        </span>
+      </td>
+    </ng-container>
+
+    <ng-container matColumnDef="actions">
+      <th mat-header-cell *matHeaderCellDef> Ações </th>
+      <td mat-cell *matCellDef="let element">
+        <button mat-icon-button color="primary" (click)="openDialog(element)">
+          <mat-icon>edit</mat-icon>
+        </button>
+        <button mat-icon-button color="warn" (click)="deleteEmployee(element.id)">
+          <mat-icon>delete</mat-icon>
+        </button>
+      </td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+    <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+  </table>
+</div>
