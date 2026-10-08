@@ -1,0 +1,55 @@
+<div class="page-container">
+  <div class="page-header">
+    <div style="display: flex; align-items: center; gap: 12px;">
+      <button mat-icon-button routerLink="/service-desk">
+        <mat-icon>arrow_back</mat-icon>
+      </button>
+      <h1>Abrir Novo Chamado</h1>
+    </div>
+  </div>
+
+  <div class="form-container mat-elevation-z1">
+    <form [formGroup]="ticketForm" (ngSubmit)="onSubmit()">
+      
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Assunto (Resumo do problema)</mat-label>
+        <input matInput formControlName="title" placeholder="Ex: Monitor não liga">
+        <mat-error *ngIf="ticketForm.get('title')?.hasError('required')">O assunto é obrigatório</mat-error>
+      </mat-form-field>
+
+      <div class="row-fields">
+        <mat-form-field appearance="outline" class="half-width">
+          <mat-label>Categoria</mat-label>
+          <mat-select formControlName="category_id">
+            <mat-option *ngFor="let cat of categories" [value]="cat.id">
+              {{ cat.name }}
+            </mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" class="half-width">
+          <mat-label>Prioridade</mat-label>
+          <mat-select formControlName="priority">
+            <mat-option value="LOW">Baixa</mat-option>
+            <mat-option value="MEDIUM">Média</mat-option>
+            <mat-option value="HIGH">Alta</mat-option>
+            <mat-option value="URGENT">Urgente</mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Descrição detalhada</mat-label>
+        <textarea matInput formControlName="description" rows="5" placeholder="Descreva com detalhes o que está acontecendo..."></textarea>
+        <mat-error *ngIf="ticketForm.get('description')?.hasError('required')">A descrição é obrigatória</mat-error>
+      </mat-form-field>
+
+      <div class="form-actions">
+        <button mat-button type="button" routerLink="/service-desk">Cancelar</button>
+        <button mat-flat-button color="primary" type="submit" [disabled]="ticketForm.invalid">
+          <mat-icon>save</mat-icon> Abrir Chamado
+        </button>
+      </div>
+    </form>
+  </div>
+</div>

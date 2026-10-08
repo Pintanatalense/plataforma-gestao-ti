@@ -1,0 +1,54 @@
+<div class="page-container">
+  <div class="page-header">
+    <h1>Chamados</h1>
+    <button mat-flat-button color="primary" routerLink="new">
+      <mat-icon>add</mat-icon> Abrir Chamado
+    </button>
+  </div>
+
+  <table mat-table [dataSource]="tickets" class="mat-elevation-z1">
+
+    <!-- Título Column -->
+    <ng-container matColumnDef="title">
+      <th mat-header-cell *matHeaderCellDef> Assunto </th>
+      <td mat-cell *matCellDef="let element"> <strong>{{element.title}}</strong> </td>
+    </ng-container>
+
+    <!-- Status Column -->
+    <ng-container matColumnDef="status">
+      <th mat-header-cell *matHeaderCellDef> Status </th>
+      <td mat-cell *matCellDef="let element">
+        <mat-chip [color]="getStatusColor(element.status)" highlighted>{{element.status}}</mat-chip>
+      </td>
+    </ng-container>
+
+    <!-- Priority Column -->
+    <ng-container matColumnDef="priority">
+      <th mat-header-cell *matHeaderCellDef> Prioridade </th>
+      <td mat-cell *matCellDef="let element"> {{element.priority}} </td>
+    </ng-container>
+
+    <!-- Date Column -->
+    <ng-container matColumnDef="created_at">
+      <th mat-header-cell *matHeaderCellDef> Criado em </th>
+      <td mat-cell *matCellDef="let element"> {{element.created_at | date:'short'}} </td>
+    </ng-container>
+
+    <!-- Actions Column -->
+    <ng-container matColumnDef="actions">
+      <th mat-header-cell *matHeaderCellDef style="text-align: right;"> Ações </th>
+      <td mat-cell *matCellDef="let element" style="text-align: right;">
+        <button mat-icon-button color="primary" [routerLink]="[element.id]">
+          <mat-icon>forum</mat-icon>
+        </button>
+      </td>
+    </ng-container>
+
+    <tr mat-header-row *matHeaderRowDef="displayedColumns"></tr>
+    <tr mat-row *matRowDef="let row; columns: displayedColumns;"></tr>
+  </table>
+  
+  <div *ngIf="tickets.length === 0" class="empty-state mat-elevation-z1">
+    Nenhum chamado encontrado.
+  </div>
+</div>

@@ -66,6 +66,18 @@ export const routes: Routes = [
       {
         path: 'identity/roles',
         loadComponent: () => import('./features/identity/role-list/role-list.component').then(m => m.RoleList)
+      },
+      {
+        path: 'service-desk',
+        loadComponent: () => import('./features/service-desk/ticket-list/ticket-list.component').then(m => m.TicketListComponent)
+      },
+      {
+        path: 'service-desk/new',
+        loadComponent: () => import('./features/service-desk/ticket-create/ticket-create.component').then(m => m.TicketCreateComponent)
+      },
+      {
+        path: 'service-desk/:id',
+        loadComponent: () => import('./features/service-desk/ticket-detail/ticket-detail.component').then(m => m.TicketDetailComponent)
       }
     ]
   },

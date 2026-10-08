@@ -53,7 +53,11 @@ class ServiceDeskRepository:
         Lista tickets.
         Se requester_id for fornecido, filtra apenas os tickets abertos por ele.
         """
-        stmt = select(Ticket).order_by(Ticket.created_at.desc())
+        stmt = (
+            select(Ticket)
+            .options(selectinload(Ticket.interactions))
+            .order_by(Ticket.created_at.desc())
+        )
         
         if requester_id:
             stmt = stmt.where(Ticket.requester_id == requester_id)

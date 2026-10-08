@@ -6,14 +6,14 @@ Documento vivo para acompanhar o desenvolvimento. Atualize os checkboxes e o log
 
 ## Status Geral
 
-**Fase atual:** Fase 3 — Service Desk (⚪)
+**Fase atual:** Fase 3 — Service Desk (✅)
 
 | Módulo | Backend | Frontend | Testes |
 |--------|---------|----------|--------|
 | MOD-01 Core | ✅ | ✅ (layout, auth, interceptor) | ✅ |
 | MOD-02 Organização | ✅ | ✅ | ✅ |
 | MOD-03 Identidade | ✅ | ✅ | ✅ |
-| MOD-04 Service Desk | ⚪ | ⚪ | ⚪ |
+| MOD-04 Service Desk | ✅ | ✅ | ✅ |
 | MOD-05 Ativos | ⚪ | ⚪ | ⚪ |
 | MOD-06 Movimentações | ⚪ | ⚪ | ⚪ |
 | MOD-07 Estoque | ⚪ | ⚪ | ⚪ |
@@ -56,12 +56,12 @@ Documento vivo para acompanhar o desenvolvimento. Atualize os checkboxes e o log
 - [x] Fluxo de troca de senha obrigatória no primeiro login
 - [x] Tela de setup inicial e proteções via guards
 
-## Fase 3: Service Desk (MOD-04) ⚪
-- [ ] Documentação do módulo (`docs/modules/service-desk`)
-- [ ] Models, migração, repository, services, router
-- [ ] Interações públicas e internas (DEC-012)
-- [ ] Testes
-- [ ] Frontend: abertura de chamado (colaborador) e painel de atendimento (técnico)
+## Fase 3: Service Desk (MOD-04) ✅
+- [x] Documentação do módulo (`docs/modules/service-desk`)
+- [x] Models, migração, repository, services, router
+- [x] Interações públicas e internas (DEC-012)
+- [x] Testes
+- [x] Frontend: abertura de chamado (colaborador) e painel de atendimento (técnico)
 
 ## Fase 4: Gestão Patrimonial (MOD-05, MOD-06) ⚪
 - [ ] Ativos com specs em JSONB (ADR-005)
@@ -96,3 +96,5 @@ Documento vivo para acompanhar o desenvolvimento. Atualize os checkboxes e o log
 - **05/10/2026:** Backend da Fase 2 estabilizado, testes de integração implementados, falhas de segurança e regras de negócio corrigidas. Iniciando implementação Frontend.
 - **05/10/2026:** Frontend da Fase 2 concluído: AuthGuard corrigido, fluxo de troca de senha inicial implementado, telas de CRUD (Unidades, Setores, Colaboradores, Usuários, Perfis) integradas aos serviços do backend. Fase 2 totalmente finalizada.
 - **07/10/2026:** Removido o admin padrão (hardcoded) do seed. Implementada tela e backend de Setup Inicial para o primeiro uso do sistema. Repositório publicado privadamente no GitHub, juntamente com `.gitattributes`, LICENSE e workflow de CI com GitHub Actions. Fase 2 100% encerrada.
+- **07/10/2026:** Iniciada Fase 3 (Service Desk). Implementado Router, migrações e testes automatizados. O bug de lazy-loading da ORM foi resolvido, bem como o vazamento de interações internas. Backend da Fase 3 concluído. Próximo passo: Frontend do Service Desk.
+- **07/10/2026:** Frontend do Service Desk implementado (lista, criação e detalhe estilo chat). Adicionada navegação lateral para "Chamados". O aplicativo foi compilado com sucesso. Fase 3 concluída (100%). Próximo passo: Fase 4.

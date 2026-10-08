@@ -71,6 +71,7 @@ interface NavItem {
 export class SidebarComponent {
   navItems: NavItem[] = [
     { icon: 'dashboard', label: 'Dashboard', route: '/dashboard' },
+    { icon: 'forum', label: 'Chamados', route: '/service-desk' },
     { icon: 'business', label: 'Unidades', route: '/organization' },
     { icon: 'account_tree', label: 'Setores', route: '/organization/sectors' },
     { icon: 'badge', label: 'Colaboradores', route: '/organization/employees' },

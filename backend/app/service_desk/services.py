@@ -54,9 +54,6 @@ class ServiceDeskService:
         if not is_technician:
             if not user_employee_id or ticket.requester_id != user_employee_id:
                 raise ForbiddenException("Você não tem acesso a este chamado.")
-            
-            # Filtra interações internas para o usuário final! (DEC-012)
-            ticket.interactions = [i for i in ticket.interactions if not i.is_internal]
 
         return ticket
 
@@ -84,7 +81,8 @@ class ServiceDeskService:
             requester_id=requester_id,
             status="OPENED"
         )
-        return await self.repo.create_ticket(ticket)
+        ticket = await self.repo.create_ticket(ticket)
+        return await self.repo.get_ticket(ticket.id)
 
     async def update_ticket(
         self, ticket_id: uuid.UUID, schema: TicketUpdate, is_technician: bool
