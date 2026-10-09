@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.service_desk.models import Ticket, TicketCategory, TicketInteraction
+from app.assets.models import Asset
 
 
 class ServiceDeskRepository:
@@ -32,6 +33,17 @@ class ServiceDeskRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def create_category(self, category: TicketCategory) -> TicketCategory:
+        self.session.add(category)
+        await self.session.flush()
+        await self.session.refresh(category)
+        return category
+
+    async def update_category(self, category: TicketCategory) -> TicketCategory:
+        await self.session.flush()
+        await self.session.refresh(category)
+        return category
+
     # ==========================================================================
     # Tickets
     # ==========================================================================
@@ -41,6 +53,7 @@ class ServiceDeskRepository:
         stmt = (
             select(Ticket)
             .options(selectinload(Ticket.interactions))
+            .options(selectinload(Ticket.assets))
             .where(Ticket.id == ticket_id)
         )
         result = await self.session.execute(stmt)
@@ -56,6 +69,7 @@ class ServiceDeskRepository:
         stmt = (
             select(Ticket)
             .options(selectinload(Ticket.interactions))
+            .options(selectinload(Ticket.assets))
             .order_by(Ticket.created_at.desc())
         )
         
@@ -76,6 +90,11 @@ class ServiceDeskRepository:
         await self.session.refresh(ticket)
         return ticket
 
+    async def get_assets_by_ids(self, asset_ids: list[uuid.UUID]) -> Sequence[Asset]:
+        stmt = select(Asset).where(Asset.id.in_(asset_ids))
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+
     # ==========================================================================
     # Ticket Interactions
     # ==========================================================================
@@ -85,3 +104,13 @@ class ServiceDeskRepository:
         await self.session.flush()
         await self.session.refresh(interaction)
         return interaction
+
+    # ==========================================================================
+    # Ticket Materials
+    # ==========================================================================
+
+    async def create_material(self, material: TicketMaterial) -> TicketMaterial:
+        self.session.add(material)
+        await self.session.flush()
+        await self.session.refresh(material)
+        return material

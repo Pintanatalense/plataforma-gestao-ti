@@ -41,7 +41,7 @@ async def setup_test_data(db_session: AsyncSession):
     db_session.add(tech_user)
     await db_session.commit()
 
-    category = TicketCategory(name="Hardware")
+    category = TicketCategory(name="Hardware", default_sector_id=dept.id)
     db_session.add(category)
     await db_session.commit()
 
@@ -81,7 +81,7 @@ async def test_create_ticket(client: AsyncClient, db_session: AsyncSession):
     }
 
     response = await client.post("/api/v1/tickets", json=payload, headers=headers)
-    assert response.status_code == 201
+    assert response.status_code == 201, response.text
     resp_data = response.json()
     assert resp_data["title"] == "Mouse quebrado"
     assert resp_data["status"] == "OPENED"
@@ -105,7 +105,7 @@ async def test_ticket_interactions(client: AsyncClient, db_session: AsyncSession
         "category_id": str(category.id)
     }
     resp = await client.post("/api/v1/tickets", json=payload, headers=user_headers)
-    assert resp.status_code == 201
+    assert resp.status_code == 201, resp.text
     ticket_id = resp.json()["id"]
 
     # 2. Add public interaction as tech

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 import uuid
 
-from sqlalchemy import Boolean, Enum, ForeignKey, String, Text
+from sqlalchemy import Boolean, Enum, ForeignKey, String, Text, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.soft_delete import SoftDeleteMixin
@@ -19,6 +19,9 @@ from app.database import Base
 if TYPE_CHECKING:
     from app.identity.models import UserAccount  # type: ignore
 
+from app.stock.models import StockItem
+
+
 
 class Company(Base, TimestampMixin, SoftDeleteMixin):
     """Representação única da empresa (Single Tenant)."""
@@ -27,6 +30,7 @@ class Company(Base, TimestampMixin, SoftDeleteMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     cnpj: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)
+    logo_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     units: Mapped[list["Unit"]] = relationship("Unit", back_populates="company", cascade="all, delete-orphan")
 
@@ -45,6 +49,7 @@ class Unit(Base, TimestampMixin, SoftDeleteMixin):
     company: Mapped["Company"] = relationship("Company", back_populates="units")
     sectors: Mapped[list["Sector"]] = relationship("Sector", back_populates="unit", cascade="all, delete-orphan")
     employees: Mapped[list["Employee"]] = relationship("Employee", back_populates="unit", foreign_keys="[Employee.unit_id]")
+    stock_items: Mapped[list[StockItem]] = relationship("StockItem", back_populates="unit", cascade="all, delete-orphan")
 
 
 class Sector(Base, TimestampMixin, SoftDeleteMixin):
@@ -74,7 +79,7 @@ class Employee(Base, TimestampMixin, SoftDeleteMixin):
     position: Mapped[str | None] = mapped_column(String(255), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="ATIVO", nullable=False)  # "ATIVO", "AFASTADO", "DESLIGADO"
     
-    deactivated_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     unit: Mapped["Unit"] = relationship("Unit", back_populates="employees", foreign_keys=[unit_id])
     sector: Mapped["Sector"] = relationship("Sector", back_populates="employees", foreign_keys=[sector_id])

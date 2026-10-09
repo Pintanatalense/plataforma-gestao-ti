@@ -16,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 class CompanyBase(BaseModel):
     name: str = Field(..., max_length=255)
     cnpj: Optional[str] = Field(None, max_length=20)
+    logo_url: Optional[str] = Field(None, max_length=255)
 
 
 class CompanyCreate(CompanyBase):
@@ -25,6 +26,7 @@ class CompanyCreate(CompanyBase):
 class CompanyUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=255)
     cnpj: Optional[str] = Field(None, max_length=20)
+    logo_url: Optional[str] = Field(None, max_length=255)
 
 
 class CompanyOut(CompanyBase):

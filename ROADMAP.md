@@ -19,7 +19,7 @@ Documento vivo para acompanhar o desenvolvimento. Atualize os checkboxes e o log
 | MOD-07 Estoque | ⚪ | ⚪ | ⚪ |
 | MOD-08 Inventário | ⚪ | ⚪ | ⚪ |
 | MOD-09 Contas/Acessos | ⚪ | ⚪ | ⚪ |
-| MOD-10 Anexos | ⚪ | ⚪ | ⚪ |
+| MOD-10 Anexos | ✅ | ✅ | ✅ |
 | MOD-11 Notificações | ⚪ | ⚪ | ⚪ |
 | MOD-12 Auditoria | ⚪ | ⚪ | ⚪ |
 
@@ -63,23 +63,23 @@ Documento vivo para acompanhar o desenvolvimento. Atualize os checkboxes e o log
 - [x] Testes
 - [x] Frontend: abertura de chamado (colaborador) e painel de atendimento (técnico)
 
-## Fase 4: Gestão Patrimonial (MOD-05, MOD-06) ⚪
-- [ ] Ativos com specs em JSONB (ADR-005)
-- [ ] Movimentações: entrega, devolução, transferência, baixa
-- [ ] Associação chamado ↔ ativo (DEC-006)
-- [ ] Testes e frontend
+## Fase 4: Gestão Patrimonial (MOD-05, MOD-06) 🟢
+- [x] Ativos com specs em JSONB (ADR-005)
+- [x] Movimentações: entrega, devolução, transferência, baixa
+- [x] Associação chamado ↔ ativo (DEC-006)
+- [x] Testes e frontend
 
-## Fase 5: Estoque e Inventário (MOD-07, MOD-08) ⚪
-- [ ] Estoque de insumos por unidade (sem compras — DEC-009)
-- [ ] Inventário periódico (abertura, conferência, fechamento)
-- [ ] Testes e frontend
+## Fase 5: Estoque e Inventário (MOD-07, MOD-08) 🟡
+- [x] Estoque de insumos por unidade (sem compras — DEC-009)
+- [x] Inventário periódico (abertura, conferência, fechamento) - Backend
+- [x] Testes e frontend do Inventário
 
-## Fase 6: Módulos Transversais (MOD-09 a MOD-12) ⚪
-- [ ] Contas e acessos por colaborador (sem senhas — DEC-008)
-- [ ] Anexos em disco, fora do banco (ADR-003)
-- [ ] Notificações locais em tempo real (DEC-011)
-- [ ] Auditoria via barramento de eventos
-- [ ] Testes e frontend
+## Fase 6: Módulos Transversais (MOD-09 a MOD-12) 🟡
+- [x] Contas e acessos por colaborador (sem senhas — DEC-008)
+- [x] Anexos em disco, fora do banco (ADR-003)
+- [x] Notificações locais em tempo real (DEC-011) - Backend
+- [x] Auditoria via barramento de eventos - Backend
+- [ ] Testes e frontend (Fase 6)
 
 ## Fase 7: Estabilização e MVP ⚪
 - [ ] Revisão de UX/responsividade
@@ -98,3 +98,11 @@ Documento vivo para acompanhar o desenvolvimento. Atualize os checkboxes e o log
 - **07/10/2026:** Removido o admin padrão (hardcoded) do seed. Implementada tela e backend de Setup Inicial para o primeiro uso do sistema. Repositório publicado privadamente no GitHub, juntamente com `.gitattributes`, LICENSE e workflow de CI com GitHub Actions. Fase 2 100% encerrada.
 - **07/10/2026:** Iniciada Fase 3 (Service Desk). Implementado Router, migrações e testes automatizados. O bug de lazy-loading da ORM foi resolvido, bem como o vazamento de interações internas. Backend da Fase 3 concluído. Próximo passo: Frontend do Service Desk.
 - **07/10/2026:** Frontend do Service Desk implementado (lista, criação e detalhe estilo chat). Adicionada navegação lateral para "Chamados". O aplicativo foi compilado com sucesso. Fase 3 concluída (100%). Próximo passo: Fase 4.
+- **08/10/2026:** Iniciada a Fase 4 (Gestão Patrimonial e Movimentações). Foram implementados os modulos de assets e movements no backend, incluindo o schemas, repositorio, services e router, e também a tabela de associação `sd_ticket_assets` no Service Desk. Alembic `env.py` foi atualizado. Falta testar e criar o frontend.
+- **08/10/2026:** Fase 4 concluída (100%). Testes unitários do backend para assets/movements adicionados. No frontend (Angular), as telas de Lista, Criação e Detalhes de Ativos (com histórico de movimentações) foram desenvolvidas, com suporte dinâmico a `technical_specs` (JSONB) baseadas na Categoria selecionada. A tela de abertura de chamados também foi ajustada para aceitar e exibir os ativos associados. Próximo passo: Fase 5 (Estoque).
+- **08/10/2026:** Fase 5 (Estoque e Inventário) concluída (100%). Criados modelos, schemas, repository e service para `StockItem` e `StockMovement`. Desenvolvidas as telas de listagem, criação e detalhamento do insumo com histórico e funcionalidade de Entrada/Saída/Ajuste. Adicionados testes unitários no backend. Próximo passo: Testar a aplicação localmente no ambiente do usuário.
+- **09/10/2026:** Implementado backend do MOD-08 (Inventário Periódico). Criados modelos, schemas, repository, service e router (`/inventory-audits`). Atualizado o `env.py` do Alembic. Foram incluídas validações de status (OPENED, IN_PROGRESS, CLOSED, CANCELLED) e gestão de itens do inventário (ativos ou estoque). Próximo passo: Desenvolver as telas do Frontend para o Inventário Periódico.
+- **09/10/2026:** Finalizado Frontend do MOD-08 (Inventário Periódico). Criadas as telas de listagem (`inventory-list`) e de execução da auditoria (`inventory-detail`), permitindo iniciar a conferência, registrar a situação real de Patrimônios e de Itens em Estoque e encerrar o inventário. O acesso foi adicionado ao menu lateral. Próximo passo: Seguir para a Fase 6 (Módulos Transversais).
+- **09/10/2026:** MOD-09 (Contas e Acessos Avançados) concluído. A base no backend (Identity) já vinculava Colaboradores a UserAccounts (1:1), restava polir a interface. As telas de Gestão de Usuários (`user-list`, `user-dialog`) e de Gestão de Perfis de Acesso/Roles (`role-list`, `role-dialog`) foram completamente modernizadas no Angular, entregando a vinculação avançada com design visual "premium". Próximo passo: MOD-10 (Anexos em Disco).
+- [x] MOD-10 (Anexos em Disco) concluído. Criado backend (models, repository, service, router) para salvar metadados no banco e arquivo na pasta `/uploads`. Adicionado frontend (AttachmentsService e AttachmentsComponent) e integrado nos componentes de detalhe de Chamados e de Ativos. Próximo passo: MOD-11 (Notificações).
+- **09/10/2026:** MOD-11 (Notificações) e MOD-12 (Auditoria) implementados no backend. Auditoria intercepta todos os eventos do barramento local e registra logs. Notificações implementam WebSockets para push em tempo real. Alembic migrado para suportar os novos models. Próximo passo: Implementar o frontend e testes da Fase 6.

@@ -67,6 +67,7 @@ class EventBus:
 
     def __init__(self) -> None:
         self._handlers: dict[str, list[EventHandler]] = defaultdict(list)
+        self._global_handlers: list[EventHandler] = []
 
     def on(self, event_type: str) -> Callable[[EventHandler], EventHandler]:
         """
@@ -85,6 +86,10 @@ class EventBus:
         """Registra handler programaticamente."""
         self._handlers[event_type].append(handler)
 
+    def subscribe_all(self, handler: EventHandler) -> None:
+        """Registra handler para todos os eventos (útil para auditoria)."""
+        self._global_handlers.append(handler)
+
     async def emit(self, event: Event) -> None:
         """
         Emite um evento para todos os handlers registrados.
@@ -93,7 +98,9 @@ class EventBus:
         Um erro em um handler não impede a execução dos demais.
         """
         handlers = self._handlers.get(event.event_type, [])
-        if not handlers:
+        all_handlers = handlers + self._global_handlers
+
+        if not all_handlers:
             logger.debug("Evento sem handlers: %s", event.event_type)
             return
 
@@ -102,10 +109,10 @@ class EventBus:
             event.event_type,
             event.entity_type,
             event.entity_id,
-            len(handlers),
+            len(all_handlers),
         )
 
-        for handler in handlers:
+        for handler in all_handlers:
             try:
                 await handler(event)
             except Exception:

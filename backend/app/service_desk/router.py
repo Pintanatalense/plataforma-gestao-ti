@@ -10,11 +10,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_token_payload, get_db
 from app.identity.repository import IdentityRepository
+from app.organization.models import Employee
 from app.service_desk.schemas import (
     TicketCategoryResponse,
+    TicketCategoryCreate,
+    TicketCategoryUpdate,
     TicketCreate,
     TicketInteractionCreate,
     TicketInteractionResponse,
+    TicketMaterialCreate,
+    TicketMaterialResponse,
     TicketResponse,
     TicketUpdate,
 )
@@ -34,10 +39,23 @@ async def get_user_context(
     repo = IdentityRepository(session)
     user = await repo.get_user(user_id)
     employee_id = user.employee_id if user else None
+    
+    employee_unit_id = None
+    employee_sector_id = None
+    if employee_id:
+        from sqlalchemy import select
+        stmt = select(Employee).where(Employee.id == employee_id)
+        result = await session.execute(stmt)
+        emp = result.scalar_one_or_none()
+        if emp:
+            employee_unit_id = emp.unit_id
+            employee_sector_id = emp.sector_id
 
     return {
         "user_id": user_id,
         "employee_id": employee_id,
+        "unit_id": employee_unit_id,
+        "sector_id": employee_sector_id,
         "is_technician": is_technician
     }
 
@@ -52,6 +70,44 @@ async def list_categories(
 ) -> Sequence[TicketCategoryResponse]:
     service = ServiceDeskService(session)
     return await service.list_categories()
+
+@router.post(
+    "/categories",
+    response_model=TicketCategoryResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Cria uma nova categoria de chamado"
+)
+async def create_category(
+    schema: TicketCategoryCreate,
+    ctx: dict = Depends(get_user_context),
+    session: AsyncSession = Depends(get_db)
+) -> TicketCategoryResponse:
+    if not ctx["is_technician"]:
+        from app.core.exceptions import ForbiddenException
+        raise ForbiddenException("Apenas técnicos ou gestores podem criar categorias.")
+    service = ServiceDeskService(session)
+    cat = await service.create_category(schema)
+    await session.commit()
+    return cat
+
+@router.patch(
+    "/categories/{category_id}",
+    response_model=TicketCategoryResponse,
+    summary="Atualiza uma categoria existente"
+)
+async def update_category(
+    category_id: uuid.UUID,
+    schema: TicketCategoryUpdate,
+    ctx: dict = Depends(get_user_context),
+    session: AsyncSession = Depends(get_db)
+) -> TicketCategoryResponse:
+    if not ctx["is_technician"]:
+        from app.core.exceptions import ForbiddenException
+        raise ForbiddenException("Apenas técnicos ou gestores podem atualizar categorias.")
+    service = ServiceDeskService(session)
+    cat = await service.update_category(category_id, schema)
+    await session.commit()
+    return cat
 
 
 @router.get(
@@ -121,7 +177,12 @@ async def create_ticket(
         raise ForbiddenException("Apenas colaboradores vinculados a um Employee podem abrir chamados.")
 
     service = ServiceDeskService(session)
-    ticket = await service.create_ticket(schema, requester_id=ctx["employee_id"])
+    ticket = await service.create_ticket(
+        schema, 
+        requester_id=ctx["employee_id"], 
+        origin_unit_id=ctx["unit_id"], 
+        origin_sector_id=ctx["sector_id"]
+    )
     await session.commit()
     return ticket
 
@@ -169,3 +230,32 @@ async def add_interaction(
     )
     await session.commit()
     return interaction
+
+
+@router.post(
+    "/{ticket_id}/materials",
+    response_model=TicketMaterialResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Adiciona um material (item de estoque) consumido pelo chamado"
+)
+async def add_material(
+    ticket_id: uuid.UUID,
+    schema: TicketMaterialCreate,
+    ctx: dict = Depends(get_user_context),
+    session: AsyncSession = Depends(get_db)
+) -> TicketMaterialResponse:
+    from app.stock.repository import StockRepository
+    from app.stock.services import StockService
+    
+    stock_service = StockService(StockRepository(session))
+    service = ServiceDeskService(session, stock_service)
+    
+    material = await service.add_material_to_ticket(
+        ticket_id=ticket_id,
+        schema=schema,
+        author_id=ctx["user_id"],
+        user_employee_id=ctx["employee_id"],
+        is_technician=ctx["is_technician"]
+    )
+    await session.commit()
+    return material

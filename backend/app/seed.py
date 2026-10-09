@@ -14,8 +14,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import AsyncSessionLocal
+import app.main  # Import all modules to avoid SQLAlchemy mapper errors
 from app.identity.models import Permission, Role
 from app.organization.models import Company, Unit
+
+
+# Import all models to ensure SQLAlchemy registers them before creating relationships
+import app.stock.models
+import app.assets.models
+import app.movements.models
+import app.service_desk.models
 
 
 async def seed() -> None:

@@ -13,10 +13,9 @@ WORKDIR /app
 # --- Stage: dependencies ---
 FROM base AS deps
 
-RUN pip install --no-cache-dir --upgrade pip
-
+RUN pip install --no-cache-dir hatchling --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
 COPY pyproject.toml ./
-RUN pip install --no-cache-dir .
+RUN pip install --no-cache-dir . --no-build-isolation --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
 
 # --- Stage: runtime ---
 FROM base AS runtime

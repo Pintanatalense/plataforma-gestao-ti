@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, String, Table, Column
+from sqlalchemy import Boolean, ForeignKey, String, Table, Column, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.soft_delete import SoftDeleteMixin
@@ -51,7 +51,7 @@ class UserAccount(Base, TimestampMixin, SoftDeleteMixin):
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # Superadmin
     
-    last_login_at: Mapped[datetime | None] = mapped_column(nullable=True)
+    last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_login_ip: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     employee: Mapped["Employee | None"] = relationship("Employee", back_populates="user_account")

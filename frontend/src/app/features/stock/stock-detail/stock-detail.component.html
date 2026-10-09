@@ -1,0 +1,129 @@
+<div class="page-container" *ngIf="item">
+  <div class="page-header">
+    <div class="header-content">
+      <button mat-icon-button class="back-btn" routerLink="/stock">
+        <mat-icon>arrow_back</mat-icon>
+      </button>
+      <div class="title-group">
+        <h1>{{ item.name }}</h1>
+        <span class="unit-badge"><mat-icon>business</mat-icon> {{ unitName }}</span>
+      </div>
+    </div>
+    <div class="header-status">
+      <span class="status-badge" [class.status-low]="item.quantity <= item.min_quantity" [class.status-ok]="item.quantity > item.min_quantity">
+        <mat-icon>{{ item.quantity <= item.min_quantity ? 'warning' : 'check_circle' }}</mat-icon>
+        {{ item.quantity <= item.min_quantity ? 'Estoque Baixo' : 'Normal' }}
+      </span>
+    </div>
+  </div>
+
+  <div class="dashboard-grid">
+    
+    <!-- LEFT COLUMN: Info & New Movement -->
+    <div class="left-col">
+      <div class="glass-card">
+        <div class="card-header">
+          <mat-icon>info</mat-icon>
+          <h3>Detalhes do Insumo</h3>
+        </div>
+        
+        <div class="info-grid">
+          <div class="info-item">
+            <span class="label">Descrição</span>
+            <span class="value">{{ item.description || '-' }}</span>
+          </div>
+          <div class="info-item highlight">
+            <span class="label">Em Estoque</span>
+            <span class="value qty-text" [class.low]="item.quantity <= item.min_quantity">
+              {{ item.quantity }}
+            </span>
+          </div>
+          <div class="info-item">
+            <span class="label">Mínimo Ideal</span>
+            <span class="value">{{ item.min_quantity }}</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="glass-card mt-4">
+        <div class="card-header">
+          <mat-icon>swap_horiz</mat-icon>
+          <h3>Registrar Movimentação</h3>
+        </div>
+        
+        <form [formGroup]="movForm" (ngSubmit)="onMovementSubmit()" class="movement-form">
+          <div class="row-fields">
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="half-width">
+              <mat-label>Tipo</mat-label>
+              <mat-select formControlName="movement_type">
+                <mat-option value="IN">Entrada (+)</mat-option>
+                <mat-option value="OUT">Saída (-)</mat-option>
+                <mat-option value="ADJUST">Ajuste / Correção (+)</mat-option>
+              </mat-select>
+              <mat-icon matPrefix>compare_arrows</mat-icon>
+            </mat-form-field>
+            
+            <mat-form-field appearance="outline" subscriptSizing="dynamic" class="half-width">
+              <mat-label>Quantidade</mat-label>
+              <input matInput type="number" formControlName="quantity">
+            </mat-form-field>
+          </div>
+          
+          <mat-form-field appearance="outline" subscriptSizing="dynamic" class="full-width mt-3">
+            <mat-label>Justificativa / Nota</mat-label>
+            <input matInput formControlName="notes" placeholder="Ex: NF 1234, Entrega ao setor RH...">
+            <mat-icon matPrefix>description</mat-icon>
+          </mat-form-field>
+          
+          <div class="form-actions mt-3">
+            <button mat-flat-button color="primary" type="submit" [disabled]="movForm.invalid">
+              <mat-icon>save</mat-icon> Lançar Movimento
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- RIGHT COLUMN: Timeline -->
+    <div class="right-col">
+      <div class="glass-card full-height">
+        <div class="card-header">
+          <mat-icon>history</mat-icon>
+          <h3>Histórico de Movimentações</h3>
+        </div>
+        
+        <div class="timeline-container">
+          <div class="timeline" *ngIf="movements.length > 0">
+            <div class="timeline-item" *ngFor="let mov of movements">
+              <div class="timeline-marker">
+                <div class="marker-dot" [ngClass]="'dot-' + mov.movement_type.toLowerCase()">
+                  <mat-icon>{{ getMovementIcon(mov.movement_type) }}</mat-icon>
+                </div>
+                <div class="marker-line"></div>
+              </div>
+              <div class="timeline-content">
+                <div class="timeline-header">
+                  <div class="title" [ngClass]="'text-' + mov.movement_type.toLowerCase()">
+                    <strong>{{ mov.movement_type === 'IN' ? 'Entrada' : mov.movement_type === 'OUT' ? 'Saída' : 'Ajuste' }}</strong>
+                    <span class="qty-badge">{{ mov.movement_type === 'OUT' ? '-' : '+' }}{{ mov.quantity }}</span>
+                  </div>
+                  <span class="date">{{ mov.created_at | date:'dd/MM HH:mm' }}</span>
+                </div>
+                
+                <div class="timeline-body" *ngIf="mov.notes">
+                  <span class="note-text">{{ mov.notes }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="movements.length === 0" class="empty-state">
+            <mat-icon>history_toggle_off</mat-icon>
+            <p>Nenhuma movimentação registrada.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+    
+  </div>
+</div>

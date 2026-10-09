@@ -1,0 +1,127 @@
+<div class="page-container" *ngIf="asset">
+  <div class="page-header">
+    <div class="header-content">
+      <button mat-icon-button class="back-btn" routerLink="/assets">
+        <mat-icon>arrow_back</mat-icon>
+      </button>
+      <div class="title-group">
+        <h1>{{ asset.name }}</h1>
+        <span class="tag-badge">#{{ asset.tag }}</span>
+      </div>
+    </div>
+    <div class="header-status">
+      <span class="status-badge" [ngClass]="'status-' + asset.status.toLowerCase()">
+        {{ asset.status }}
+      </span>
+    </div>
+  </div>
+
+  <mat-tab-group class="premium-tabs" animationDuration="0ms">
+    <!-- TAB: Overview -->
+    <mat-tab label="Visão Geral">
+      <div class="tab-content">
+        
+        <div class="cards-grid">
+          <!-- BASIC INFO CARD -->
+          <div class="glass-card">
+            <div class="card-header">
+              <mat-icon>info</mat-icon>
+              <h3>Informações Básicas</h3>
+            </div>
+            <div class="info-grid">
+              <div class="info-item">
+                <span class="label">Patrimônio</span>
+                <span class="value">{{ asset.tag }}</span>
+              </div>
+              <div class="info-item">
+                <span class="label">Categoria</span>
+                <span class="value">{{ asset.category?.name }}</span>
+              </div>
+              <div class="info-item">
+                <span class="label">Unidade</span>
+                <span class="value">{{ getUnitName(asset.unit_id) }}</span>
+              </div>
+              <div class="info-item">
+                <span class="label">Responsável</span>
+                <span class="value">{{ getEmployeeName(asset.employee_id) }}</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- SPECS CARD -->
+          <div class="glass-card">
+            <div class="card-header">
+              <mat-icon>memory</mat-icon>
+              <h3>Especificações Técnicas</h3>
+            </div>
+            
+            <div class="specs-grid" *ngIf="specEntries.length > 0; else noSpecs">
+              <div class="spec-item" *ngFor="let spec of specEntries">
+                <span class="spec-label">{{ spec[0] | titlecase }}</span>
+                <span class="spec-value">{{ spec[1] }}</span>
+              </div>
+            </div>
+            
+            <ng-template #noSpecs>
+              <div class="empty-state">
+                Sem especificações técnicas cadastradas.
+              </div>
+            </ng-template>
+          </div>
+        </div>
+        
+        <app-attachments [entityType]="'ASSET'" [entityId]="asset.id"></app-attachments>
+
+      </div>
+    </mat-tab>
+
+    <!-- TAB: History -->
+    <mat-tab label="Histórico de Movimentações">
+      <div class="tab-content timeline-container">
+        
+        <div class="timeline" *ngIf="movements.length > 0">
+          <div class="timeline-item" *ngFor="let mov of movements">
+            <div class="timeline-marker">
+              <div class="marker-dot"></div>
+              <div class="marker-line"></div>
+            </div>
+            <div class="timeline-content glass-card">
+              <div class="timeline-header">
+                <div class="title">
+                  <mat-icon>compare_arrows</mat-icon>
+                  <strong>{{ mov.movement_type }}</strong>
+                </div>
+                <span class="date">{{ mov.created_at | date:'dd/MM/yyyy HH:mm' }}</span>
+              </div>
+              
+              <div class="timeline-body">
+                <div class="change-row" *ngIf="mov.status_from !== mov.status_to">
+                  <span class="change-label">Status:</span>
+                  <span class="change-val from">{{ mov.status_from || 'N/A' }}</span>
+                  <mat-icon>arrow_right_alt</mat-icon>
+                  <span class="change-val to">{{ mov.status_to }}</span>
+                </div>
+                <div class="change-row" *ngIf="mov.from_employee_id || mov.to_employee_id">
+                  <span class="change-label">Responsável:</span>
+                  <span class="change-val from">{{ getEmployeeName(mov.from_employee_id) }}</span>
+                  <mat-icon>arrow_right_alt</mat-icon>
+                  <span class="change-val to">{{ getEmployeeName(mov.to_employee_id) }}</span>
+                </div>
+                <div class="change-row" *ngIf="mov.notes">
+                  <span class="change-label">Notas:</span>
+                  <span class="change-val note-text">{{ mov.notes }}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div *ngIf="movements.length === 0" class="empty-state-large">
+          <mat-icon>history</mat-icon>
+          <p>Sem histórico registrado para este ativo.</p>
+        </div>
+        
+      </div>
+    </mat-tab>
+  </mat-tab-group>
+</div>

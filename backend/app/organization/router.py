@@ -5,10 +5,12 @@ MOD-02 — Organização (Router)
 import uuid
 from typing import Sequence
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
+import os
+import aiofiles
 
-from app.core.dependencies import require_permission
+from app.core.dependencies import require_permission, get_token_payload
 from app.database import get_db
 from app.organization.schemas import (
     CompanyCreate,
@@ -48,6 +50,39 @@ async def initialize_company(schema: CompanyCreate, db: AsyncSession = Depends(g
 async def update_company(schema: CompanyUpdate, db: AsyncSession = Depends(get_db)):
     service = OrganizationService(db)
     return await service.update_company(schema)
+
+
+@router.post("/company/logo", summary="Upload da logomarca do sistema", dependencies=[Depends(require_permission("organization.company.update"))])
+async def upload_company_logo(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+    static_dir = os.path.join(os.path.dirname(__file__), "..", "..", "static")
+    os.makedirs(static_dir, exist_ok=True)
+    
+    file_extension = os.path.splitext(file.filename)[1]
+    filename = f"logo{file_extension}"
+    file_path = os.path.join(static_dir, filename)
+    
+    async with aiofiles.open(file_path, 'wb') as out_file:
+        content = await file.read()
+        await out_file.write(content)
+        
+    logo_url = f"/static/{filename}"
+    
+    # Atualiza a empresa
+    service = OrganizationService(db)
+    await service.update_company(CompanyUpdate(logo_url=logo_url))
+    
+    return {"logo_url": logo_url, "message": "Logo atualizada com sucesso"}
+
+
+@router.get("/company/public", summary="Busca informações públicas da empresa (nome e logo)")
+async def get_company_public(db: AsyncSession = Depends(get_db)):
+    service = OrganizationService(db)
+    from app.core.exceptions import NotFoundException
+    try:
+        company = await service.get_company()
+        return {"name": company.name, "logo_url": company.logo_url}
+    except NotFoundException:
+        return {"name": "Gestão de TI", "logo_url": None}
 
 
 # ==============================================================================
@@ -109,6 +144,22 @@ async def update_sector(sector_id: uuid.UUID, schema: SectorUpdate, db: AsyncSes
 # ==============================================================================
 # Employee
 # ==============================================================================
+
+@router.get("/employees/me/details", response_model=EmployeeOut, summary="Busca o colaborador do usuário logado")
+async def get_my_employee(
+    payload: dict = Depends(get_token_payload), 
+    db: AsyncSession = Depends(get_db)
+):
+    user_id = uuid.UUID(payload["sub"])
+    from app.identity.repository import IdentityRepository
+    repo = IdentityRepository(db)
+    user = await repo.get_user(user_id)
+    if not user or not user.employee_id:
+        from app.core.exceptions import NotFoundException
+        raise NotFoundException("Employee", user_id)
+    service = OrganizationService(db)
+    return await service.get_employee(user.employee_id)
+
 
 @router.get("/employees", response_model=list[EmployeeOut], dependencies=[Depends(require_permission("organization.employees.read"))])
 async def list_employees(unit_id: uuid.UUID | None = None, sector_id: uuid.UUID | None = None, db: AsyncSession = Depends(get_db)):

@@ -1,0 +1,109 @@
+<div class="page-container">
+  <div class="page-header">
+    <div class="header-content">
+      <button mat-icon-button class="back-btn" routerLink="/assets">
+        <mat-icon>arrow_back</mat-icon>
+      </button>
+      <h1>Cadastrar Novo Ativo</h1>
+    </div>
+  </div>
+
+  <div class="form-container">
+    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="premium-form">
+      
+      <h3>
+        <mat-icon color="primary">devices</mat-icon>
+        Informações Principais
+      </h3>
+
+      <div class="row-fields">
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="half-width">
+          <mat-label>Patrimônio (Tag)</mat-label>
+          <input matInput formControlName="tag" placeholder="Ex: PAT-1234">
+          <mat-icon matPrefix>qr_code</mat-icon>
+          <mat-error *ngIf="form.get('tag')?.hasError('required')">Obrigatório</mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="half-width">
+          <mat-label>Nome do Ativo</mat-label>
+          <input matInput formControlName="name" placeholder="Ex: Notebook Dell XPS">
+          <mat-icon matPrefix>laptop</mat-icon>
+          <mat-error *ngIf="form.get('name')?.hasError('required')">Obrigatório</mat-error>
+        </mat-form-field>
+      </div>
+
+      <div class="row-fields mt-3">
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="half-width">
+          <mat-label>Categoria</mat-label>
+          <mat-select formControlName="category_id">
+            <mat-option *ngFor="let cat of categories" [value]="cat.id">{{ cat.name }}</mat-option>
+          </mat-select>
+          <mat-icon matPrefix>category</mat-icon>
+          <mat-error *ngIf="form.get('category_id')?.hasError('required')">Obrigatório</mat-error>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="half-width">
+          <mat-label>Status Inicial</mat-label>
+          <mat-select formControlName="status">
+            <mat-option value="IN_STOCK">Em Estoque</mat-option>
+            <mat-option value="IN_USE">Em Uso</mat-option>
+            <mat-option value="MAINTENANCE">Manutenção</mat-option>
+          </mat-select>
+          <mat-icon matPrefix>info</mat-icon>
+        </mat-form-field>
+      </div>
+
+      <div class="divider"></div>
+
+      <h3>
+        <mat-icon color="primary">place</mat-icon>
+        Localização e Responsabilidade
+      </h3>
+
+      <div class="row-fields">
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="half-width">
+          <mat-label>Unidade Física</mat-label>
+          <mat-select formControlName="unit_id">
+            <mat-option *ngFor="let u of units" [value]="u.id">{{ u.name }}</mat-option>
+          </mat-select>
+          <mat-icon matPrefix>business</mat-icon>
+        </mat-form-field>
+
+        <mat-form-field appearance="outline" subscriptSizing="dynamic" class="half-width">
+          <mat-label>Colaborador Responsável</mat-label>
+          <mat-select formControlName="employee_id">
+            <mat-option [value]="null">Nenhum (Em Estoque)</mat-option>
+            <mat-option *ngFor="let emp of employees" [value]="emp.id">{{ emp.name }} ({{emp.registration}})</mat-option>
+          </mat-select>
+          <mat-icon matPrefix>person</mat-icon>
+        </mat-form-field>
+      </div>
+
+      <!-- Dynamic Specs Section -->
+      <ng-container *ngIf="specKeys.length > 0">
+        <div class="divider"></div>
+        
+        <h3>
+          <mat-icon color="primary">memory</mat-icon>
+          Especificações Técnicas
+        </h3>
+        
+        <div [formGroup]="specsForm" class="specs-grid">
+          <mat-form-field appearance="outline" subscriptSizing="dynamic" *ngFor="let spec of specKeys">
+            <mat-label>{{ spec.label | titlecase }}</mat-label>
+            <input matInput [formControlName]="spec.key">
+            <mat-icon matPrefix>settings</mat-icon>
+          </mat-form-field>
+        </div>
+      </ng-container>
+      
+      <div class="form-actions mt-4">
+        <button mat-button type="button" routerLink="/assets">Cancelar</button>
+        <button mat-flat-button color="primary" type="submit" [disabled]="form.invalid">
+          <mat-icon>save</mat-icon> Salvar Ativo
+        </button>
+      </div>
+
+    </form>
+  </div>
+</div>

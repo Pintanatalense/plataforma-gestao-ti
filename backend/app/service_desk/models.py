@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, String, Text
+from sqlalchemy import Boolean, ForeignKey, String, Text, Integer
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.timestamps import TimestampMixin
@@ -29,6 +29,7 @@ class TicketCategory(Base, TimestampMixin):
     name: Mapped[str] = mapped_column(String(100), nullable=False, unique=True)
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    default_sector_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sectors.id"), nullable=True)
 
 
 class Ticket(Base, TimestampMixin):
@@ -48,13 +49,40 @@ class Ticket(Base, TimestampMixin):
     requester_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("employees.id"), nullable=False)
     assignee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True)
     
+    origin_unit_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("units.id"), nullable=False)
+    origin_sector_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sectors.id"), nullable=False)
+    responsible_sector_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sectors.id"), nullable=False)
+    
     # Relacionamento Interno
     category_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sd_ticket_category.id"), nullable=True)
 
     # Relationships
     category: Mapped["TicketCategory | None"] = relationship("TicketCategory")
-    interactions: Mapped[list["TicketInteraction"]] = relationship("TicketInteraction", back_populates="ticket", cascade="all, delete-orphan")
+    interactions: Mapped[list["TicketInteraction"]] = relationship("TicketInteraction", back_populates="ticket", cascade="all, delete-orphan", lazy="selectin")
+    materials: Mapped[list["TicketMaterial"]] = relationship("TicketMaterial", back_populates="ticket", cascade="all, delete-orphan", lazy="selectin")
+    assets = relationship("Asset", secondary="sd_ticket_assets")
 
+
+from sqlalchemy import Table, Column
+
+ticket_assets = Table(
+    "sd_ticket_assets",
+    Base.metadata,
+    Column("ticket_id", ForeignKey("sd_ticket.id", ondelete="CASCADE"), primary_key=True),
+    Column("asset_id", ForeignKey("assets.id", ondelete="CASCADE"), primary_key=True),
+)
+
+class TicketMaterial(Base, TimestampMixin):
+    __tablename__ = "sd_ticket_materials"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    ticket_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sd_ticket.id", ondelete="CASCADE"), nullable=False)
+    stock_item_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("stk_items.id", ondelete="CASCADE"), nullable=False)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_accounts.id"), nullable=False)
+
+    ticket: Mapped["Ticket"] = relationship("Ticket", back_populates="materials")
+    stock_item = relationship("StockItem")
 
 class TicketInteraction(Base, TimestampMixin):
     __tablename__ = "sd_ticket_interaction"

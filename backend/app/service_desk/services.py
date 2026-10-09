@@ -15,18 +15,22 @@ from app.core.exceptions import (
     NotFoundException,
     StateTransitionException,
 )
-from app.service_desk.models import Ticket, TicketCategory, TicketInteraction
+from app.service_desk.models import Ticket, TicketCategory, TicketInteraction, TicketMaterial
 from app.service_desk.repository import ServiceDeskRepository
 from app.service_desk.schemas import (
     TicketCreate,
     TicketInteractionCreate,
     TicketUpdate,
+    TicketCategoryCreate,
+    TicketCategoryUpdate,
+    TicketMaterialCreate,
 )
 
 
 class ServiceDeskService:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, stock_service=None) -> None:
         self.repo = ServiceDeskRepository(session)
+        self.stock_service = stock_service
 
     # ==========================================================================
     # Categories
@@ -34,6 +38,31 @@ class ServiceDeskService:
     
     async def list_categories(self) -> Sequence[TicketCategory]:
         return await self.repo.list_categories()
+
+    async def create_category(self, schema: TicketCategoryCreate) -> TicketCategory:
+        cat = TicketCategory(
+            name=schema.name,
+            description=schema.description,
+            is_active=schema.is_active,
+            default_sector_id=schema.default_sector_id
+        )
+        return await self.repo.create_category(cat)
+
+    async def update_category(self, category_id: uuid.UUID, schema: TicketCategoryUpdate) -> TicketCategory:
+        cat = await self.repo.get_category(category_id)
+        if not cat:
+            raise NotFoundException("TicketCategory", category_id)
+
+        if schema.name is not None:
+            cat.name = schema.name
+        if schema.description is not None:
+            cat.description = schema.description
+        if schema.is_active is not None:
+            cat.is_active = schema.is_active
+        if schema.default_sector_id is not None:
+            cat.default_sector_id = schema.default_sector_id
+
+        return await self.repo.update_category(cat)
 
     # ==========================================================================
     # Tickets
@@ -67,11 +96,24 @@ class ServiceDeskService:
                 return []
             return await self.repo.list_tickets(requester_id=user_employee_id)
 
-    async def create_ticket(self, schema: TicketCreate, requester_id: uuid.UUID) -> Ticket:
+    async def create_ticket(
+        self, 
+        schema: TicketCreate, 
+        requester_id: uuid.UUID,
+        origin_unit_id: uuid.UUID,
+        origin_sector_id: uuid.UUID
+    ) -> Ticket:
+        responsible_sector_id = schema.responsible_sector_id
+        
         if schema.category_id:
             cat = await self.repo.get_category(schema.category_id)
             if not cat or not cat.is_active:
                 raise BusinessRuleException("Categoria inválida ou inativa.")
+            if not responsible_sector_id:
+                responsible_sector_id = cat.default_sector_id
+        
+        if not responsible_sector_id:
+            raise BusinessRuleException("Setor responsável não definido. Informe-o manualmente ou selecione uma categoria com roteamento automático.")
 
         ticket = Ticket(
             title=schema.title,
@@ -79,8 +121,16 @@ class ServiceDeskService:
             priority=schema.priority,
             category_id=schema.category_id,
             requester_id=requester_id,
+            origin_unit_id=origin_unit_id,
+            origin_sector_id=origin_sector_id,
+            responsible_sector_id=responsible_sector_id,
             status="OPENED"
         )
+        
+        if schema.asset_ids:
+            assets = await self.repo.get_assets_by_ids(schema.asset_ids)
+            ticket.assets = list(assets)
+            
         ticket = await self.repo.create_ticket(ticket)
         return await self.repo.get_ticket(ticket.id)
 
@@ -114,6 +164,10 @@ class ServiceDeskService:
                 raise StateTransitionException("Chamado", ticket.status, schema.status)
             ticket.status = schema.status
 
+        if schema.asset_ids is not None:
+            assets = await self.repo.get_assets_by_ids(schema.asset_ids)
+            ticket.assets = list(assets)
+
         return await self.repo.update_ticket(ticket)
 
     # ==========================================================================
@@ -145,3 +199,48 @@ class ServiceDeskService:
             is_internal=schema.is_internal
         )
         return await self.repo.create_interaction(interaction)
+
+    # ==========================================================================
+    # Materials (Consumo de Estoque)
+    # ==========================================================================
+
+    async def add_material_to_ticket(
+        self,
+        ticket_id: uuid.UUID,
+        schema: TicketMaterialCreate,
+        author_id: uuid.UUID,
+        user_employee_id: uuid.UUID | None,
+        is_technician: bool
+    ) -> TicketMaterial:
+        
+        # Apenas técnicos podem adicionar materiais do estoque a um chamado
+        if not is_technician:
+            raise ForbiddenException("Apenas técnicos podem gerenciar materiais e estoque.")
+
+        ticket = await self.get_ticket_for_user(ticket_id, user_employee_id, is_technician)
+
+        if ticket.status == "CLOSED":
+            raise BusinessRuleException("Não é possível adicionar materiais a um chamado fechado.")
+
+        if not self.stock_service:
+            raise BusinessRuleException("Serviço de estoque não está disponível no contexto.")
+
+        # Deduzir do estoque (lança HTTPException caso falhe)
+        from app.stock.schemas import StockMovementCreate
+        mov_schema = StockMovementCreate(
+            item_id=schema.stock_item_id,
+            movement_type="OUT",
+            quantity=schema.quantity,
+            notes=f"Consumo via chamado {ticket.id}"
+        )
+        await self.stock_service.add_movement(mov_schema, author_id)
+
+        # Adicionar o registro no ticket
+        material = TicketMaterial(
+            ticket_id=ticket.id,
+            stock_item_id=schema.stock_item_id,
+            quantity=schema.quantity,
+            author_id=author_id
+        )
+        
+        return await self.repo.create_material(material)

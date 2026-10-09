@@ -20,14 +20,14 @@ from app.database import Base
 from app.organization import models as organization_models  # noqa: F401
 from app.identity import models as identity_models  # noqa: F401
 from app.service_desk import models as service_desk_models  # noqa: F401
-# from app.assets import models as assets_models  # noqa: F401
-# from app.movements import models as movements_models  # noqa: F401
-# from app.stock import models as stock_models  # noqa: F401
-# from app.inventory_audit import models as inventory_models  # noqa: F401
+from app.assets import models as assets_models  # noqa: F401
+from app.movements import models as movements_models  # noqa: F401
+from app.stock import models as stock_models  # noqa: F401
+from app.inventory_audit import models as inventory_models  # noqa: F401
 # from app.access_control import models as access_control_models  # noqa: F401
-# from app.attachments import models as attachments_models  # noqa: F401
-# from app.notifications import models as notifications_models  # noqa: F401
-# from app.audit import models as audit_models  # noqa: F401
+from app.attachments import models as attachments_models  # noqa: F401
+from app.notifications import models as notifications_models  # noqa: F401
+from app.audit import models as audit_models  # noqa: F401
 
 config = context.config
 
