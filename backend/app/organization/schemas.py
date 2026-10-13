@@ -152,6 +152,7 @@ class EmployeeOut(BaseModel):
     updated_at: datetime
     deactivated_at: Optional[datetime] = None
     sector: Optional[SectorOut] = None
+    unit: Optional[UnitOut] = None
 
     @computed_field
     def registration(self) -> str:
