@@ -25,9 +25,10 @@ COPY --from=deps /usr/local/bin /usr/local/bin
 
 COPY . .
 
-# Criar diretório de anexos
-RUN mkdir -p /data/attachments
+# Criar diretório de anexos e permissões do entrypoint
+RUN mkdir -p /data/attachments && chmod +x docker-entrypoint.sh
 
 EXPOSE 8000
 
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--workers", "4"]
