@@ -1,6 +1,7 @@
 import uuid
 
 from fastapi import APIRouter, Depends
+from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.assets.repository import AssetRepository
@@ -76,3 +77,17 @@ async def update_asset(
     current_user_id: uuid.UUID = Depends(get_current_user_id),
 ):
     return await service.update_asset(asset_id, schema, current_user_id)
+
+
+@router.get(
+    "/{asset_id}/responsibility-statement",
+    response_class=HTMLResponse,
+    summary="Gera Termo de Responsabilidade e Cautela pronto para impressão/PDF",
+    dependencies=[Depends(require_permission("assets.read"))]
+)
+async def get_responsibility_statement(
+    asset_id: uuid.UUID,
+    service: AssetService = Depends(get_asset_service),
+):
+    html_content = await service.generate_responsibility_statement(asset_id)
+    return HTMLResponse(content=html_content)

@@ -149,3 +149,235 @@ class AssetService:
             await self.movement_repo.create_movement(movement)
 
         return asset
+
+    async def generate_responsibility_statement(self, asset_id: uuid.UUID) -> str:
+        asset = await self.get_asset(asset_id)
+        
+        emp_name = "Não atribuído (Em Estoque)"
+        emp_reg = "N/A"
+        emp_role = "N/A"
+        emp_sector = "N/A"
+        unit_name = "N/A"
+        
+        if asset.employee_id:
+            from app.organization.models import Employee, Sector
+            emp = await self.repo.session.get(Employee, asset.employee_id)
+            if emp:
+                emp_name = emp.name
+                emp_reg = emp.registration_number
+                emp_role = emp.position or "Colaborador"
+                if emp.sector_id:
+                    sector = await self.repo.session.get(Sector, emp.sector_id)
+                    if sector:
+                        emp_sector = sector.name
+        
+        if asset.unit_id:
+            from app.organization.models import Unit
+            unit = await self.repo.session.get(Unit, asset.unit_id)
+            if unit:
+                unit_name = unit.name
+
+        category_name = asset.category.name if asset.category else "Equipamento de TI"
+        specs_rows = "".join([
+            f"<tr><td style='padding:6px 12px;font-weight:600;border:1px solid #cbd5e1;background:#f8fafc;width:35%;'>{k.upper()}</td><td style='padding:6px 12px;border:1px solid #cbd5e1;'>{v}</td></tr>" 
+            for k, v in (asset.technical_specs or {}).items()
+        ])
+        if not specs_rows:
+            specs_rows = "<tr><td colspan='2' style='padding:8px 12px;border:1px solid #cbd5e1;color:#64748b;'>Sem especificações registradas</td></tr>"
+
+        from datetime import datetime
+        now_str = datetime.now().strftime("%d/%m/%Y às %H:%M")
+        today_date = datetime.now().strftime("%d/%m/%Y")
+
+        return f"""<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Termo de Responsabilidade - Patrimônio {asset.tag}</title>
+    <style>
+        body {{
+            font-family: Arial, Helvetica, sans-serif;
+            color: #1e293b;
+            margin: 40px;
+            font-size: 13px;
+            line-height: 1.5;
+        }}
+        .header {{
+            text-align: center;
+            border-bottom: 2px solid #0f172a;
+            padding-bottom: 12px;
+            margin-bottom: 24px;
+        }}
+        .header h1 {{
+            font-size: 18px;
+            text-transform: uppercase;
+            margin: 0;
+            letter-spacing: 0.5px;
+        }}
+        .header p {{
+            margin: 4px 0 0;
+            color: #64748b;
+            font-size: 11px;
+        }}
+        .section-title {{
+            font-size: 13px;
+            font-weight: bold;
+            text-transform: uppercase;
+            color: #0f172a;
+            background: #e2e8f0;
+            padding: 6px 10px;
+            margin-top: 18px;
+            margin-bottom: 8px;
+            border-left: 4px solid #2563eb;
+        }}
+        table {{
+            width: 100%;
+            border-collapse: collapse;
+            margin-bottom: 12px;
+        }}
+        .info-grid td {{
+            padding: 6px 10px;
+            border: 1px solid #cbd5e1;
+        }}
+        .label {{
+            font-weight: bold;
+            background-color: #f8fafc;
+            width: 25%;
+        }}
+        .terms {{
+            margin-top: 16px;
+            text-align: justify;
+            font-size: 12px;
+        }}
+        .terms ol {{
+            padding-left: 20px;
+            margin: 6px 0;
+        }}
+        .terms li {{
+            margin-bottom: 6px;
+        }}
+        .signatures {{
+            margin-top: 50px;
+            display: flex;
+            justify-content: space-between;
+        }}
+        .sig-block {{
+            width: 45%;
+            text-align: center;
+        }}
+        .sig-line {{
+            border-top: 1px solid #334155;
+            margin-bottom: 6px;
+        }}
+        .footer {{
+            margin-top: 35px;
+            text-align: center;
+            font-size: 10px;
+            color: #94a3b8;
+            border-top: 1px solid #e2e8f0;
+            padding-top: 8px;
+        }}
+        .no-print {{
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #2563eb;
+            color: white;
+            border: none;
+            padding: 10px 18px;
+            font-size: 14px;
+            font-weight: bold;
+            border-radius: 6px;
+            cursor: pointer;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+        }}
+        @media print {{
+            .no-print {{
+                display: none;
+            }}
+            body {{
+                margin: 20px;
+            }}
+        }}
+    </style>
+</head>
+<body>
+    <button class="no-print" onclick="window.print()">🖨️ Imprimir / Salvar PDF</button>
+
+    <div class="header">
+        <h1>Termo de Responsabilidade e Cautela de Equipamento de TI</h1>
+        <p>Departamento de Tecnologia da Informação — Gestão Patrimonial</p>
+    </div>
+
+    <div class="section-title">1. Dados do Colaborador (Responsável)</div>
+    <table class="info-grid">
+        <tr>
+            <td class="label">Colaborador:</td>
+            <td><strong>{emp_name}</strong></td>
+            <td class="label">Matrícula:</td>
+            <td>{emp_reg}</td>
+        </tr>
+        <tr>
+            <td class="label">Cargo / Função:</td>
+            <td>{emp_role}</td>
+            <td class="label">Setor / Departamento:</td>
+            <td>{emp_sector}</td>
+        </tr>
+        <tr>
+            <td class="label">Unidade / Localidade:</td>
+            <td colspan="3">{unit_name}</td>
+        </tr>
+    </table>
+
+    <div class="section-title">2. Identificação do Equipamento (Patrimônio)</div>
+    <table class="info-grid">
+        <tr>
+            <td class="label">Número de Patrimônio:</td>
+            <td><strong style="font-size:14px;color:#2563eb;">{asset.tag}</strong></td>
+            <td class="label">Categoria:</td>
+            <td>{category_name}</td>
+        </tr>
+        <tr>
+            <td class="label">Equipamento / Modelo:</td>
+            <td colspan="3">{asset.name}</td>
+        </tr>
+    </table>
+
+    <div class="section-title">3. Especificações Técnicas</div>
+    <table>
+        {specs_rows}
+    </table>
+
+    <div class="section-title">4. Declaração e Termos de Uso</div>
+    <div class="terms">
+        <ol>
+            <li>O colaborador declara haver recebido nesta data o equipamento de TI acima especificado em perfeito estado de conservação, limpeza e pleno funcionamento.</li>
+            <li>O equipamento destina-se <strong>exclusivamente</strong> ao desempenho das atividades profissionais relativas à sua função na empresa.</li>
+            <li>O colaborador compromete-se a guardar e zelar pela conservação do equipamento, responsabilizando-se pelo seu uso adequado e pela observância da Política de Segurança da Informação.</li>
+            <li>É terminantemente vedada a instalação de softwares não autorizados ou licenciados pela equipe de Tecnologia da Informação.</li>
+            <li>Qualquer anomalia, quebra, dano, perda ou furto/roubo deve ser imediatamente comunicado à equipe de TI e às autoridades competentes (com respectivo Boletim de Ocorrência).</li>
+            <li>Em caso de desligamento, transferência de setor ou solicitação da TI, o equipamento deverá ser devolvido imediatamente no mesmo estado em que foi entregue, ressalvado o desgaste natural.</li>
+        </ol>
+    </div>
+
+    <div class="signatures">
+        <div class="sig-block">
+            <div class="sig-line"></div>
+            <strong>{emp_name}</strong><br>
+            Colaborador Responsável<br>
+            Data: ____ / ____ / ________
+        </div>
+        <div class="sig-block">
+            <div class="sig-line"></div>
+            <strong>Responsável de TI</strong><br>
+            Departamento de Tecnologia<br>
+            Data: ____ / ____ / ________
+        </div>
+    </div>
+
+    <div class="footer">
+        Documento gerado eletronicamente em {now_str} pela Plataforma de Gestão de TI • ID Ativo: {asset.id}
+    </div>
+</body>
+</html>"""
+

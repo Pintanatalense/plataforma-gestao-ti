@@ -357,7 +357,6 @@ async def test_categories_list_requires_authentication(client: AsyncClient, db_s
     assert resp.status_code == 401
 
 
-@pytest.mark.xfail(strict=True, reason="R1: anexos sem autorização por entidade")
 async def test_attachments_of_foreign_ticket_are_forbidden(
     client: AsyncClient, db_session: AsyncSession, monkeypatch, tmp_path
 ):

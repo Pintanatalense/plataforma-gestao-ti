@@ -10,6 +10,9 @@
       </div>
     </div>
     <div class="header-status">
+      <button mat-stroked-button color="primary" class="print-btn" (click)="printResponsibilityStatement()" title="Imprimir Termo de Responsabilidade e Cautela">
+        <mat-icon>print</mat-icon> Termo de Cautela
+      </button>
       <span class="status-badge" [ngClass]="'status-' + asset.status.toLowerCase()">
         {{ asset.status }}
       </span>

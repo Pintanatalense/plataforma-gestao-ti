@@ -84,4 +84,9 @@ export class AssetDetailComponent implements OnInit {
     const found = this.employees.find((e) => e.id === employeeId);
     return found ? `${found.name} (${found.registration})` : 'Colaborador';
   }
+
+  printResponsibilityStatement(): void {
+    if (!this.asset) return;
+    window.open(`/api/v1/assets/${this.asset.id}/responsibility-statement`, '_blank');
+  }
 }

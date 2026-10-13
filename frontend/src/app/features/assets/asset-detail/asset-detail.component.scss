@@ -37,6 +37,31 @@
     }
 
     .header-status {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+
+      .print-btn {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-weight: 500;
+        font-size: 13px;
+        border-color: #cbd5e1;
+        color: #1e293b;
+
+        mat-icon {
+          font-size: 18px;
+          width: 18px;
+          height: 18px;
+        }
+
+        &:hover {
+          background-color: #f8fafc;
+          border-color: #94a3b8;
+        }
+      }
+
       .status-badge {
         padding: 6px 14px;
         border-radius: 16px;
