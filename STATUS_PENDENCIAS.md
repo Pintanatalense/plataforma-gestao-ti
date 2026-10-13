@@ -71,7 +71,24 @@ Este documento sumariza o status atual do projeto, as funcionalidades recém-ent
      - Upload direto com barra de progresso e botão para visualização imediata do documento anexado.
      - Destaque e detecção automática de termos com badge `Termo Assinado` na listagem de anexos.
      - Ação rápida na listagem de ativos para gerar termo diretamente com 1 clique para equipamentos atribuídos.
-   - **Suíte Frontend**: 21 arquivos de teste e 25 testes unitários 100% aprovados via Vitest.
+   - **Suíte Frontend**: 22 arquivos de teste e 32 testes unitários 100% aprovados via Vitest.
+
+9. **Segurança de Rotas, Guards e Downloads Autenticados**
+   - **Guards de Rota no Frontend (`auth.guard.ts`)**:
+     - `authGuard`: validação de sessão, aguardo do carregamento assíncrono de `/me` (`ensureUser()`) e redirecionamento forçado para `/change-password` se exigido.
+     - `permissionGuard(permission)`: validação declarativa de permissões granulares por rota com redirecionamento para o dashboard para usuários sem autorização.
+     - `guestGuard`: redirecionamento automático de usuários já autenticados para o dashboard ao acessar `/login`.
+   - **Downloads Autenticados**:
+     - Substituição de `window.open` por `HttpClient` com `Blob` para envio seguro do cabeçalho `Authorization: Bearer <token>` tanto no download de anexos genéricos quanto na abertura do termo de responsabilidade.
+   - **Segurança RBAC no Inventário**:
+     - Endpoints de auditoria de inventário protegidos no backend por `inventory.read` e `inventory.write`.
+     - Seed atualizado para sincronizar 25 permissões no perfil Administrador.
+
+10. **Homologação e Deploy no Docker Compose**
+    - **PostgreSQL 16 (`gestao-ti-db`)**: saudável e operacional na porta 5432.
+    - **Backend FastAPI (`gestao-ti-api`)**: saudável e operacional com 4 workers Uvicorn na porta 8000.
+    - **Nginx Proxy (`gestao-ti-proxy`)**: operacional na porta 80, servindo o frontend Angular e roteando chamadas de API (`/api/v1/`) e WebSockets (`/ws/`).
+    - Migrações Alembic executadas e sincronizadas até a revisão `053a053ab9f6`.
 
 ---
 
@@ -80,9 +97,9 @@ Este documento sumariza o status atual do projeto, as funcionalidades recém-ent
 Todas as Fases do roadmap foram concluídas integralmente:
 - MOD-01 a MOD-12 100% operacionais e integrados.
 - Fluxo de Termo de Responsabilidade e Assinatura Externa finalizado e validado.
-- Interface rica com Material 3, responsiva para dispositivos móveis e desktops.
-- Suíte automatizada de testes cobrindo unidade, integração, auditoria, anexos, notificações e E2E (92 backend + 25 frontend).
-- Sistema pronto para publicação, homologação e deploy via Docker Compose com migrations e seed automáticos.
+- Proteção de rotas ponta a ponta com RBAC e JWT interceptor tratando expiração 401.
+- Suíte automatizada de testes cobrindo unidade, integração, auditoria, anexos, notificações e E2E (92 backend + 32 frontend).
+- Sistema publicado, ativo e acessível via Docker Compose em `http://localhost`.
 
 
 
