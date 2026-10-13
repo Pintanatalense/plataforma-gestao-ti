@@ -1,6 +1,6 @@
 import uuid
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,6 +41,14 @@ async def update_category(
     service: AssetService = Depends(get_asset_service),
 ):
     return await service.update_category(category_id, schema)
+
+
+@router.delete("/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("assets.write"))])
+async def delete_category(
+    category_id: uuid.UUID,
+    service: AssetService = Depends(get_asset_service),
+):
+    await service.delete_category(category_id)
 
 
 @router.get("", response_model=list[AssetResponse], dependencies=[Depends(require_permission("assets.read"))])

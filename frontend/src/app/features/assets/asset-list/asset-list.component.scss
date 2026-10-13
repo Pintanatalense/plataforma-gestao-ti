@@ -23,9 +23,18 @@
       }
     }
 
-    .add-button {
-      border-radius: 8px;
-      font-weight: 500;
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+
+      .categories-button, .add-button {
+        border-radius: 8px;
+        font-weight: 500;
+        mat-icon {
+          margin-right: 4px;
+        }
+      }
     }
   }
 

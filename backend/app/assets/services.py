@@ -36,6 +36,11 @@ class AssetService:
             setattr(category, key, value)
         return await self.repo.update_category(category)
 
+    async def delete_category(self, category_id: uuid.UUID) -> None:
+        category = await self.get_category(category_id)
+        category.is_active = False
+        await self.repo.update_category(category)
+
     async def list_assets(self, unit_id: uuid.UUID | None = None, employee_id: uuid.UUID | None = None) -> list[Asset]:
         return list(await self.repo.list_assets(unit_id=unit_id, employee_id=employee_id))
 

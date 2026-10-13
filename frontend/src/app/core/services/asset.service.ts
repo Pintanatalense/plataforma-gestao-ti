@@ -60,6 +60,10 @@ export class AssetService {
     return this.http.put<AssetCategory>(`${this.assetsUrl}/categories/${id}`, data);
   }
 
+  deleteCategory(id: string): Observable<void> {
+    return this.http.delete<void>(`${this.assetsUrl}/categories/${id}`);
+  }
+
   // Assets
   getAssets(unitId?: string, employeeId?: string): Observable<Asset[]> {
     let params: any = {};

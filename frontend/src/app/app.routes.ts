@@ -82,6 +82,11 @@ export const routes: Routes = [
         loadComponent: () => import('./features/assets/asset-list/asset-list.component').then(m => m.AssetListComponent)
       },
       {
+        path: 'assets/categories',
+        canActivate: [permissionGuard('assets.read')],
+        loadComponent: () => import('./features/assets/category-list/category-list.component').then(m => m.AssetCategoryListComponent)
+      },
+      {
         path: 'assets/new',
         canActivate: [permissionGuard('assets.write')],
         loadComponent: () => import('./features/assets/asset-create/asset-create.component').then(m => m.AssetCreateComponent)

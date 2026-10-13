@@ -61,7 +61,7 @@ class Sector(Base, TimestampMixin, SoftDeleteMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
 
-    unit: Mapped["Unit"] = relationship("Unit", back_populates="sectors")
+    unit: Mapped["Unit"] = relationship("Unit", back_populates="sectors", lazy="selectin")
     employees: Mapped[list["Employee"]] = relationship("Employee", back_populates="sector", foreign_keys="[Employee.sector_id]")
 
 
@@ -81,8 +81,8 @@ class Employee(Base, TimestampMixin, SoftDeleteMixin):
     
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    unit: Mapped["Unit"] = relationship("Unit", back_populates="employees", foreign_keys=[unit_id])
-    sector: Mapped["Sector"] = relationship("Sector", back_populates="employees", foreign_keys=[sector_id])
+    unit: Mapped["Unit"] = relationship("Unit", back_populates="employees", foreign_keys=[unit_id], lazy="selectin")
+    sector: Mapped["Sector"] = relationship("Sector", back_populates="employees", foreign_keys=[sector_id], lazy="selectin")
     
     manager: Mapped["Employee | None"] = relationship("Employee", remote_side=[id], back_populates="subordinates")
     subordinates: Mapped[list["Employee"]] = relationship("Employee", back_populates="manager")

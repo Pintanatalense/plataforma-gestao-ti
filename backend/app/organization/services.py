@@ -143,7 +143,8 @@ class OrganizationService:
             code=schema.code,
             is_active=schema.is_active if schema.is_active is not None else True,
         )
-        return await self.repo.create_sector(sector)
+        sector = await self.repo.create_sector(sector)
+        return await self.get_sector(sector.id, include_inactive=True)
 
     async def update_sector(self, sector_id: uuid.UUID, schema: SectorUpdate) -> Sector:
         sector = await self.get_sector(sector_id, include_inactive=True)
@@ -163,7 +164,8 @@ class OrganizationService:
             elif schema.is_active and sector.deleted_at is not None:
                 sector.restore()
             
-        return await self.repo.update_sector(sector)
+        await self.repo.update_sector(sector)
+        return await self.get_sector(sector.id, include_inactive=True)
 
     async def delete_sector(self, sector_id: uuid.UUID) -> None:
         sector = await self.get_sector(sector_id, include_inactive=True)
@@ -229,7 +231,7 @@ class OrganizationService:
             data={"registration": employee.registration_number}
         ))
         
-        return employee
+        return await self.get_employee(employee.id, include_inactive=True)
 
     async def update_employee(self, employee_id: uuid.UUID, schema: EmployeeUpdate) -> Employee:
         employee = await self.get_employee(employee_id, include_inactive=True)
@@ -275,7 +277,8 @@ class OrganizationService:
                 if employee.status == "DESLIGADO":
                     employee.status = "ATIVO"
             
-        return await self.repo.update_employee(employee)
+        await self.repo.update_employee(employee)
+        return await self.get_employee(employee.id, include_inactive=True)
 
     async def delete_employee(self, employee_id: uuid.UUID) -> None:
         employee = await self.get_employee(employee_id, include_inactive=True)

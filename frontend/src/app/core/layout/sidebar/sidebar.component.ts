@@ -203,6 +203,7 @@ export class SidebarComponent implements OnInit {
       title: 'Operações & Físico',
       items: [
         { icon: 'devices', label: 'Patrimônio & Ativos', route: '/assets', permission: 'assets.read' },
+        { icon: 'category', label: 'Categorias de Ativos', route: '/assets/categories', permission: 'assets.read' },
         { icon: 'inventory_2', label: 'Estoque & Insumos', route: '/stock', permission: 'stock.read' },
         { icon: 'fact_check', label: 'Inventário Periódico', route: '/inventory', permission: 'inventory.read' }
       ]

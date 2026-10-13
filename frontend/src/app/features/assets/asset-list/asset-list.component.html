@@ -4,10 +4,16 @@
       <h1>Patrimônio e Ativos</h1>
       <p>Gerenciamento de equipamentos e licenças</p>
     </div>
-    <button mat-flat-button color="primary" class="add-button" routerLink="/assets/new">
-      <mat-icon>add</mat-icon>
-      Novo Ativo
-    </button>
+    <div class="header-actions">
+      <button mat-stroked-button class="categories-button" routerLink="/assets/categories">
+        <mat-icon>category</mat-icon>
+        Categorias
+      </button>
+      <button mat-flat-button color="primary" class="add-button" routerLink="/assets/new">
+        <mat-icon>add</mat-icon>
+        Novo Ativo
+      </button>
+    </div>
   </div>
 
   <div class="table-container">
