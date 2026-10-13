@@ -40,8 +40,26 @@ export class AttachmentsService {
     return this.http.get<Attachment[]>(`${this.apiUrl}?entity_type=${entityType}&entity_id=${entityId}`);
   }
 
-  downloadAttachment(attachmentId: string): void {
-    window.open(`${this.apiUrl}/${attachmentId}/download`, '_blank');
+  /** Baixa via HttpClient (envia o Bearer) e abre o blob; window.open direto retornaria 401. */
+  downloadAttachment(attachmentId: string, filename?: string): void {
+    this.http.get(`${this.apiUrl}/${attachmentId}/download`, { responseType: 'blob', observe: 'response' })
+      .subscribe({
+        next: (res) => {
+          const blob = res.body as Blob;
+          const url = URL.createObjectURL(blob);
+          const type = blob.type || '';
+          if (type.includes('pdf') || type.startsWith('image/')) {
+            window.open(url, '_blank');
+          } else {
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename || 'anexo';
+            a.click();
+          }
+          setTimeout(() => URL.revokeObjectURL(url), 60000);
+        },
+        error: (err) => console.error('Erro ao baixar anexo:', err)
+      });
   }
 
   deleteAttachment(attachmentId: string): Observable<void> {

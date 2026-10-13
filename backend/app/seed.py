@@ -76,6 +76,21 @@ async def seed() -> None:
             {"code": "identity.roles.read", "description": "Ler perfis"},
             {"code": "identity.roles.create", "description": "Criar perfis"},
             {"code": "identity.roles.update", "description": "Editar perfis"},
+
+            # Assets
+            {"code": "assets.read", "description": "Ler patrimônio e ativos"},
+            {"code": "assets.write", "description": "Criar/editar ativos e movimentações"},
+
+            # Stock
+            {"code": "stock.read", "description": "Ler estoque e insumos"},
+            {"code": "stock.write", "description": "Criar/editar insumos e movimentações de estoque"},
+
+            # Inventory
+            {"code": "inventory.read", "description": "Ler inventários periódicos"},
+            {"code": "inventory.write", "description": "Criar e conduzir inventários periódicos"},
+
+            # Service Desk
+            {"code": "service_desk.tickets.manage", "description": "Atender e gerenciar chamados (técnico)"},
         ]
         
         for p_data in permissions_data:

@@ -95,6 +95,14 @@ export class AssetService {
   }
 
   openResponsibilityStatement(assetId: string): void {
-    window.open(this.getResponsibilityStatementUrl(assetId), '_blank');
+    this.http.get(this.getResponsibilityStatementUrl(assetId), { responseType: 'blob' }).subscribe({
+      next: (blob) => {
+        const html = new Blob([blob], { type: 'text/html;charset=utf-8' });
+        const url = URL.createObjectURL(html);
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      },
+      error: (err) => console.error('Erro ao gerar termo de responsabilidade:', err)
+    });
   }
 }

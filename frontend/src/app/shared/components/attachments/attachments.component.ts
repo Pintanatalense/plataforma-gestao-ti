@@ -259,7 +259,7 @@ export class AttachmentsComponent implements OnInit {
   }
 
   download(file: Attachment) {
-    this.attachmentsService.downloadAttachment(file.id);
+    this.attachmentsService.downloadAttachment(file.id, file.filename);
   }
 
   deleteFile(id: string) {

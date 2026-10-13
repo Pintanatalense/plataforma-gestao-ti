@@ -140,7 +140,7 @@ export class AssetDetailComponent implements OnInit {
   }
 
   downloadAttachment(attachment: Attachment): void {
-    this.attachmentsService.downloadAttachment(attachment.id);
+    this.attachmentsService.downloadAttachment(attachment.id, attachment.filename);
   }
 
   loadDependencies(): void {

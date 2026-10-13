@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 
-from app.core.dependencies import get_current_user_id
+from app.core.dependencies import get_current_user_id, require_permission
 
 from app.inventory_audit.schemas import (
     InventoryAuditCreate,
@@ -26,7 +26,7 @@ def get_inventory_audit_service(db: AsyncSession = Depends(get_db)) -> Inventory
     return InventoryAuditService(repo)
 
 
-@router.post("", response_model=InventoryAuditOut)
+@router.post("", response_model=InventoryAuditOut, dependencies=[Depends(require_permission("inventory.write"))])
 async def create_audit(
     data: InventoryAuditCreate,
     service: InventoryAuditService = Depends(get_inventory_audit_service),
@@ -36,7 +36,7 @@ async def create_audit(
     return await service.create_audit(data)
 
 
-@router.get("", response_model=List[InventoryAuditOut])
+@router.get("", response_model=List[InventoryAuditOut], dependencies=[Depends(require_permission("inventory.read"))])
 async def list_audits(
     unit_id: Optional[uuid.UUID] = None,
     service: InventoryAuditService = Depends(get_inventory_audit_service),
@@ -45,7 +45,7 @@ async def list_audits(
     return await service.list_audits(unit_id)
 
 
-@router.get("/{audit_id}", response_model=InventoryAuditWithItemsOut)
+@router.get("/{audit_id}", response_model=InventoryAuditWithItemsOut, dependencies=[Depends(require_permission("inventory.read"))])
 async def get_audit(
     audit_id: uuid.UUID,
     service: InventoryAuditService = Depends(get_inventory_audit_service),
@@ -54,7 +54,7 @@ async def get_audit(
     return await service.get_audit(audit_id)
 
 
-@router.patch("/{audit_id}", response_model=InventoryAuditOut)
+@router.patch("/{audit_id}", response_model=InventoryAuditOut, dependencies=[Depends(require_permission("inventory.write"))])
 async def update_audit(
     audit_id: uuid.UUID,
     data: InventoryAuditUpdate,
@@ -64,7 +64,7 @@ async def update_audit(
     return await service.update_audit(audit_id, data)
 
 
-@router.post("/{audit_id}/items", response_model=InventoryAuditItemOut)
+@router.post("/{audit_id}/items", response_model=InventoryAuditItemOut, dependencies=[Depends(require_permission("inventory.write"))])
 async def add_item_to_audit(
     audit_id: uuid.UUID,
     data: InventoryAuditItemCreate,
@@ -74,7 +74,7 @@ async def add_item_to_audit(
     return await service.add_item_to_audit(audit_id, data)
 
 
-@router.patch("/{audit_id}/items/{item_id}", response_model=InventoryAuditItemOut)
+@router.patch("/{audit_id}/items/{item_id}", response_model=InventoryAuditItemOut, dependencies=[Depends(require_permission("inventory.write"))])
 async def update_audit_item(
     audit_id: uuid.UUID,
     item_id: uuid.UUID,

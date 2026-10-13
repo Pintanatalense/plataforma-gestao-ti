@@ -1,22 +1,8 @@
 import { Routes } from '@angular/router';
 import { LoginComponent } from './features/auth/login/login.component';
 import { ShellComponent } from './core/layout/shell/shell.component';
-import { inject } from '@angular/core';
-import { AuthService } from './core/auth/auth.service';
-import { Router } from '@angular/router';
 import { setupGuard } from './core/auth/setup.guard';
-
-const authGuard = () => {
-  const authService = inject(AuthService);
-  const router = inject(Router);
-  
-  if (authService.token) {
-    return true;
-  }
-  
-  router.navigate(['/login']);
-  return false;
-};
+import { authGuard, guestGuard, permissionGuard } from './core/auth/auth.guard';
 
 export const routes: Routes = [
   {
@@ -26,7 +12,8 @@ export const routes: Routes = [
   },
   {
     path: 'login',
-    component: LoginComponent
+    component: LoginComponent,
+    canActivate: [guestGuard]
   },
   {
     path: 'change-password',
@@ -49,22 +36,27 @@ export const routes: Routes = [
       },
       {
         path: 'organization',
+        canActivate: [permissionGuard('organization.units.read')],
         loadComponent: () => import('./features/organization/unit-list/unit-list.component').then(m => m.UnitList)
       },
       {
         path: 'organization/sectors',
+        canActivate: [permissionGuard('organization.sectors.read')],
         loadComponent: () => import('./features/organization/sector-list/sector-list.component').then(m => m.SectorList)
       },
       {
         path: 'organization/employees',
+        canActivate: [permissionGuard('organization.employees.read')],
         loadComponent: () => import('./features/organization/employee-list/employee-list.component').then(m => m.EmployeeList)
       },
       {
         path: 'identity/users',
+        canActivate: [permissionGuard('identity.users.read')],
         loadComponent: () => import('./features/identity/user-list/user-list.component').then(m => m.UserList)
       },
       {
         path: 'identity/roles',
+        canActivate: [permissionGuard('identity.roles.read')],
         loadComponent: () => import('./features/identity/role-list/role-list.component').then(m => m.RoleList)
       },
       {
@@ -73,6 +65,7 @@ export const routes: Routes = [
       },
       {
         path: 'service-desk/categories',
+        canActivate: [permissionGuard('service_desk.tickets.manage')],
         loadComponent: () => import('./features/service-desk/category-list/category-list.component').then(m => m.CategoryListComponent)
       },
       {
@@ -85,34 +78,42 @@ export const routes: Routes = [
       },
       {
         path: 'assets',
+        canActivate: [permissionGuard('assets.read')],
         loadComponent: () => import('./features/assets/asset-list/asset-list.component').then(m => m.AssetListComponent)
       },
       {
         path: 'assets/new',
+        canActivate: [permissionGuard('assets.write')],
         loadComponent: () => import('./features/assets/asset-create/asset-create.component').then(m => m.AssetCreateComponent)
       },
       {
         path: 'assets/:id',
+        canActivate: [permissionGuard('assets.read')],
         loadComponent: () => import('./features/assets/asset-detail/asset-detail.component').then(m => m.AssetDetailComponent)
       },
       {
         path: 'stock',
+        canActivate: [permissionGuard('stock.read')],
         loadComponent: () => import('./features/stock/stock-list/stock-list.component').then(m => m.StockListComponent)
       },
       {
         path: 'stock/new',
+        canActivate: [permissionGuard('stock.write')],
         loadComponent: () => import('./features/stock/stock-create/stock-create.component').then(m => m.StockCreateComponent)
       },
       {
         path: 'stock/:id',
+        canActivate: [permissionGuard('stock.read')],
         loadComponent: () => import('./features/stock/stock-detail/stock-detail.component').then(m => m.StockDetailComponent)
       },
       {
         path: 'inventory',
+        canActivate: [permissionGuard('inventory.read')],
         loadComponent: () => import('./features/inventory/inventory-list/inventory-list.component').then(m => m.InventoryListComponent)
       },
       {
         path: 'inventory/:id',
+        canActivate: [permissionGuard('inventory.read')],
         loadComponent: () => import('./features/inventory/inventory-detail/inventory-detail.component').then(m => m.InventoryDetailComponent)
       }
     ]

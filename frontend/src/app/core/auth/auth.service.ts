@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { BehaviorSubject, Observable, tap } from 'rxjs';
+import { BehaviorSubject, Observable, catchError, of, tap } from 'rxjs';
 import { Router } from '@angular/router';
 
 interface TokenResponse {
@@ -77,6 +77,19 @@ export class AuthService {
   fetchCurrentUser(): Observable<UserAccount> {
     return this.http.get<UserAccount>(`${this.apiUrl}/me`).pipe(
       tap(user => this.currentUserSubject.next(user))
+    );
+  }
+
+  /** Retorna o usuário em memória ou o carrega via /me; null se a sessão for inválida. */
+  ensureUser(): Observable<UserAccount | null> {
+    const current = this.currentUserValue;
+    if (current) return of(current);
+    if (!this.token) return of(null);
+    return this.fetchCurrentUser().pipe(
+      catchError(() => {
+        localStorage.removeItem('access_token');
+        return of(null);
+      })
     );
   }
 
