@@ -73,7 +73,104 @@
           </div>
         </div>
         
-        <app-attachments [entityType]="'ASSET'" [entityId]="asset.id"></app-attachments>
+        <!-- RESPONSIBILITY STATEMENT & EXTERNAL SIGNATURE CARD -->
+        <div class="glass-card responsibility-flow-card" *ngIf="asset.employee_id; else inStockStatementInfo">
+          <div class="card-header flow-card-header">
+            <div class="flow-title-group">
+              <mat-icon class="flow-icon">assignment_turned_in</mat-icon>
+              <div>
+                <h3>Termo de Responsabilidade e Cautela</h3>
+                <p class="flow-subtitle">Fluxo de assinatura externa (DocuSign, Clicksign, Gov.br ou físico) e anexo ao ativo</p>
+              </div>
+            </div>
+
+            <div class="statement-status-badge" [ngClass]="hasSignedStatement ? 'status-signed' : 'status-pending'">
+              <mat-icon>{{ hasSignedStatement ? 'verified' : 'pending_actions' }}</mat-icon>
+              <span>{{ hasSignedStatement ? 'Termo Assinado Anexado' : 'Aguardando Anexo do Termo' }}</span>
+            </div>
+          </div>
+
+          <div class="flow-steps-grid">
+            <!-- Passo 1 -->
+            <div class="flow-step step-done">
+              <div class="step-badge">1</div>
+              <div class="step-content">
+                <span class="step-title">Gerar Termo Oficial</span>
+                <span class="step-desc">Gera o documento formal pronto com os dados do equipamento e do colaborador responsável.</span>
+                <button mat-stroked-button color="primary" class="step-action-btn" (click)="printResponsibilityStatement()">
+                  <mat-icon>description</mat-icon> Gerar / Imprimir Termo
+                </button>
+              </div>
+            </div>
+
+            <div class="flow-arrow">
+              <mat-icon>arrow_forward</mat-icon>
+            </div>
+
+            <!-- Passo 2 -->
+            <div class="flow-step" [class.step-done]="hasSignedStatement">
+              <div class="step-badge">2</div>
+              <div class="step-content">
+                <span class="step-title">Coletar Assinatura Externa</span>
+                <span class="step-desc">Envie o documento para assinatura no Clicksign, DocuSign, Gov.br ou recolha assinatura física.</span>
+                <div class="step-info-tag">
+                  <mat-icon>open_in_new</mat-icon> Realizada em sistema externo
+                </div>
+              </div>
+            </div>
+
+            <div class="flow-arrow">
+              <mat-icon>arrow_forward</mat-icon>
+            </div>
+
+            <!-- Passo 3 -->
+            <div class="flow-step" [class.step-done]="hasSignedStatement">
+              <div class="step-badge">3</div>
+              <div class="step-content">
+                <span class="step-title">Anexar Documento Assinado</span>
+                <span class="step-desc" *ngIf="hasSignedStatement">
+                  Documento assinado vinculado: <strong>{{ signedStatementFile?.filename }}</strong>
+                </span>
+                <span class="step-desc" *ngIf="!hasSignedStatement">
+                  Faça o upload do termo assinado (.pdf, .jpg, .png) para vincular permanentemente ao histórico do ativo.
+                </span>
+
+                <div class="step-actions">
+                  <input type="file" #statementFileInput (change)="onUploadStatementFile($event)" style="display: none" accept=".pdf,.png,.jpg,.jpeg">
+                  <button mat-flat-button color="primary" class="step-action-btn" (click)="statementFileInput.click()" [disabled]="isUploadingStatement">
+                    <mat-icon>{{ isUploadingStatement ? 'hourglass_top' : 'cloud_upload' }}</mat-icon>
+                    {{ hasSignedStatement ? 'Substituir / Novo Termo' : 'Anexar Termo Assinado' }}
+                  </button>
+                  <button *ngIf="signedStatementFile" mat-stroked-button class="step-action-btn secondary" (click)="downloadAttachment(signedStatementFile)">
+                    <mat-icon>visibility</mat-icon> Visualizar Termo
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="isUploadingStatement" class="upload-progress-box">
+            <span>Enviando termo assinado... {{ uploadProgress }}%</span>
+            <mat-progress-bar mode="determinate" [value]="uploadProgress"></mat-progress-bar>
+          </div>
+        </div>
+
+        <ng-template #inStockStatementInfo>
+          <div class="glass-card responsibility-instock-card">
+            <div class="card-header">
+              <mat-icon class="stock-info-icon">inventory_2</mat-icon>
+              <div>
+                <h3>Termo de Responsabilidade e Cautela</h3>
+                <p class="flow-subtitle">Ativo em estoque (sem colaborador responsável vinculado)</p>
+              </div>
+            </div>
+            <p class="instock-text">
+              Este equipamento não possui colaborador atribuído no momento. Assim que uma movimentação vincular o ativo a um colaborador, o fluxo de geração e anexo do termo assinado ficará disponível nesta seção.
+            </p>
+          </div>
+        </ng-template>
+        
+        <app-attachments #attachmentsComp [entityType]="'ASSET'" [entityId]="asset.id" (attachmentsChange)="onAttachmentsChanged($event)"></app-attachments>
 
       </div>
     </mat-tab>

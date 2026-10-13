@@ -61,16 +61,28 @@ Este documento sumariza o status atual do projeto, as funcionalidades recém-ent
    - `tests/test_e2e_lifecycle.py`:
      - Teste de ciclo de vida completo: Organização -> Ativos com specs JSONB -> Insumos em Estoque -> Abertura de Chamado associando Ativo -> Atendimento com chat público e notas internas isoladas -> Anexo de evidências fotográficas/documentais -> Consumo de insumo com baixa automática no estoque -> Encerramento do chamado -> Push de notificação e leitura -> Auditoria administrativa com bloqueio a usuários sem privilégios.
      - Teste da Matriz RBAC para os 4 perfis operacionais: `Admin`, `Gestor`, `Técnico` e `Colaborador`.
-   - Suíte de testes: 91 testes aprovados (2 baseline xfailed documentados).
+   - Suíte de testes backend: 92 aprovados, 1 baseline xfailed documentado.
+
+8. **Termo de Responsabilidade & Cautela e Fluxo de Assinatura Externa**
+   - **Geração Formal de Documento (Backend)**: endpoint `GET /api/v1/assets/{asset_id}/responsibility-statement` gerando HTML padronizado com `@media print`, dados cadastrais da empresa, colaborador vinculado, especificações técnicas detalhadas e cláusulas de zelo.
+   - **Fluxo Operacional de Assinatura Externa (Frontend)**:
+     - Card dedicado guiando os 3 passos: 1. Gerar Termo Oficial -> 2. Coletar Assinatura Externa (Clicksign, DocuSign, Gov.br ou física) -> 3. Anexar Documento Assinado diretamente ao ativo.
+     - Indicador visual dinâmico de status: `Termo Assinado Anexado` (verde) vs `Aguardando Anexo do Termo` (âmbar).
+     - Upload direto com barra de progresso e botão para visualização imediata do documento anexado.
+     - Destaque e detecção automática de termos com badge `Termo Assinado` na listagem de anexos.
+     - Ação rápida na listagem de ativos para gerar termo diretamente com 1 clique para equipamentos atribuídos.
+   - **Suíte Frontend**: 21 arquivos de teste e 25 testes unitários 100% aprovados via Vitest.
 
 ---
 
 ## 🎯 Status do MVP
 
-Todas as 7 Fases do roadmap foram concluídas integralmente:
+Todas as Fases do roadmap foram concluídas integralmente:
 - MOD-01 a MOD-12 100% operacionais e integrados.
+- Fluxo de Termo de Responsabilidade e Assinatura Externa finalizado e validado.
 - Interface rica com Material 3, responsiva para dispositivos móveis e desktops.
-- Suíte automatizada de testes cobrindo unidade, integração, auditoria, anexos, notificações e E2E.
-- Sistema pronto para publicação, homologação em staging e deploy via Docker Compose.
+- Suíte automatizada de testes cobrindo unidade, integração, auditoria, anexos, notificações e E2E (92 backend + 25 frontend).
+- Sistema pronto para publicação, homologação e deploy via Docker Compose com migrations e seed automáticos.
+
 
 

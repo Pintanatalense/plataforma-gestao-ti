@@ -83,4 +83,9 @@ export class AssetListComponent implements OnInit {
         return status;
     }
   }
+
+  printResponsibilityStatement(assetId: string, event: Event): void {
+    event.stopPropagation();
+    this.assetService.openResponsibilityStatement(assetId);
+  }
 }

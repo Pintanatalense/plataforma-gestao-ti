@@ -183,6 +183,251 @@
         }
       }
 
+      .responsibility-flow-card {
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.04);
+        margin-bottom: 24px;
+        padding: 24px;
+
+        .flow-card-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: flex-start;
+          flex-wrap: wrap;
+          gap: 16px;
+          margin-bottom: 20px;
+
+          .flow-title-group {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+
+            .flow-icon {
+              font-size: 28px;
+              width: 28px;
+              height: 28px;
+              color: #2563eb;
+              margin-top: 2px;
+            }
+
+            h3 {
+              font-size: 17px;
+              font-weight: 600;
+              margin: 0;
+              color: #0f172a;
+            }
+
+            .flow-subtitle {
+              margin: 4px 0 0;
+              font-size: 13px;
+              color: #64748b;
+            }
+          }
+
+          .statement-status-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 14px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+
+            mat-icon {
+              font-size: 16px;
+              width: 16px;
+              height: 16px;
+            }
+
+            &.status-signed {
+              background: #ecfdf5;
+              color: #059669;
+              border: 1px solid #a7f3d0;
+            }
+
+            &.status-pending {
+              background: #fffbeb;
+              color: #d97706;
+              border: 1px solid #fde68a;
+            }
+          }
+        }
+
+        .flow-steps-grid {
+          display: flex;
+          align-items: stretch;
+          gap: 14px;
+
+          @media (max-width: 960px) {
+            flex-direction: column;
+          }
+
+          .flow-step {
+            flex: 1;
+            display: flex;
+            gap: 12px;
+            padding: 16px;
+            background: #f8fafc;
+            border: 1px solid #e2e8f0;
+            border-radius: 10px;
+            position: relative;
+            transition: all 0.2s ease;
+
+            &.step-done {
+              border-color: #cbd5e1;
+              background: #ffffff;
+            }
+
+            .step-badge {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              width: 28px;
+              height: 28px;
+              border-radius: 50%;
+              background: #e2e8f0;
+              color: #334155;
+              font-weight: 700;
+              font-size: 13px;
+              flex-shrink: 0;
+            }
+
+            &.step-done .step-badge {
+              background: #2563eb;
+              color: #ffffff;
+            }
+
+            .step-content {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+              flex: 1;
+
+              .step-title {
+                font-size: 14px;
+                font-weight: 600;
+                color: #1e293b;
+              }
+
+              .step-desc {
+                font-size: 12px;
+                color: #64748b;
+                line-height: 1.4;
+                flex: 1;
+              }
+
+              .step-info-tag {
+                display: inline-flex;
+                align-items: center;
+                gap: 4px;
+                font-size: 12px;
+                color: #2563eb;
+                background: #eff6ff;
+                padding: 4px 8px;
+                border-radius: 6px;
+                margin-top: 8px;
+                font-weight: 500;
+                width: fit-content;
+
+                mat-icon {
+                  font-size: 14px;
+                  width: 14px;
+                  height: 14px;
+                }
+              }
+
+              .step-action-btn {
+                margin-top: 10px;
+                font-size: 13px;
+                font-weight: 500;
+                display: inline-flex;
+                align-items: center;
+                gap: 6px;
+              }
+
+              .step-actions {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 8px;
+                margin-top: 10px;
+
+                .step-action-btn.secondary {
+                  color: #334155;
+                  border-color: #cbd5e1;
+                }
+              }
+            }
+          }
+
+          .flow-arrow {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #94a3b8;
+
+            @media (max-width: 960px) {
+              transform: rotate(90deg);
+              margin: 4px 0;
+            }
+          }
+        }
+
+        .upload-progress-box {
+          margin-top: 16px;
+          padding: 12px;
+          background: #eff6ff;
+          border-radius: 8px;
+
+          span {
+            font-size: 12px;
+            color: #1e40af;
+            display: block;
+            margin-bottom: 6px;
+          }
+        }
+      }
+
+      .responsibility-instock-card {
+        background: #f8fafc;
+        border: 1px dashed #cbd5e1;
+        border-radius: 12px;
+        margin-bottom: 24px;
+        padding: 20px;
+
+        .card-header {
+          display: flex;
+          align-items: center;
+          gap: 12px;
+          margin-bottom: 8px;
+
+          .stock-info-icon {
+            color: #64748b;
+          }
+
+          h3 {
+            margin: 0;
+            font-size: 15px;
+            font-weight: 600;
+            color: #334155;
+          }
+
+          .flow-subtitle {
+            margin: 2px 0 0;
+            font-size: 12px;
+            color: #64748b;
+          }
+        }
+
+        .instock-text {
+          margin: 0;
+          font-size: 13px;
+          color: #64748b;
+          line-height: 1.5;
+        }
+      }
+
       .timeline-container {
         padding: 12px 0;
 

@@ -88,4 +88,13 @@ export class AssetService {
   createMovement(data: any): Observable<AssetMovement> {
     return this.http.post<AssetMovement>(`${this.movementsUrl}/`, data);
   }
+
+  // Responsibility Statement
+  getResponsibilityStatementUrl(assetId: string): string {
+    return `${this.assetsUrl}/${assetId}/responsibility-statement`;
+  }
+
+  openResponsibilityStatement(assetId: string): void {
+    window.open(this.getResponsibilityStatementUrl(assetId), '_blank');
+  }
 }

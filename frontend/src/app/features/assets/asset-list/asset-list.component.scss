@@ -111,15 +111,19 @@
         }
       }
 
-      .action-buttons {
-        display: flex;
-        justify-content: flex-end;
-        gap: 8px;
+        .action-buttons {
+          display: flex;
+          justify-content: flex-end;
+          gap: 8px;
 
-        .view-btn {
-          color: #3b82f6;
+          .doc-btn {
+            color: #0284c7;
+          }
+
+          .view-btn {
+            color: #3b82f6;
+          }
         }
-      }
     }
 
     .empty-state {

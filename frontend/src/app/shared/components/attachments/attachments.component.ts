@@ -1,4 +1,4 @@
-import { Component, Input, OnInit, inject } from '@angular/core';
+import { Component, Input, Output, EventEmitter, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -36,12 +36,17 @@ import { AttachmentsService, Attachment } from '../../../core/services/attachmen
       </div>
 
       <div class="attachments-grid" *ngIf="attachments.length > 0">
-        <div class="attachment-card" *ngFor="let file of attachments">
+        <div class="attachment-card" *ngFor="let file of attachments" [class.is-termo]="isTermo(file.filename)">
           <div class="file-icon" [ngClass]="getFileColor(file.content_type)">
             <mat-icon>{{ getFileIcon(file.content_type) }}</mat-icon>
           </div>
           <div class="file-info" (click)="download(file)">
-            <span class="file-name" [matTooltip]="file.filename">{{ file.filename }}</span>
+            <div class="file-name-row">
+              <span class="file-name" [matTooltip]="file.filename">{{ file.filename }}</span>
+              <span class="termo-badge" *ngIf="isTermo(file.filename)">
+                <mat-icon>verified</mat-icon> Termo Assinado
+              </span>
+            </div>
             <span class="file-meta">{{ formatBytes(file.size_bytes) }} • {{ file.created_at | date:'dd/MM/yy HH:mm' }}</span>
           </div>
           <button mat-icon-button color="warn" class="delete-btn" (click)="deleteFile(file.id)" matTooltip="Remover anexo">
@@ -99,6 +104,11 @@ import { AttachmentsService, Attachment } from '../../../core/services/attachmen
       gap: 12px;
       transition: all 0.2s ease;
       
+      &.is-termo {
+        border-color: #6ee7b7;
+        background: rgba(16, 185, 129, 0.03);
+      }
+
       &:hover {
         border-color: var(--mat-sys-primary);
         box-shadow: 0 2px 8px rgba(0,0,0,0.05);
@@ -129,6 +139,13 @@ import { AttachmentsService, Attachment } from '../../../core/services/attachmen
       overflow: hidden;
       cursor: pointer;
       
+      .file-name-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        overflow: hidden;
+      }
+
       .file-name {
         font-weight: 500;
         font-size: 14px;
@@ -136,6 +153,26 @@ import { AttachmentsService, Attachment } from '../../../core/services/attachmen
         overflow: hidden;
         text-overflow: ellipsis;
         color: var(--mat-sys-on-surface);
+      }
+
+      .termo-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 3px;
+        background: #ecfdf5;
+        color: #059669;
+        border: 1px solid #a7f3d0;
+        border-radius: 12px;
+        font-size: 11px;
+        font-weight: 600;
+        padding: 1px 7px;
+        white-space: nowrap;
+
+        mat-icon {
+          font-size: 13px;
+          width: 13px;
+          height: 13px;
+        }
       }
       
       .file-meta {
@@ -166,6 +203,7 @@ import { AttachmentsService, Attachment } from '../../../core/services/attachmen
 export class AttachmentsComponent implements OnInit {
   @Input() entityType!: string;
   @Input() entityId!: string;
+  @Output() attachmentsChange = new EventEmitter<Attachment[]>();
 
   attachments: Attachment[] = [];
   
@@ -180,10 +218,16 @@ export class AttachmentsComponent implements OnInit {
     this.loadAttachments();
   }
 
+  isTermo(filename: string): boolean {
+    const lower = filename.toLowerCase();
+    return lower.includes('termo') || lower.includes('cautela') || lower.includes('assinado') || lower.includes('responsabilidade');
+  }
+
   loadAttachments() {
     if (!this.entityType || !this.entityId) return;
     this.attachmentsService.getAttachments(this.entityType, this.entityId).subscribe(data => {
       this.attachments = data;
+      this.attachmentsChange.emit(this.attachments);
     });
   }
 
