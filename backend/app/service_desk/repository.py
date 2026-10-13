@@ -9,7 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.service_desk.models import Ticket, TicketCategory, TicketInteraction
+from app.service_desk.models import Ticket, TicketCategory, TicketInteraction, TicketMaterial
 from app.assets.models import Asset
 
 
