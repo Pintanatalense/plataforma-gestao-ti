@@ -21,6 +21,7 @@
         <mat-form-field appearance="outline" class="half-width">
           <mat-label>Categoria</mat-label>
           <mat-select formControlName="category_id">
+            <mat-option [value]="null">Geral / Não categorizado</mat-option>
             <mat-option *ngFor="let cat of categories" [value]="cat.id">
               {{ cat.name }}
             </mat-option>
@@ -33,10 +34,21 @@
             <mat-option value="LOW">Baixa</mat-option>
             <mat-option value="MEDIUM">Média</mat-option>
             <mat-option value="HIGH">Alta</mat-option>
-            <mat-option value="URGENT">Urgente</mat-option>
+            <mat-option value="CRITICAL">Crítica</mat-option>
           </mat-select>
         </mat-form-field>
       </div>
+
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Equipamento / Ativo Relacionado (Opcional)</mat-label>
+        <mat-select formControlName="asset_id">
+          <mat-option [value]="null">Nenhum / Não aplicável</mat-option>
+          <mat-option *ngFor="let asset of availableAssets" [value]="asset.id">
+            [{{ asset.tag }}] {{ asset.name }}
+          </mat-option>
+        </mat-select>
+        <mat-icon matPrefix>devices</mat-icon>
+      </mat-form-field>
 
       <mat-form-field appearance="outline" class="full-width">
         <mat-label>Descrição detalhada</mat-label>

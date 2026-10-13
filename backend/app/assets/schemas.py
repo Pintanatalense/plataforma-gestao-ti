@@ -1,8 +1,10 @@
+import uuid
 from datetime import date
 from typing import Any
-import uuid
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+
+from app.assets.models import AssetStatus
 
 
 class AssetCategoryBase(BaseModel):
@@ -22,15 +24,14 @@ class AssetCategoryUpdate(AssetCategoryBase):
 class AssetCategoryResponse(AssetCategoryBase):
     id: uuid.UUID
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 
 class AssetBase(BaseModel):
     tag: str = Field(..., max_length=50)
     name: str = Field(..., max_length=255)
     category_id: uuid.UUID
-    status: str = Field("IN_STOCK", max_length=50)
+    status: AssetStatus = Field(default=AssetStatus.IN_STOCK)
     technical_specs: dict[str, Any] = Field(default_factory=dict)
     purchase_date: date | None = None
     warranty_expires: date | None = None
@@ -51,5 +52,4 @@ class AssetResponse(AssetBase):
     id: uuid.UUID
     category: AssetCategoryResponse
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

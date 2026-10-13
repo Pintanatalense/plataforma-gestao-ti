@@ -1,7 +1,7 @@
 import uuid
 from datetime import datetime
 from typing import Optional, List
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class InventoryAuditItemBase(BaseModel):
@@ -26,13 +26,12 @@ class InventoryAuditItemUpdate(BaseModel):
 
 
 class InventoryAuditItemOut(InventoryAuditItemBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     audit_id: uuid.UUID
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class InventoryAuditBase(BaseModel):
@@ -54,6 +53,8 @@ class InventoryAuditUpdate(BaseModel):
 
 
 class InventoryAuditOut(InventoryAuditBase):
+    model_config = ConfigDict(from_attributes=True)
+
     id: uuid.UUID
     status: str
     start_date: Optional[datetime]
@@ -61,9 +62,6 @@ class InventoryAuditOut(InventoryAuditBase):
     notes: Optional[str]
     created_at: datetime
     updated_at: datetime
-
-    class Config:
-        from_attributes = True
 
 
 class InventoryAuditWithItemsOut(InventoryAuditOut):

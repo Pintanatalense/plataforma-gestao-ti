@@ -1,6 +1,6 @@
 import uuid
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import HTTPException, status
 
 from app.inventory_audit.models import InventoryAudit, InventoryAuditItem
@@ -37,11 +37,11 @@ class InventoryAuditService:
         
         # Se estivermos fechando o inventário, gravar end_date se não foi passado
         if data.status == "CLOSED" and not data.end_date and not audit.end_date:
-            data.end_date = datetime.utcnow()
+            data.end_date = datetime.now(timezone.utc)
             
         # Se mudar para IN_PROGRESS, gravar start_date se não existir
         if data.status == "IN_PROGRESS" and not data.start_date and not audit.start_date:
-            data.start_date = datetime.utcnow()
+            data.start_date = datetime.now(timezone.utc)
             
         return await self.repo.update(audit, data)
 

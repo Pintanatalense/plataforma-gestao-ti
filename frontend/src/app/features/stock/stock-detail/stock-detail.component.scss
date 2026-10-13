@@ -1,0 +1,292 @@
+.page-container {
+  padding: 16px 0;
+
+  .page-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+
+    .header-content {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+
+      .title-group {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+
+        h1 {
+          margin: 0;
+          font-size: 24px;
+          font-weight: 600;
+          color: var(--mat-sys-primary, #1e293b);
+        }
+
+        .unit-badge {
+          display: inline-flex;
+          align-items: center;
+          gap: 4px;
+          background-color: #f1f5f9;
+          color: #475569;
+          padding: 4px 8px;
+          border-radius: 6px;
+          font-size: 13px;
+
+          mat-icon {
+            font-size: 16px;
+            width: 16px;
+            height: 16px;
+          }
+        }
+      }
+    }
+
+    .header-status {
+      .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 14px;
+        border-radius: 16px;
+        font-size: 13px;
+        font-weight: 600;
+
+        mat-icon {
+          font-size: 18px;
+          width: 18px;
+          height: 18px;
+        }
+
+        &.status-low {
+          background-color: #fef2f2;
+          color: #dc2626;
+        }
+
+        &.status-ok {
+          background-color: #ecfdf5;
+          color: #059669;
+        }
+      }
+    }
+  }
+
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 24px;
+
+    @media (max-width: 900px) {
+      grid-template-columns: 1fr;
+    }
+
+    .glass-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      padding: 24px;
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
+
+      &.full-height {
+        height: calc(100% - 48px);
+      }
+
+      .card-header {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-bottom: 20px;
+        color: var(--mat-sys-primary, #1e293b);
+
+        h3 {
+          margin: 0;
+          font-size: 16px;
+          font-weight: 600;
+        }
+      }
+
+      .info-grid {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+
+        .info-item {
+          display: flex;
+          flex-direction: column;
+
+          .label {
+            font-size: 12px;
+            color: #64748b;
+            text-transform: uppercase;
+            font-weight: 500;
+            margin-bottom: 4px;
+          }
+
+          .value {
+            font-size: 14px;
+            color: #1e293b;
+            font-weight: 500;
+
+            &.qty-text {
+              font-size: 20px;
+              font-weight: 700;
+              color: #059669;
+
+              &.low {
+                color: #dc2626;
+              }
+            }
+          }
+        }
+      }
+
+      .movement-form {
+        .row-fields {
+          display: flex;
+          gap: 16px;
+
+          .half-width {
+            flex: 1;
+          }
+        }
+
+        .full-width {
+          width: 100%;
+        }
+
+        .form-actions {
+          display: flex;
+          justify-content: flex-end;
+        }
+      }
+
+      .timeline-container {
+        .timeline {
+          display: flex;
+          flex-direction: column;
+
+          .timeline-item {
+            display: flex;
+            gap: 16px;
+
+            .timeline-marker {
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+
+              .marker-dot {
+                width: 24px;
+                height: 24px;
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+
+                mat-icon {
+                  font-size: 14px;
+                  width: 14px;
+                  height: 14px;
+                }
+
+                &.dot-in {
+                  background-color: #ecfdf5;
+                  color: #059669;
+                }
+
+                &.dot-out {
+                  background-color: #fef2f2;
+                  color: #dc2626;
+                }
+
+                &.dot-adjust {
+                  background-color: #eff6ff;
+                  color: #2563eb;
+                }
+              }
+
+              .marker-line {
+                width: 2px;
+                flex: 1;
+                background-color: #e2e8f0;
+                min-height: 36px;
+              }
+            }
+
+            .timeline-content {
+              flex: 1;
+              margin-bottom: 16px;
+
+              .timeline-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+
+                .title {
+                  display: flex;
+                  align-items: center;
+                  gap: 8px;
+                  font-size: 14px;
+
+                  .qty-badge {
+                    font-size: 13px;
+                    font-weight: 700;
+                    background-color: #f1f5f9;
+                    padding: 2px 8px;
+                    border-radius: 6px;
+                  }
+
+                  &.text-in {
+                    color: #059669;
+                  }
+
+                  &.text-out {
+                    color: #dc2626;
+                  }
+
+                  &.text-adjust {
+                    color: #2563eb;
+                  }
+                }
+
+                .date {
+                  font-size: 12px;
+                  color: #94a3b8;
+                }
+              }
+
+              .timeline-body {
+                margin-top: 4px;
+
+                .note-text {
+                  font-size: 13px;
+                  color: #64748b;
+                  font-style: italic;
+                }
+              }
+            }
+          }
+        }
+
+        .empty-state {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          padding: 36px 0;
+          color: #94a3b8;
+
+          mat-icon {
+            font-size: 40px;
+            width: 40px;
+            height: 40px;
+            margin-bottom: 8px;
+          }
+
+          p {
+            margin: 0;
+          }
+        }
+      }
+    }
+  }
+}

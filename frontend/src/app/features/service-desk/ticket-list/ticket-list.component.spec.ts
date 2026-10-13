@@ -1,16 +1,26 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { TicketList } from './ticket-list.component';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
+import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import { TicketListComponent } from './ticket-list.component';
 
-describe('TicketList', () => {
-  let component: TicketList;
-  let fixture: ComponentFixture<TicketList>;
+describe('TicketListComponent', () => {
+  let component: TicketListComponent;
+  let fixture: ComponentFixture<TicketListComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [TicketList],
+      imports: [TicketListComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        provideAnimationsAsync()
+      ]
     }).compileComponents();
 
-    fixture = TestBed.createComponent(TicketList);
+    fixture = TestBed.createComponent(TicketListComponent);
     component = fixture.componentInstance;
     await fixture.whenStable();
   });

@@ -6,6 +6,7 @@ export interface TicketCategory {
   id: string;
   name: string;
   description?: string;
+  default_sector_id?: string | null;
 }
 
 export interface TicketInteraction {
@@ -14,6 +15,15 @@ export interface TicketInteraction {
   author_id: string;
   message: string;
   is_internal: boolean;
+  created_at: string;
+}
+
+export interface TicketMaterial {
+  id: string;
+  ticket_id: string;
+  stock_item_id: string;
+  quantity: number;
+  author_id: string;
   created_at: string;
 }
 
@@ -26,9 +36,11 @@ export interface Ticket {
   requester_id: string;
   assignee_id?: string;
   category_id?: string;
+  asset_ids?: string[];
   created_at: string;
   updated_at: string;
   interactions: TicketInteraction[];
+  materials?: TicketMaterial[];
 }
 
 @Injectable({
@@ -46,7 +58,7 @@ export class TicketService {
     return this.http.get<Ticket>(`${this.apiUrl}/${id}`);
   }
 
-  createTicket(payload: {title: string, description: string, priority: string, category_id?: string}): Observable<Ticket> {
+  createTicket(payload: { title: string; description: string; priority: string; category_id?: string; asset_ids?: string[] }): Observable<Ticket> {
     return this.http.post<Ticket>(this.apiUrl, payload);
   }
 
@@ -57,8 +69,20 @@ export class TicketService {
     });
   }
 
+  addMaterial(ticketId: string, payload: { stock_item_id: string; quantity: number }): Observable<TicketMaterial> {
+    return this.http.post<TicketMaterial>(`${this.apiUrl}/${ticketId}/materials`, payload);
+  }
+
   getCategories(): Observable<TicketCategory[]> {
     return this.http.get<TicketCategory[]>(`${this.apiUrl}/categories`);
+  }
+
+  createCategory(payload: { name: string; description?: string; default_sector_id?: string | null }): Observable<TicketCategory> {
+    return this.http.post<TicketCategory>(`${this.apiUrl}/categories`, payload);
+  }
+
+  updateCategory(id: string, payload: { name?: string; description?: string; default_sector_id?: string | null }): Observable<TicketCategory> {
+    return this.http.patch<TicketCategory>(`${this.apiUrl}/categories/${id}`, payload);
   }
 
   updateTicket(ticketId: string, payload: any): Observable<Ticket> {

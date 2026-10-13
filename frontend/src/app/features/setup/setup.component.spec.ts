@@ -1,16 +1,26 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
-import { Setup } from './setup.component';
+import { provideHttpClient } from '@angular/common/http';
+import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { provideRouter } from '@angular/router';
+import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
+import { SetupComponent } from './setup.component';
 
-describe('Setup', () => {
-  let component: Setup;
-  let fixture: ComponentFixture<Setup>;
+describe('SetupComponent', () => {
+  let component: SetupComponent;
+  let fixture: ComponentFixture<SetupComponent>;
 
   beforeEach(async () => {
     await TestBed.configureTestingModule({
-      imports: [Setup],
+      imports: [SetupComponent],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        provideAnimationsAsync()
+      ]
     }).compileComponents();
 
-    fixture = TestBed.createComponent(Setup);
+    fixture = TestBed.createComponent(SetupComponent);
     component = fixture.componentInstance;
     await fixture.whenStable();
   });

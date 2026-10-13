@@ -72,12 +72,48 @@ export const routes: Routes = [
         loadComponent: () => import('./features/service-desk/ticket-list/ticket-list.component').then(m => m.TicketListComponent)
       },
       {
+        path: 'service-desk/categories',
+        loadComponent: () => import('./features/service-desk/category-list/category-list.component').then(m => m.CategoryListComponent)
+      },
+      {
         path: 'service-desk/new',
         loadComponent: () => import('./features/service-desk/ticket-create/ticket-create.component').then(m => m.TicketCreateComponent)
       },
       {
         path: 'service-desk/:id',
         loadComponent: () => import('./features/service-desk/ticket-detail/ticket-detail.component').then(m => m.TicketDetailComponent)
+      },
+      {
+        path: 'assets',
+        loadComponent: () => import('./features/assets/asset-list/asset-list.component').then(m => m.AssetListComponent)
+      },
+      {
+        path: 'assets/new',
+        loadComponent: () => import('./features/assets/asset-create/asset-create.component').then(m => m.AssetCreateComponent)
+      },
+      {
+        path: 'assets/:id',
+        loadComponent: () => import('./features/assets/asset-detail/asset-detail.component').then(m => m.AssetDetailComponent)
+      },
+      {
+        path: 'stock',
+        loadComponent: () => import('./features/stock/stock-list/stock-list.component').then(m => m.StockListComponent)
+      },
+      {
+        path: 'stock/new',
+        loadComponent: () => import('./features/stock/stock-create/stock-create.component').then(m => m.StockCreateComponent)
+      },
+      {
+        path: 'stock/:id',
+        loadComponent: () => import('./features/stock/stock-detail/stock-detail.component').then(m => m.StockDetailComponent)
+      },
+      {
+        path: 'inventory',
+        loadComponent: () => import('./features/inventory/inventory-list/inventory-list.component').then(m => m.InventoryListComponent)
+      },
+      {
+        path: 'inventory/:id',
+        loadComponent: () => import('./features/inventory/inventory-detail/inventory-detail.component').then(m => m.InventoryDetailComponent)
       }
     ]
   },

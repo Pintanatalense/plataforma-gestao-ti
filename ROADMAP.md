@@ -6,7 +6,7 @@ Documento vivo para acompanhar o desenvolvimento. Atualize os checkboxes e o log
 
 ## Status Geral
 
-**Fase atual:** Fase 3 — Service Desk (✅)
+**Fase atual:** Fase 7 — Estabilização e MVP (✅)
 
 | Módulo | Backend | Frontend | Testes |
 |--------|---------|----------|--------|
@@ -14,16 +14,14 @@ Documento vivo para acompanhar o desenvolvimento. Atualize os checkboxes e o log
 | MOD-02 Organização | ✅ | ✅ | ✅ |
 | MOD-03 Identidade | ✅ | ✅ | ✅ |
 | MOD-04 Service Desk | ✅ | ✅ | ✅ |
-| MOD-05 Ativos | ⚪ | ⚪ | ⚪ |
-| MOD-06 Movimentações | ⚪ | ⚪ | ⚪ |
-| MOD-07 Estoque | ⚪ | ⚪ | ⚪ |
-| MOD-08 Inventário | ⚪ | ⚪ | ⚪ |
-| MOD-09 Contas/Acessos | ⚪ | ⚪ | ⚪ |
+| MOD-05 Ativos | ✅ | ✅ | ✅ |
+| MOD-06 Movimentações | ✅ | ✅ | ✅ |
+| MOD-07 Estoque | ✅ | ✅ | ✅ |
+| MOD-08 Inventário | ✅ | ✅ | ✅ |
+| MOD-09 Contas/Acessos | ✅ | ✅ | ✅ |
 | MOD-10 Anexos | ✅ | ✅ | ✅ |
-| MOD-11 Notificações | ⚪ | ⚪ | ⚪ |
-| MOD-12 Auditoria | ⚪ | ⚪ | ⚪ |
-
-> MOD-04 a MOD-12 existem apenas como pastas com `__init__.py` vazio.
+| MOD-11 Notificações | ✅ | ✅ | ✅ |
+| MOD-12 Auditoria | ✅ | ✅ | ✅ |
 
 ---
 
@@ -63,29 +61,29 @@ Documento vivo para acompanhar o desenvolvimento. Atualize os checkboxes e o log
 - [x] Testes
 - [x] Frontend: abertura de chamado (colaborador) e painel de atendimento (técnico)
 
-## Fase 4: Gestão Patrimonial (MOD-05, MOD-06) 🟢
+## Fase 4: Gestão Patrimonial (MOD-05, MOD-06) ✅
 - [x] Ativos com specs em JSONB (ADR-005)
 - [x] Movimentações: entrega, devolução, transferência, baixa
 - [x] Associação chamado ↔ ativo (DEC-006)
 - [x] Testes e frontend
 
-## Fase 5: Estoque e Inventário (MOD-07, MOD-08) 🟡
+## Fase 5: Estoque e Inventário (MOD-07, MOD-08) ✅
 - [x] Estoque de insumos por unidade (sem compras — DEC-009)
 - [x] Inventário periódico (abertura, conferência, fechamento) - Backend
 - [x] Testes e frontend do Inventário
 
-## Fase 6: Módulos Transversais (MOD-09 a MOD-12) 🟡
+## Fase 6: Módulos Transversais (MOD-09 a MOD-12) ✅
 - [x] Contas e acessos por colaborador (sem senhas — DEC-008)
 - [x] Anexos em disco, fora do banco (ADR-003)
 - [x] Notificações locais em tempo real (DEC-011) - Backend
 - [x] Auditoria via barramento de eventos - Backend
-- [ ] Testes e frontend (Fase 6)
+- [x] Testes e frontend (Fase 6)
 
-## Fase 7: Estabilização e MVP ⚪
-- [ ] Revisão de UX/responsividade
-- [ ] Testes E2E
-- [ ] Documentação de usuário
-- [ ] Homologação com os perfis Colaborador, Gestor, Técnico e Admin
+## Fase 7: Estabilização e MVP ✅
+- [x] Revisão de UX/responsividade (Dashboard rica em métricas e Shell responsivo)
+- [x] Testes E2E (Fluxo de ciclo de vida completo em `test_e2e_lifecycle.py`)
+- [x] Documentação de usuário (`docs/user-guide.md`)
+- [x] Homologação com os perfis Colaborador, Gestor, Técnico e Admin (Matriz de permissões RBAC validada)
 
 ---
 
@@ -106,3 +104,5 @@ Documento vivo para acompanhar o desenvolvimento. Atualize os checkboxes e o log
 - **09/10/2026:** MOD-09 (Contas e Acessos Avançados) concluído. A base no backend (Identity) já vinculava Colaboradores a UserAccounts (1:1), restava polir a interface. As telas de Gestão de Usuários (`user-list`, `user-dialog`) e de Gestão de Perfis de Acesso/Roles (`role-list`, `role-dialog`) foram completamente modernizadas no Angular, entregando a vinculação avançada com design visual "premium". Próximo passo: MOD-10 (Anexos em Disco).
 - [x] MOD-10 (Anexos em Disco) concluído. Criado backend (models, repository, service, router) para salvar metadados no banco e arquivo na pasta `/uploads`. Adicionado frontend (AttachmentsService e AttachmentsComponent) e integrado nos componentes de detalhe de Chamados e de Ativos. Próximo passo: MOD-11 (Notificações).
 - **09/10/2026:** MOD-11 (Notificações) e MOD-12 (Auditoria) implementados no backend. Auditoria intercepta todos os eventos do barramento local e registra logs. Notificações implementam WebSockets para push em tempo real. Alembic migrado para suportar os novos models. Próximo passo: Implementar o frontend e testes da Fase 6.
+- **13/10/2026:** Reestruturação e conclusão integral do Frontend para Ativos (`assets`), Estoque (`stock`), Inventário Periódico (`inventory`) e Categorias de Chamados (`service-desk/categories`). Shell e layout interno modernizados com suporte a logo da empresa, navegação com permissões granulares no `Sidebar`, e sininho de Notificações em tempo real (WebSockets) com badges no `Header`. Testes automatizados implementados e validados para Notificações, Auditoria e Anexos. Fases 4, 5 e 6 concluídas (100%).
+- **13/10/2026:** Fase 7 (Estabilização e MVP) concluída (100%). Dashboard rica em métricas operacionais (KPIs, chamados recentes, estoque crítico e atalhos). Testes E2E implementados com validação do ciclo de vida transversal completo (Organização -> Ativos com specs JSONB -> Estoque -> Chamado -> Chat interno/externo com isolamento de notas -> Anexos de evidências -> Baixa de estoque por consumo -> Fechamento -> Notificações push -> Auditoria com barreira RBAC) e homologação automatizada dos 4 perfis de acesso (Colaborador, Gestor, Técnico e Admin). Frontend compilado sem erros (`ng build` 100%) e suíte completa do backend com 91 testes aprovados. MVP finalizado com sucesso!

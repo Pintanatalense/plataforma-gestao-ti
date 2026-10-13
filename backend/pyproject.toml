@@ -34,6 +34,11 @@ dev = [
 asyncio_mode = "auto"
 testpaths = ["tests"]
 pythonpath = ["."]
+markers = [
+    "pg: exige PostgreSQL descartável (TEST_DATABASE_URL)",
+    "migrations: testa migrations Alembic em banco descartável (TEST_DATABASE_URL)",
+    "legacy_behavior: fixa comportamento atual que será reescrito conscientemente em etapa futura",
+]
 
 [tool.ruff]
 target-version = "py312"
@@ -41,6 +46,7 @@ line-length = 120
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
+ignore = ["B008"]
 
 [tool.mypy]
 python_version = "3.12"

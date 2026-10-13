@@ -1,9 +1,7 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { environment } from '../../../environments/environment';
 import { Observable, Subject } from 'rxjs';
-import { tap } from 'rxjs/operators';
-import { AuthService } from './auth.service';
+import { AuthService } from '../auth/auth.service';
 
 export interface Notification {
   id: string;
@@ -21,12 +19,16 @@ export interface Notification {
   providedIn: 'root'
 })
 export class NotificationsService {
+  private http = inject(HttpClient);
+  private authService = inject(AuthService);
+
   private ws: WebSocket | null = null;
   private newNotificationSubject = new Subject<Notification>();
-  
   public newNotification$ = this.newNotificationSubject.asObservable();
 
-  constructor(private http: HttpClient, private authService: AuthService) {
+  private apiUrl = '/api/v1/notifications';
+
+  constructor() {
     this.authService.currentUser$.subscribe(user => {
       if (user) {
         this.connectWs();
@@ -38,32 +40,33 @@ export class NotificationsService {
 
   private connectWs() {
     if (this.ws) return;
-    
-    const token = localStorage.getItem('token');
+
+    const token = this.authService.token;
     if (!token) return;
 
-    // Use ws:// for http and wss:// for https
     const wsProtocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-    // Remove /api/v1 from API URL to get host if needed, or construct manually
-    const wsUrl = `${environment.apiUrl.replace('http', 'ws').replace('/api/v1', '')}/api/v1/notifications/ws?token=${token}`;
-    
-    this.ws = new WebSocket(wsUrl);
-    
-    this.ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
-        if (data.type === 'NEW_NOTIFICATION') {
-          this.newNotificationSubject.next(data.payload);
+    const wsUrl = `${wsProtocol}//${window.location.host}/api/v1/notifications/ws?token=${token}`;
+
+    try {
+      this.ws = new WebSocket(wsUrl);
+
+      this.ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'NEW_NOTIFICATION') {
+            this.newNotificationSubject.next(data.payload);
+          }
+        } catch (e) {
+          console.error('Failed to parse WS message', e);
         }
-      } catch (e) {
-        console.error('Failed to parse WS message', e);
-      }
-    };
-    
-    this.ws.onclose = () => {
-      this.ws = null;
-      // Implementar reconexão se desejado
-    };
+      };
+
+      this.ws.onclose = () => {
+        this.ws = null;
+      };
+    } catch (err) {
+      console.warn('Could not establish WebSocket connection', err);
+    }
   }
 
   private disconnectWs() {
@@ -74,14 +77,14 @@ export class NotificationsService {
   }
 
   getNotifications(limit: number = 50, offset: number = 0): Observable<Notification[]> {
-    return this.http.get<Notification[]>(`${environment.apiUrl}/notifications?limit=${limit}&offset=${offset}`);
+    return this.http.get<Notification[]>(`${this.apiUrl}?limit=${limit}&offset=${offset}`);
   }
 
   markAsRead(notificationId: string): Observable<Notification> {
-    return this.http.post<Notification>(`${environment.apiUrl}/notifications/${notificationId}/read`, {});
+    return this.http.post<Notification>(`${this.apiUrl}/${notificationId}/read`, {});
   }
 
   markAllAsRead(): Observable<any> {
-    return this.http.post(`${environment.apiUrl}/notifications/read-all`, {});
+    return this.http.post(`${this.apiUrl}/read-all`, {});
   }
 }

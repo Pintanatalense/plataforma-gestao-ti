@@ -35,6 +35,11 @@ export class OrganizationService {
   private http = inject(HttpClient);
   private baseUrl = '/api/v1/organization';
 
+  // Company
+  getCompanyPublic(): Observable<{ name: string; logo_url: string | null }> {
+    return this.http.get<{ name: string; logo_url: string | null }>(`${this.baseUrl}/company/public`);
+  }
+
   // Units
   getUnits(): Observable<Unit[]> {
     return this.http.get<Unit[]>(`${this.baseUrl}/units`);

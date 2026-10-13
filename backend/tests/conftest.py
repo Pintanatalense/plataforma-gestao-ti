@@ -8,7 +8,7 @@ Fornece:
 - Factory de usuários para autenticação em testes
 """
 
-import asyncio
+import os
 from collections.abc import AsyncGenerator
 from typing import Any
 from uuid import uuid4
@@ -18,9 +18,30 @@ import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
-from app.core.security import create_access_token, hash_password
-from app.database import Base, get_db
-from app.main import app
+from tests._guard import DEFAULT_TEST_DATABASE_URL, assert_safe_test_url
+
+# --- Segurança: precisa rodar ANTES de qualquer import de ``app`` ---------------
+# O engine da aplicação (app.database) e o listener de auditoria usam
+# settings.DATABASE_URL. Fixamos aqui um banco descartável, para que nenhum teste
+# alcance o banco de desenvolvimento (padrão: localhost:5432/gestao_ti).
+TEST_PG_URL: str | None = os.environ.get("TEST_DATABASE_URL")
+if TEST_PG_URL:
+    assert_safe_test_url(TEST_PG_URL)
+os.environ["DATABASE_URL"] = TEST_PG_URL or DEFAULT_TEST_DATABASE_URL
+
+from app.core.security import create_access_token, hash_password  # noqa: E402
+from app.database import Base, get_db  # noqa: E402
+from app.main import app  # noqa: E402
+
+
+def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item]) -> None:
+    """Testes marcados ``pg``/``migrations`` exigem um PostgreSQL de teste."""
+    if TEST_PG_URL:
+        return
+    skip = pytest.mark.skip(reason="requer TEST_DATABASE_URL (PostgreSQL descartável)")
+    for item in items:
+        if "pg" in item.keywords or "migrations" in item.keywords:
+            item.add_marker(skip)
 
 # Engine de teste — SQLite async in-memory
 TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
@@ -35,14 +56,6 @@ TestSessionLocal = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False,
 )
-
-
-@pytest.fixture(scope="session")
-def event_loop():
-    """Cria um event loop para toda a sessão de teste."""
-    loop = asyncio.new_event_loop()
-    yield loop
-    loop.close()
 
 
 @pytest_asyncio.fixture(autouse=True)

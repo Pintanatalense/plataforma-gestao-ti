@@ -5,9 +5,9 @@ Entidades para histórico e transição de ativos.
 - AssetMovement
 """
 
+import enum
 import uuid
 from typing import TYPE_CHECKING
-from datetime import datetime
 
 from sqlalchemy import ForeignKey, String, Text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -16,9 +16,16 @@ from app.core.timestamps import TimestampMixin
 from app.database import Base
 
 if TYPE_CHECKING:
-    from app.assets.models import Asset  # type: ignore
-    from app.organization.models import Unit, Employee  # type: ignore
-    from app.identity.models import UserAccount  # type: ignore
+    pass  # type: ignore
+
+
+class MovementType(enum.StrEnum):
+    INITIAL_STOCK = "INITIAL_STOCK"
+    ASSIGNMENT = "ASSIGNMENT"
+    RETURN = "RETURN"
+    TRANSFER = "TRANSFER"
+    MAINTENANCE = "MAINTENANCE"
+    DECOMMISSION = "DECOMMISSION"
 
 
 class AssetMovement(Base, TimestampMixin):
@@ -26,30 +33,30 @@ class AssetMovement(Base, TimestampMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     asset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("assets.id"), nullable=False)
-    
-    # "ASSIGNMENT", "RETURN", "TRANSFER", "MAINTENANCE", "DECOMMISSION"
+
+    # "INITIAL_STOCK", "ASSIGNMENT", "RETURN", "TRANSFER", "MAINTENANCE", "DECOMMISSION"
     movement_type: Mapped[str] = mapped_column(String(50), nullable=False)
-    
+
     # State tracking
     from_unit_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("units.id"), nullable=True)
     to_unit_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("units.id"), nullable=True)
-    
+
     from_employee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
     to_employee_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("employees.id"), nullable=True)
-    
+
     # Optional status change tracking
     status_from: Mapped[str | None] = mapped_column(String(50), nullable=True)
     status_to: Mapped[str | None] = mapped_column(String(50), nullable=True)
-    
+
     # Details
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    
+
     # Performed by (who registered the movement in the system)
     author_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_accounts.id"), nullable=False)
 
     asset = relationship("Asset")
     author = relationship("UserAccount")
-    
+
     # Note: These relationships avoid circular imports by referring to string class names,
     # but we will resolve them appropriately in the application logic.
     from_unit = relationship("Unit", foreign_keys=[from_unit_id])

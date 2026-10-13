@@ -1,1 +1,237 @@
-<p>dashboard works!</p>
+<div class="dashboard-container">
+  
+  <!-- Welcome Banner -->
+  <div class="welcome-banner">
+    <div class="welcome-text">
+      <h1>Painel de Controle de TI</h1>
+      <p class="subtitle">
+        Visão unificada de chamados, parque patrimonial, estoque e inventário &bull; {{ today | date:'EEEE, dd/MM/yyyy' }}
+      </p>
+    </div>
+    <div class="quick-actions">
+      <button mat-flat-button color="primary" routerLink="/service-desk/new">
+        <mat-icon>add_circle</mat-icon> Abrir Chamado
+      </button>
+      <button mat-stroked-button color="primary" routerLink="/assets/new">
+        <mat-icon>devices</mat-icon> Novo Ativo
+      </button>
+    </div>
+  </div>
+
+  <!-- KPI Cards Grid -->
+  <div class="kpi-grid">
+    
+    <!-- Tickets KPI -->
+    <div class="kpi-card" routerLink="/service-desk">
+      <div class="kpi-header">
+        <span class="kpi-title">Chamados Pendentes</span>
+        <div class="kpi-icon-wrap icon-tickets">
+          <mat-icon>forum</mat-icon>
+        </div>
+      </div>
+      <div class="kpi-main">
+        <span class="kpi-value">{{ openedTickets + inProgressTickets }}</span>
+        <span class="kpi-badge warning" *ngIf="openedTickets > 0">{{ openedTickets }} abertos</span>
+      </div>
+      <div class="kpi-footer">
+        <span>{{ inProgressTickets }} em atendimento &bull; Total: {{ totalTickets }}</span>
+      </div>
+    </div>
+
+    <!-- Assets KPI -->
+    <div class="kpi-card" routerLink="/assets">
+      <div class="kpi-header">
+        <span class="kpi-title">Parque de Ativos</span>
+        <div class="kpi-icon-wrap icon-assets">
+          <mat-icon>devices</mat-icon>
+        </div>
+      </div>
+      <div class="kpi-main">
+        <span class="kpi-value">{{ totalAssets }}</span>
+        <span class="kpi-badge info">{{ assetsInUse }} em uso</span>
+      </div>
+      <div class="kpi-footer">
+        <span>{{ assetsInStock }} em estoque disponível</span>
+      </div>
+    </div>
+
+    <!-- Stock KPI -->
+    <div class="kpi-card" routerLink="/stock">
+      <div class="kpi-header">
+        <span class="kpi-title">Estoque & Insumos</span>
+        <div class="kpi-icon-wrap icon-stock">
+          <mat-icon>inventory_2</mat-icon>
+        </div>
+      </div>
+      <div class="kpi-main">
+        <span class="kpi-value">{{ totalStockItems }}</span>
+        <span class="kpi-badge" [ngClass]="lowStockItemsCount > 0 ? 'danger' : 'success'">
+          {{ lowStockItemsCount > 0 ? lowStockItemsCount + ' em alerta' : 'Estoque Regular' }}
+        </span>
+      </div>
+      <div class="kpi-footer">
+        <span *ngIf="lowStockItemsCount > 0" class="text-danger">Exige reposição imediata</span>
+        <span *ngIf="lowStockItemsCount === 0">Nenhum item com cota crítica</span>
+      </div>
+    </div>
+
+    <!-- Inventory Audits KPI -->
+    <div class="kpi-card" routerLink="/inventory">
+      <div class="kpi-header">
+        <span class="kpi-title">Auditorias de Inventário</span>
+        <div class="kpi-icon-wrap icon-inventory">
+          <mat-icon>fact_check</mat-icon>
+        </div>
+      </div>
+      <div class="kpi-main">
+        <span class="kpi-value">{{ activeAuditsCount }}</span>
+        <span class="kpi-badge info">{{ activeAuditsCount > 0 ? 'Em andamento' : 'Concluídas' }}</span>
+      </div>
+      <div class="kpi-footer">
+        <span>Conferência periódica de bens</span>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Content Grid: Recent Tickets + Stock Alerts -->
+  <div class="content-grid">
+    
+    <!-- LEFT: Recent Tickets -->
+    <div class="grid-card recent-tickets-card">
+      <div class="card-header">
+        <div class="header-title">
+          <mat-icon color="primary">receipt_long</mat-icon>
+          <h2>Chamados Recentes</h2>
+        </div>
+        <button mat-button color="primary" routerLink="/service-desk">
+          Ver Todos <mat-icon iconPositionEnd>arrow_forward</mat-icon>
+        </button>
+      </div>
+
+      <div class="table-wrap">
+        <table mat-table [dataSource]="recentTickets" class="dashboard-table">
+          
+          <ng-container matColumnDef="title">
+            <th mat-header-cell *matHeaderCellDef> Assunto </th>
+            <td mat-cell *matCellDef="let ticket">
+              <span class="ticket-title">{{ ticket.title }}</span>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="status">
+            <th mat-header-cell *matHeaderCellDef> Status </th>
+            <td mat-cell *matCellDef="let ticket">
+              <span class="status-chip" [ngClass]="getTicketStatusClass(ticket.status)">
+                {{ getTicketStatusLabel(ticket.status) }}
+              </span>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="priority">
+            <th mat-header-cell *matHeaderCellDef> Prioridade </th>
+            <td mat-cell *matCellDef="let ticket">
+              <span class="priority-badge" [ngClass]="getPriorityClass(ticket.priority)">
+                {{ ticket.priority }}
+              </span>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="created_at">
+            <th mat-header-cell *matHeaderCellDef> Abertura </th>
+            <td mat-cell *matCellDef="let ticket">
+              <span class="date-text">{{ ticket.created_at | date:'dd/MM HH:mm' }}</span>
+            </td>
+          </ng-container>
+
+          <ng-container matColumnDef="actions">
+            <th mat-header-cell *matHeaderCellDef class="text-right"> Ações </th>
+            <td mat-cell *matCellDef="let ticket" class="text-right">
+              <button mat-icon-button [routerLink]="['/service-desk', ticket.id]" matTooltip="Acessar Atendimento">
+                <mat-icon color="primary">open_in_new</mat-icon>
+              </button>
+            </td>
+          </ng-container>
+
+          <tr mat-header-row *matHeaderRowDef="ticketColumns"></tr>
+          <tr mat-row *matRowDef="let row; columns: ticketColumns;" class="interactive-row"></tr>
+
+          <tr class="mat-row" *matNoDataRow>
+            <td class="mat-cell" colspan="5">
+              <div class="empty-state">
+                <mat-icon>inbox</mat-icon>
+                <p>Nenhum chamado aberto no momento.</p>
+              </div>
+            </td>
+          </tr>
+        </table>
+      </div>
+    </div>
+
+    <!-- RIGHT: Alerts & Quick Nav -->
+    <div class="grid-card side-panel-card">
+      
+      <!-- Critical stock section -->
+      <div class="side-section">
+        <div class="header-title">
+          <mat-icon color="warn">warning_amber</mat-icon>
+          <h3>Insumos Críticos</h3>
+        </div>
+        
+        <div class="low-stock-list" *ngIf="lowStockList.length > 0; else stockOk">
+          <div *ngFor="let item of lowStockList.slice(0, 4)" class="stock-alert-item" [routerLink]="['/stock', item.id]">
+            <div class="item-info">
+              <span class="item-name">{{ item.name }}</span>
+              <span class="item-min">Mínimo sugerido: {{ item.min_quantity }}</span>
+            </div>
+            <div class="item-badge danger">
+              {{ item.quantity }} unid
+            </div>
+          </div>
+          <button mat-stroked-button color="primary" routerLink="/stock" class="w-100 mt-2">
+            Gerenciar Todo o Estoque
+          </button>
+        </div>
+
+        <ng-template #stockOk>
+          <div class="empty-stock-ok">
+            <mat-icon>verified</mat-icon>
+            <p>Todos os insumos estão acima da cota mínima estipulada.</p>
+          </div>
+        </ng-template>
+      </div>
+
+      <div class="divider"></div>
+
+      <!-- Quick Shortcuts -->
+      <div class="side-section">
+        <div class="header-title">
+          <mat-icon color="primary">apps</mat-icon>
+          <h3>Acesso Rápido</h3>
+        </div>
+        
+        <div class="shortcuts-list">
+          <a class="shortcut-item" routerLink="/assets">
+            <mat-icon>laptop_chromebook</mat-icon>
+            <span>Consultar Patrimônio</span>
+          </a>
+          <a class="shortcut-item" routerLink="/inventory">
+            <mat-icon>checklist</mat-icon>
+            <span>Conferências de Inventário</span>
+          </a>
+          <a class="shortcut-item" routerLink="/organization">
+            <mat-icon>domain</mat-icon>
+            <span>Unidades & Colaboradores</span>
+          </a>
+          <a class="shortcut-item" routerLink="/identity/users" *ngIf="authService.currentUserValue?.is_admin">
+            <mat-icon>manage_accounts</mat-icon>
+            <span>Gestão de Usuários</span>
+          </a>
+        </div>
+      </div>
+
+    </div>
+
+  </div>
+
+</div>

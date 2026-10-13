@@ -55,3 +55,7 @@ htmlcov/
 *.db
 *.sqlite
 *.sqlite3
+
+# --- Uploads / Anexos ---
+uploads/
+**/uploads/

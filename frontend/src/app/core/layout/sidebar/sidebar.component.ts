@@ -1,14 +1,24 @@
-import { Component } from '@angular/core';
+import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatListModule } from '@angular/material/list';
 import { MatIconModule } from '@angular/material/icon';
 import { MatDividerModule } from '@angular/material/divider';
+import { MatTooltipModule } from '@angular/material/tooltip';
+
+import { AuthService } from '../../auth/auth.service';
+import { OrganizationService } from '../../services/organization.service';
 
 interface NavItem {
   icon: string;
   label: string;
   route: string;
+  permission?: string;
+}
+
+interface NavSection {
+  title: string;
+  items: NavItem[];
 }
 
 @Component({
@@ -19,63 +29,221 @@ interface NavItem {
     RouterModule,
     MatListModule,
     MatIconModule,
-    MatDividerModule
+    MatDividerModule,
+    MatTooltipModule
   ],
   template: `
     <div class="sidebar-header">
       <div class="logo-container">
-        <mat-icon color="primary">computer</mat-icon>
-        <span>Gestão de TI</span>
+        <img *ngIf="companyLogoUrl; else defaultLogo" [src]="companyLogoUrl" alt="Logo" class="company-logo" (error)="onLogoError()">
+        <ng-template #defaultLogo>
+          <div class="logo-badge">
+            <mat-icon color="primary">computer</mat-icon>
+          </div>
+        </ng-template>
+        <span class="company-name" [matTooltip]="companyName">{{ companyName }}</span>
       </div>
     </div>
     
     <mat-divider></mat-divider>
     
-    <mat-nav-list>
-      <a mat-list-item *ngFor="let item of navItems" [routerLink]="item.route" routerLinkActive="active-link">
-        <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
-        <span matListItemTitle>{{ item.label }}</span>
-      </a>
-    </mat-nav-list>
+    <div class="nav-content">
+      <ng-container *ngFor="let section of sections">
+        <div class="nav-section" *ngIf="hasVisibleItems(section)">
+          <div class="section-title">{{ section.title }}</div>
+          <mat-nav-list dense>
+            <ng-container *ngFor="let item of section.items">
+              <a mat-list-item *ngIf="canAccess(item)" [routerLink]="item.route" routerLinkActive="active-link" [routerLinkActiveOptions]="{exact: item.route === '/dashboard'}">
+                <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
+                <span matListItemTitle>{{ item.label }}</span>
+              </a>
+            </ng-container>
+          </mat-nav-list>
+        </div>
+      </ng-container>
+    </div>
   `,
   styles: [`
+    :host {
+      display: flex;
+      flex-direction: column;
+      height: 100%;
+    }
+
     .sidebar-header {
       height: 64px;
       display: flex;
       align-items: center;
       padding: 0 16px;
+      background-color: #ffffff;
       
       .logo-container {
         display: flex;
         align-items: center;
         gap: 12px;
-        font-size: 20px;
-        font-weight: 500;
+        overflow: hidden;
+
+        .company-logo {
+          max-height: 38px;
+          max-width: 38px;
+          object-fit: contain;
+          border-radius: 6px;
+        }
+
+        .logo-badge {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          width: 38px;
+          height: 38px;
+          background-color: #eff6ff;
+          border-radius: 8px;
+
+          mat-icon {
+            font-size: 22px;
+            width: 22px;
+            height: 22px;
+          }
+        }
         
-        mat-icon {
-          transform: scale(1.2);
+        .company-name {
+          font-size: 16px;
+          font-weight: 600;
+          color: #1e293b;
+          white-space: nowrap;
+          overflow: hidden;
+          text-overflow: ellipsis;
         }
       }
     }
-    
-    .active-link {
-      background-color: rgba(63, 81, 181, 0.1);
-      color: #3f51b5;
-      
-      mat-icon {
-        color: #3f51b5;
+
+    .nav-content {
+      flex: 1;
+      overflow-y: auto;
+      padding: 12px 0 24px;
+    }
+
+    .nav-section {
+      margin-bottom: 12px;
+
+      .section-title {
+        font-size: 11px;
+        text-transform: uppercase;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        color: #94a3b8;
+        padding: 8px 16px 4px;
+      }
+
+      mat-nav-list {
+        padding-top: 0;
+      }
+
+      a[mat-list-item] {
+        margin: 2px 8px;
+        border-radius: 8px;
+        height: 40px;
+        color: #475569;
+        font-size: 13.5px;
+        font-weight: 500;
+        transition: all 0.15s ease-in-out;
+
+        mat-icon {
+          color: #64748b;
+          font-size: 20px;
+          width: 20px;
+          height: 20px;
+          margin-right: 12px;
+        }
+
+        &:hover {
+          background-color: #f1f5f9;
+          color: #1e293b;
+
+          mat-icon {
+            color: #1e293b;
+          }
+        }
+
+        &.active-link {
+          background-color: #eff6ff;
+          color: #2563eb;
+          font-weight: 600;
+
+          mat-icon {
+            color: #2563eb;
+          }
+        }
       }
     }
   `]
 })
-export class SidebarComponent {
-  navItems: NavItem[] = [
-    { icon: 'dashboard', label: 'Dashboard', route: '/dashboard' },
-    { icon: 'forum', label: 'Chamados', route: '/service-desk' },
-    { icon: 'business', label: 'Unidades', route: '/organization' },
-    { icon: 'account_tree', label: 'Setores', route: '/organization/sectors' },
-    { icon: 'badge', label: 'Colaboradores', route: '/organization/employees' },
-    { icon: 'people', label: 'Usuários', route: '/identity/users' },
-    { icon: 'admin_panel_settings', label: 'Perfis (Roles)', route: '/identity/roles' },
+export class SidebarComponent implements OnInit {
+  private authService = inject(AuthService);
+  private orgService = inject(OrganizationService);
+
+  companyName: string = 'Gestão de TI';
+  companyLogoUrl: string | null = null;
+
+  sections: NavSection[] = [
+    {
+      title: 'Principal',
+      items: [
+        { icon: 'dashboard', label: 'Dashboard', route: '/dashboard' }
+      ]
+    },
+    {
+      title: 'Service Desk',
+      items: [
+        { icon: 'forum', label: 'Chamados', route: '/service-desk' },
+        { icon: 'category', label: 'Categorias de Chamados', route: '/service-desk/categories', permission: 'service_desk.tickets.manage' }
+      ]
+    },
+    {
+      title: 'Operações & Físico',
+      items: [
+        { icon: 'devices', label: 'Patrimônio & Ativos', route: '/assets', permission: 'assets.read' },
+        { icon: 'inventory_2', label: 'Estoque & Insumos', route: '/stock', permission: 'stock.read' },
+        { icon: 'fact_check', label: 'Inventário Periódico', route: '/inventory', permission: 'inventory.read' }
+      ]
+    },
+    {
+      title: 'Organização',
+      items: [
+        { icon: 'business', label: 'Unidades', route: '/organization', permission: 'organization.units.read' },
+        { icon: 'account_tree', label: 'Setores', route: '/organization/sectors', permission: 'organization.sectors.read' },
+        { icon: 'badge', label: 'Colaboradores', route: '/organization/employees', permission: 'organization.employees.read' }
+      ]
+    },
+    {
+      title: 'Segurança & Acessos',
+      items: [
+        { icon: 'people', label: 'Usuários', route: '/identity/users', permission: 'identity.users.read' },
+        { icon: 'admin_panel_settings', label: 'Perfis (Roles)', route: '/identity/roles', permission: 'identity.roles.read' }
+      ]
+    }
   ];
+
+  ngOnInit(): void {
+    this.orgService.getCompanyPublic().subscribe({
+      next: (comp) => {
+        if (comp.name) this.companyName = comp.name;
+        if (comp.logo_url) this.companyLogoUrl = comp.logo_url;
+      },
+      error: () => {}
+    });
+  }
+
+  onLogoError(): void {
+    this.companyLogoUrl = null;
+  }
+
+  canAccess(item: NavItem): boolean {
+    if (!item.permission) return true;
+    return this.authService.hasPermission(item.permission);
+  }
+
+  hasVisibleItems(section: NavSection): boolean {
+    return section.items.some((item) => this.canAccess(item));
+  }
 }
