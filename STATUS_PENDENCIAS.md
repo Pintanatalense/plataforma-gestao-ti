@@ -8,10 +8,11 @@ Este documento sumariza o status atual do projeto, as funcionalidades recém-ent
 
 1. **Reestruturação e Entrega Completa do Frontend dos Módulos Físicos**
    - **Patrimônio e Ativos (`features/assets`)**:
-     - `AssetListComponent`: listagem, badges de status, busca dinâmica por patrimônio/nome/categoria e roteamento.
+     - `AssetListComponent`: listagem, badges de status, busca dinâmica por patrimônio/nome/categoria, botão de atalho para Categorias e roteamento.
+     - `AssetCategoryListComponent`: tela completa de gestão de Categorias de Ativos (`/assets/categories`), com formulário reativo, builder visual de especificações dinâmicas (`spec_schema`), presets rápidos (Computador, Rede, Mobile) e listagem de categorias com edição/exclusão.
      - `AssetCreateComponent`: cadastro completo com formulário reativo dinâmico para especificações técnicas em JSONB baseadas na categoria.
      - `AssetDetailComponent`: visão geral com especificações, galeria/upload de anexos integrados (`AttachmentsComponent`) e linha do tempo de movimentações.
-     - `AssetService`: integração completa com a API de ativos e movimentações.
+     - `AssetService`: integração completa com a API de ativos, movimentações e categorias (CRUD).
    - **Estoque e Insumos (`features/stock`)**:
      - `StockListComponent`: listagem, alertas visuais de estoque baixo (`min_quantity`), badges por unidade física.
      - `StockCreateComponent`: criação de novos insumos com validação de quantidades iniciais e limites mínimos.
