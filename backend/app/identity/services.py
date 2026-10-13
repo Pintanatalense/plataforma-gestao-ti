@@ -117,14 +117,14 @@ class IdentityService:
     # UserAccount
     # ==========================================================================
 
-    async def get_user(self, user_id: uuid.UUID) -> UserAccount:
-        user = await self.repo.get_user(user_id)
+    async def get_user(self, user_id: uuid.UUID, include_inactive: bool = False) -> UserAccount:
+        user = await self.repo.get_user(user_id, include_inactive=include_inactive)
         if not user:
             raise NotFoundException("Usuário", user_id)
         return user
 
-    async def list_users(self) -> Sequence[UserAccount]:
-        return await self.repo.list_users()
+    async def list_users(self, include_inactive: bool = True) -> Sequence[UserAccount]:
+        return await self.repo.list_users(include_inactive=include_inactive)
 
     async def _resolve_roles(self, role_ids: list[uuid.UUID]) -> list[Role]:
         roles = list(await self.repo.get_roles_by_ids(role_ids))
@@ -145,13 +145,14 @@ class IdentityService:
             hashed_password=hash_password(schema.password),
             must_change_password=schema.must_change_password,
             is_admin=schema.is_admin,
+            is_active=schema.is_active if schema.is_active is not None else True,
         )
         user.roles = roles
         
         return await self.repo.create_user(user)
 
     async def update_user(self, user_id: uuid.UUID, schema: UserAccountUpdate) -> UserAccount:
-        user = await self.get_user(user_id)
+        user = await self.get_user(user_id, include_inactive=True)
         
         if schema.email is not None and schema.email != user.email:
             if await self.repo.email_exists(schema.email):
@@ -166,8 +167,20 @@ class IdentityService:
             
         if schema.role_ids is not None:
             user.roles = await self._resolve_roles(schema.role_ids)
+
+        if schema.is_active is not None:
+            user.is_active = schema.is_active
+            if not schema.is_active and user.deleted_at is None:
+                user.soft_delete()
+            elif schema.is_active and user.deleted_at is not None:
+                user.restore()
             
         return await self.repo.update_user(user)
+
+    async def delete_user(self, user_id: uuid.UUID) -> None:
+        user = await self.get_user(user_id, include_inactive=True)
+        user.soft_delete()
+        await self.repo.update_user(user)
 
     async def update_password(self, user_id: uuid.UUID, schema: UserAccountPasswordUpdate) -> UserAccount:
         """Redefinição por administrador: a senha é temporária e deve ser trocada no próximo login."""
@@ -233,6 +246,10 @@ class IdentityService:
             role.permissions = await self._resolve_permissions(schema.permission_ids)
             
         return await self.repo.update_role(role)
+
+    async def delete_role(self, role_id: uuid.UUID) -> None:
+        role = await self.get_role(role_id)
+        await self.repo.delete_role(role)
 
     # ==========================================================================
     # Permission

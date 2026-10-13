@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatTableModule } from '@angular/material/table';
 import { MatButtonModule } from '@angular/material/button';
@@ -26,6 +26,7 @@ export class RoleList implements OnInit {
   private identityService = inject(IdentityService);
   private dialog = inject(MatDialog);
   private snackBar = inject(MatSnackBar);
+  private cdr = inject(ChangeDetectorRef);
 
   displayedColumns: string[] = ['name', 'description', 'permissions', 'actions'];
   dataSource: Role[] = [];
@@ -35,7 +36,15 @@ export class RoleList implements OnInit {
   }
 
   loadData() {
-    this.identityService.getRoles().subscribe(data => this.dataSource = data);
+    this.identityService.getRoles().subscribe({
+      next: (data) => {
+        this.dataSource = data;
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.snackBar.open(err.error?.detail || 'Erro ao carregar perfis', 'Fechar', { duration: 3000 });
+      }
+    });
   }
 
   openDialog(role?: Role) {

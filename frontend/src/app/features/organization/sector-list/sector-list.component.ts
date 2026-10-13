@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatTableModule } from '@angular/material/table';
 import { MatButtonModule } from '@angular/material/button';
@@ -26,6 +26,7 @@ export class SectorList implements OnInit {
   private orgService = inject(OrganizationService);
   private dialog = inject(MatDialog);
   private snackBar = inject(MatSnackBar);
+  private cdr = inject(ChangeDetectorRef);
 
   displayedColumns: string[] = ['unit', 'code', 'name', 'status', 'actions'];
   dataSource: Sector[] = [];
@@ -35,7 +36,15 @@ export class SectorList implements OnInit {
   }
 
   loadData() {
-    this.orgService.getSectors().subscribe(data => this.dataSource = data);
+    this.orgService.getSectors().subscribe({
+      next: (data) => {
+        this.dataSource = data;
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.snackBar.open(err.error?.detail || 'Erro ao carregar setores', 'Fechar', { duration: 3000 });
+      }
+    });
   }
 
   openDialog(sector?: Sector) {
@@ -47,9 +56,25 @@ export class SectorList implements OnInit {
     dialogRef.afterClosed().subscribe(result => {
       if (result) {
         if (sector) {
-          this.orgService.updateSector(sector.id, result).subscribe(() => this.loadData());
+          this.orgService.updateSector(sector.id, result).subscribe({
+            next: () => {
+              this.snackBar.open('Setor atualizado com sucesso', 'Fechar', { duration: 3000 });
+              this.loadData();
+            },
+            error: (err) => {
+              this.snackBar.open(err.error?.detail || 'Erro ao atualizar setor', 'Fechar', { duration: 4000 });
+            }
+          });
         } else {
-          this.orgService.createSector(result).subscribe(() => this.loadData());
+          this.orgService.createSector(result).subscribe({
+            next: () => {
+              this.snackBar.open('Setor criado com sucesso', 'Fechar', { duration: 3000 });
+              this.loadData();
+            },
+            error: (err) => {
+              this.snackBar.open(err.error?.detail || 'Erro ao criar setor', 'Fechar', { duration: 4000 });
+            }
+          });
         }
       }
     });
@@ -57,7 +82,15 @@ export class SectorList implements OnInit {
 
   deleteSector(id: string) {
     if (confirm('Tem certeza que deseja inativar/remover este setor?')) {
-      this.orgService.deleteSector(id).subscribe(() => this.loadData());
+      this.orgService.deleteSector(id).subscribe({
+        next: () => {
+          this.snackBar.open('Setor inativado com sucesso', 'Fechar', { duration: 3000 });
+          this.loadData();
+        },
+        error: (err) => {
+          this.snackBar.open(err.error?.detail || 'Erro ao inativar setor', 'Fechar', { duration: 4000 });
+        }
+      });
     }
   }
 }

@@ -55,6 +55,7 @@ services:
       - "${API_PORT:-8000}:8000"
     volumes:
       - attachments_data:/data/attachments
+      - ./backend:/app
     depends_on:
       postgres:
         condition: service_healthy

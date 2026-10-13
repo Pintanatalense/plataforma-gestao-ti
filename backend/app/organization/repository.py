@@ -42,8 +42,10 @@ class OrganizationRepository:
     # Unit
     # ==========================================================================
 
-    async def get_unit(self, unit_id: uuid.UUID) -> Unit | None:
-        stmt = select(Unit).where(Unit.id == unit_id, Unit.is_active == True)
+    async def get_unit(self, unit_id: uuid.UUID, include_inactive: bool = False) -> Unit | None:
+        stmt = select(Unit).where(Unit.id == unit_id)
+        if not include_inactive:
+            stmt = stmt.where(Unit.is_active == True)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -53,8 +55,11 @@ class OrganizationRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_units(self) -> Sequence[Unit]:
-        stmt = select(Unit).where(Unit.is_active == True).order_by(Unit.name)
+    async def list_units(self, include_inactive: bool = True) -> Sequence[Unit]:
+        stmt = select(Unit)
+        if not include_inactive:
+            stmt = stmt.where(Unit.is_active == True)
+        stmt = stmt.order_by(Unit.name)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -71,8 +76,10 @@ class OrganizationRepository:
     # Sector
     # ==========================================================================
 
-    async def get_sector(self, sector_id: uuid.UUID) -> Sector | None:
-        stmt = select(Sector).where(Sector.id == sector_id, Sector.is_active == True)
+    async def get_sector(self, sector_id: uuid.UUID, include_inactive: bool = False) -> Sector | None:
+        stmt = select(Sector).options(selectinload(Sector.unit)).where(Sector.id == sector_id)
+        if not include_inactive:
+            stmt = stmt.where(Sector.is_active == True)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -81,8 +88,10 @@ class OrganizationRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_sectors(self, unit_id: uuid.UUID | None = None) -> Sequence[Sector]:
-        stmt = select(Sector).where(Sector.is_active == True)
+    async def list_sectors(self, unit_id: uuid.UUID | None = None, include_inactive: bool = True) -> Sequence[Sector]:
+        stmt = select(Sector).options(selectinload(Sector.unit))
+        if not include_inactive:
+            stmt = stmt.where(Sector.is_active == True)
         if unit_id:
             stmt = stmt.where(Sector.unit_id == unit_id)
         stmt = stmt.order_by(Sector.name)
@@ -102,8 +111,12 @@ class OrganizationRepository:
     # Employee
     # ==========================================================================
 
-    async def get_employee(self, employee_id: uuid.UUID) -> Employee | None:
-        stmt = select(Employee).where(Employee.id == employee_id, Employee.is_active == True)
+    async def get_employee(self, employee_id: uuid.UUID, include_inactive: bool = False) -> Employee | None:
+        stmt = select(Employee).options(
+            selectinload(Employee.sector).selectinload(Sector.unit)
+        ).where(Employee.id == employee_id)
+        if not include_inactive:
+            stmt = stmt.where(Employee.is_active == True)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -112,8 +125,12 @@ class OrganizationRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_employees(self, unit_id: uuid.UUID | None = None, sector_id: uuid.UUID | None = None) -> Sequence[Employee]:
-        stmt = select(Employee).where(Employee.is_active == True)
+    async def list_employees(self, unit_id: uuid.UUID | None = None, sector_id: uuid.UUID | None = None, include_inactive: bool = True) -> Sequence[Employee]:
+        stmt = select(Employee).options(
+            selectinload(Employee.sector).selectinload(Sector.unit)
+        )
+        if not include_inactive:
+            stmt = stmt.where(Employee.is_active == True)
         if unit_id:
             stmt = stmt.where(Employee.unit_id == unit_id)
         if sector_id:

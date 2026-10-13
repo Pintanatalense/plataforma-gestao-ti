@@ -37,20 +37,23 @@ class CompanyOut(CompanyBase):
     model_config = ConfigDict(from_attributes=True)
 
 
+from pydantic import BaseModel, ConfigDict, Field, computed_field
+
+
 # ==============================================================================
 # Unit
 # ==============================================================================
 
 class UnitBase(BaseModel):
-    company_id: uuid.UUID
     name: str = Field(..., max_length=255)
     code: str = Field(..., max_length=50)
     type: str = Field(default="FILIAL", max_length=20)
     address: Optional[str] = None
+    is_active: bool = True
 
 
 class UnitCreate(UnitBase):
-    pass
+    company_id: Optional[uuid.UUID] = None
 
 
 class UnitUpdate(BaseModel):
@@ -58,10 +61,12 @@ class UnitUpdate(BaseModel):
     code: Optional[str] = Field(None, max_length=50)
     type: Optional[str] = Field(None, max_length=20)
     address: Optional[str] = None
+    is_active: Optional[bool] = None
 
 
 class UnitOut(UnitBase):
     id: uuid.UUID
+    company_id: uuid.UUID
     created_at: datetime
     updated_at: datetime
 
@@ -76,6 +81,7 @@ class SectorBase(BaseModel):
     unit_id: uuid.UUID
     name: str = Field(..., max_length=255)
     code: str = Field(..., max_length=50)
+    is_active: bool = True
 
 
 class SectorCreate(SectorBase):
@@ -85,12 +91,15 @@ class SectorCreate(SectorBase):
 class SectorUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=255)
     code: Optional[str] = Field(None, max_length=50)
+    unit_id: Optional[uuid.UUID] = None
+    is_active: Optional[bool] = None
 
 
 class SectorOut(SectorBase):
     id: uuid.UUID
     created_at: datetime
     updated_at: datetime
+    unit: Optional[UnitOut] = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -100,13 +109,16 @@ class SectorOut(SectorBase):
 # ==============================================================================
 
 class EmployeeBase(BaseModel):
-    unit_id: uuid.UUID
     sector_id: uuid.UUID
+    unit_id: Optional[uuid.UUID] = None
     manager_id: Optional[uuid.UUID] = None
     name: str = Field(..., max_length=255)
-    registration_number: str = Field(..., max_length=50)
+    registration_number: Optional[str] = Field(None, max_length=50)
+    registration: Optional[str] = Field(None, max_length=50)
     position: Optional[str] = Field(None, max_length=255)
+    job_title: Optional[str] = Field(None, max_length=255)
     status: str = Field(default="ATIVO", max_length=20)
+    is_active: bool = True
 
 
 class EmployeeCreate(EmployeeBase):
@@ -119,14 +131,34 @@ class EmployeeUpdate(BaseModel):
     manager_id: Optional[uuid.UUID] = None
     name: Optional[str] = Field(None, max_length=255)
     registration_number: Optional[str] = Field(None, max_length=50)
+    registration: Optional[str] = Field(None, max_length=50)
     position: Optional[str] = Field(None, max_length=255)
+    job_title: Optional[str] = Field(None, max_length=255)
     status: Optional[str] = Field(None, max_length=20)
+    is_active: Optional[bool] = None
 
 
-class EmployeeOut(EmployeeBase):
+class EmployeeOut(BaseModel):
     id: uuid.UUID
+    unit_id: uuid.UUID
+    sector_id: uuid.UUID
+    manager_id: Optional[uuid.UUID] = None
+    name: str
+    registration_number: str
+    position: Optional[str] = None
+    status: str
+    is_active: bool
     created_at: datetime
     updated_at: datetime
     deactivated_at: Optional[datetime] = None
+    sector: Optional[SectorOut] = None
+
+    @computed_field
+    def registration(self) -> str:
+        return self.registration_number
+
+    @computed_field
+    def job_title(self) -> Optional[str]:
+        return self.position
 
     model_config = ConfigDict(from_attributes=True)

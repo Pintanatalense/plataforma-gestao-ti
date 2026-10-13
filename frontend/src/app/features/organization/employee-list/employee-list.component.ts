@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatTableModule } from '@angular/material/table';
 import { MatButtonModule } from '@angular/material/button';
@@ -26,6 +26,7 @@ export class EmployeeList implements OnInit {
   private orgService = inject(OrganizationService);
   private dialog = inject(MatDialog);
   private snackBar = inject(MatSnackBar);
+  private cdr = inject(ChangeDetectorRef);
 
   displayedColumns: string[] = ['sector', 'registration', 'name', 'job_title', 'status', 'actions'];
   dataSource: Employee[] = [];
@@ -35,7 +36,15 @@ export class EmployeeList implements OnInit {
   }
 
   loadData() {
-    this.orgService.getEmployees().subscribe(data => this.dataSource = data);
+    this.orgService.getEmployees().subscribe({
+      next: (data) => {
+        this.dataSource = data;
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.snackBar.open(err.error?.detail || 'Erro ao carregar colaboradores', 'Fechar', { duration: 3000 });
+      }
+    });
   }
 
   openDialog(employee?: Employee) {
@@ -47,9 +56,25 @@ export class EmployeeList implements OnInit {
     dialogRef.afterClosed().subscribe(result => {
       if (result) {
         if (employee) {
-          this.orgService.updateEmployee(employee.id, result).subscribe(() => this.loadData());
+          this.orgService.updateEmployee(employee.id, result).subscribe({
+            next: () => {
+              this.snackBar.open('Colaborador atualizado com sucesso', 'Fechar', { duration: 3000 });
+              this.loadData();
+            },
+            error: (err) => {
+              this.snackBar.open(err.error?.detail || 'Erro ao atualizar colaborador', 'Fechar', { duration: 4000 });
+            }
+          });
         } else {
-          this.orgService.createEmployee(result).subscribe(() => this.loadData());
+          this.orgService.createEmployee(result).subscribe({
+            next: () => {
+              this.snackBar.open('Colaborador criado com sucesso', 'Fechar', { duration: 3000 });
+              this.loadData();
+            },
+            error: (err) => {
+              this.snackBar.open(err.error?.detail || 'Erro ao criar colaborador', 'Fechar', { duration: 4000 });
+            }
+          });
         }
       }
     });
@@ -57,7 +82,15 @@ export class EmployeeList implements OnInit {
 
   deleteEmployee(id: string) {
     if (confirm('Tem certeza que deseja inativar/remover este colaborador?')) {
-      this.orgService.deleteEmployee(id).subscribe(() => this.loadData());
+      this.orgService.deleteEmployee(id).subscribe({
+        next: () => {
+          this.snackBar.open('Colaborador inativado com sucesso', 'Fechar', { duration: 3000 });
+          this.loadData();
+        },
+        error: (err) => {
+          this.snackBar.open(err.error?.detail || 'Erro ao inativar colaborador', 'Fechar', { duration: 4000 });
+        }
+      });
     }
   }
 }

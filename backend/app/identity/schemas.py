@@ -63,6 +63,7 @@ class UserAccountBase(BaseModel):
     email: EmailStr
     must_change_password: bool = True
     is_admin: bool = False
+    is_active: bool = True
 
 
 class UserAccountCreate(UserAccountBase):
@@ -75,6 +76,7 @@ class UserAccountUpdate(BaseModel):
     must_change_password: Optional[bool] = None
     is_admin: Optional[bool] = None
     role_ids: Optional[list[uuid.UUID]] = None
+    is_active: Optional[bool] = None
 
 
 class UserAccountPasswordUpdate(BaseModel):
@@ -96,6 +98,7 @@ class UserAccountOut(BaseModel):
     email: str
     must_change_password: bool
     is_admin: bool
+    is_active: bool
     last_login_at: Optional[datetime] = None
     last_login_ip: Optional[str] = None
     created_at: datetime

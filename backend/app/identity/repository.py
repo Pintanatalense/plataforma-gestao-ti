@@ -22,10 +22,12 @@ class IdentityRepository:
     # UserAccount
     # ==========================================================================
 
-    async def get_user(self, user_id: uuid.UUID) -> UserAccount | None:
+    async def get_user(self, user_id: uuid.UUID, include_inactive: bool = False) -> UserAccount | None:
         stmt = select(UserAccount).options(
             selectinload(UserAccount.roles).selectinload(Role.permissions)
-        ).where(UserAccount.id == user_id, UserAccount.is_active == True)
+        ).where(UserAccount.id == user_id)
+        if not include_inactive:
+            stmt = stmt.where(UserAccount.is_active == True)
         
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -50,10 +52,13 @@ class IdentityRepository:
         result = await self.session.execute(stmt)
         return int(result.scalar_one())
 
-    async def list_users(self) -> Sequence[UserAccount]:
+    async def list_users(self, include_inactive: bool = True) -> Sequence[UserAccount]:
         stmt = select(UserAccount).options(
             selectinload(UserAccount.roles).selectinload(Role.permissions)
-        ).where(UserAccount.is_active == True).order_by(UserAccount.email)
+        )
+        if not include_inactive:
+            stmt = stmt.where(UserAccount.is_active == True)
+        stmt = stmt.order_by(UserAccount.email)
         
         result = await self.session.execute(stmt)
         return result.scalars().all()
@@ -66,6 +71,10 @@ class IdentityRepository:
     async def update_user(self, user: UserAccount) -> UserAccount:
         await self.session.flush()
         return user
+
+    async def delete_role(self, role: Role) -> None:
+        await self.session.delete(role)
+        await self.session.flush()
 
     # ==========================================================================
     # Role

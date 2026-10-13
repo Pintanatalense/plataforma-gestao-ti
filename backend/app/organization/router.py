@@ -90,9 +90,9 @@ async def get_company_public(db: AsyncSession = Depends(get_db)):
 # ==============================================================================
 
 @router.get("/units", response_model=list[UnitOut], dependencies=[Depends(require_permission("organization.units.read"))])
-async def list_units(db: AsyncSession = Depends(get_db)):
+async def list_units(include_inactive: bool = True, db: AsyncSession = Depends(get_db)):
     service = OrganizationService(db)
-    return await service.list_units()
+    return await service.list_units(include_inactive=include_inactive)
 
 
 @router.post("/units", response_model=UnitOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("organization.units.create"))])
@@ -104,7 +104,7 @@ async def create_unit(schema: UnitCreate, db: AsyncSession = Depends(get_db)):
 @router.get("/units/{unit_id}", response_model=UnitOut, dependencies=[Depends(require_permission("organization.units.read"))])
 async def get_unit(unit_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     service = OrganizationService(db)
-    return await service.get_unit(unit_id)
+    return await service.get_unit(unit_id, include_inactive=True)
 
 
 @router.patch("/units/{unit_id}", response_model=UnitOut, dependencies=[Depends(require_permission("organization.units.update"))])
@@ -113,14 +113,21 @@ async def update_unit(unit_id: uuid.UUID, schema: UnitUpdate, db: AsyncSession =
     return await service.update_unit(unit_id, schema)
 
 
+@router.delete("/units/{unit_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("organization.units.update"))])
+async def delete_unit(unit_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    service = OrganizationService(db)
+    await service.delete_unit(unit_id)
+    return None
+
+
 # ==============================================================================
 # Sector
 # ==============================================================================
 
 @router.get("/sectors", response_model=list[SectorOut], dependencies=[Depends(require_permission("organization.sectors.read"))])
-async def list_sectors(unit_id: uuid.UUID | None = None, db: AsyncSession = Depends(get_db)):
+async def list_sectors(unit_id: uuid.UUID | None = None, include_inactive: bool = True, db: AsyncSession = Depends(get_db)):
     service = OrganizationService(db)
-    return await service.list_sectors(unit_id)
+    return await service.list_sectors(unit_id=unit_id, include_inactive=include_inactive)
 
 
 @router.post("/sectors", response_model=SectorOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("organization.sectors.create"))])
@@ -132,13 +139,20 @@ async def create_sector(schema: SectorCreate, db: AsyncSession = Depends(get_db)
 @router.get("/sectors/{sector_id}", response_model=SectorOut, dependencies=[Depends(require_permission("organization.sectors.read"))])
 async def get_sector(sector_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     service = OrganizationService(db)
-    return await service.get_sector(sector_id)
+    return await service.get_sector(sector_id, include_inactive=True)
 
 
 @router.patch("/sectors/{sector_id}", response_model=SectorOut, dependencies=[Depends(require_permission("organization.sectors.update"))])
 async def update_sector(sector_id: uuid.UUID, schema: SectorUpdate, db: AsyncSession = Depends(get_db)):
     service = OrganizationService(db)
     return await service.update_sector(sector_id, schema)
+
+
+@router.delete("/sectors/{sector_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("organization.sectors.update"))])
+async def delete_sector(sector_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    service = OrganizationService(db)
+    await service.delete_sector(sector_id)
+    return None
 
 
 # ==============================================================================
@@ -158,13 +172,13 @@ async def get_my_employee(
         from app.core.exceptions import NotFoundException
         raise NotFoundException("Employee", user_id)
     service = OrganizationService(db)
-    return await service.get_employee(user.employee_id)
+    return await service.get_employee(user.employee_id, include_inactive=True)
 
 
 @router.get("/employees", response_model=list[EmployeeOut], dependencies=[Depends(require_permission("organization.employees.read"))])
-async def list_employees(unit_id: uuid.UUID | None = None, sector_id: uuid.UUID | None = None, db: AsyncSession = Depends(get_db)):
+async def list_employees(unit_id: uuid.UUID | None = None, sector_id: uuid.UUID | None = None, include_inactive: bool = True, db: AsyncSession = Depends(get_db)):
     service = OrganizationService(db)
-    return await service.list_employees(unit_id, sector_id)
+    return await service.list_employees(unit_id=unit_id, sector_id=sector_id, include_inactive=include_inactive)
 
 
 @router.post("/employees", response_model=EmployeeOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("organization.employees.create"))])
@@ -176,10 +190,17 @@ async def create_employee(schema: EmployeeCreate, db: AsyncSession = Depends(get
 @router.get("/employees/{employee_id}", response_model=EmployeeOut, dependencies=[Depends(require_permission("organization.employees.read"))])
 async def get_employee(employee_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     service = OrganizationService(db)
-    return await service.get_employee(employee_id)
+    return await service.get_employee(employee_id, include_inactive=True)
 
 
 @router.patch("/employees/{employee_id}", response_model=EmployeeOut, dependencies=[Depends(require_permission("organization.employees.update"))])
 async def update_employee(employee_id: uuid.UUID, schema: EmployeeUpdate, db: AsyncSession = Depends(get_db)):
     service = OrganizationService(db)
     return await service.update_employee(employee_id, schema)
+
+
+@router.delete("/employees/{employee_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("organization.employees.update"))])
+async def delete_employee(employee_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    service = OrganizationService(db)
+    await service.delete_employee(employee_id)
+    return None
