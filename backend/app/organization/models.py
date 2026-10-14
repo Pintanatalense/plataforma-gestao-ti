@@ -77,6 +77,7 @@ class Employee(Base, TimestampMixin, SoftDeleteMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     registration_number: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     position: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="ATIVO", nullable=False)  # "ATIVO", "AFASTADO", "DESLIGADO"
     
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

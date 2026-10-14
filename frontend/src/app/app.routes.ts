@@ -60,6 +60,11 @@ export const routes: Routes = [
         loadComponent: () => import('./features/identity/role-list/role-list.component').then(m => m.RoleList)
       },
       {
+        path: 'admin',
+        canActivate: [permissionGuard('identity.roles.read')],
+        loadComponent: () => import('./features/admin/admin.component').then(m => m.AdminComponent)
+      },
+      {
         path: 'service-desk',
         loadComponent: () => import('./features/service-desk/ticket-list/ticket-list.component').then(m => m.TicketListComponent)
       },

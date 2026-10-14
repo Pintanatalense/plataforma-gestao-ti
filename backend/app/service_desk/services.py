@@ -76,27 +76,34 @@ class ServiceDeskService:
     # ==========================================================================
 
     async def get_ticket_for_user(
-        self, ticket_id: uuid.UUID, user_employee_id: uuid.UUID | None, is_technician: bool
+        self,
+        ticket_id: uuid.UUID,
+        user_employee_id: uuid.UUID | None,
+        is_technician: bool = False,
+        can_read_all: bool = False
     ) -> Ticket:
         """
         Busca um ticket e garante as regras de visualização:
-        - Técnicos (is_technician=True) veem tudo.
-        - Colaboradores (is_technician=False) só veem seus próprios chamados.
+        - Técnicos (is_technician=True) ou Gestores (can_read_all=True) veem tudo.
+        - Solicitantes comuns só veem seus próprios chamados.
         """
         ticket = await self.repo.get_ticket(ticket_id)
         if not ticket:
             raise NotFoundException("Chamado", ticket_id)
 
-        if not is_technician:
+        if not (is_technician or can_read_all):
             if not user_employee_id or ticket.requester_id != user_employee_id:
                 raise ForbiddenException("Você não tem acesso a este chamado.")
 
         return ticket
 
     async def list_tickets_for_user(
-        self, user_employee_id: uuid.UUID | None, is_technician: bool
+        self,
+        user_employee_id: uuid.UUID | None,
+        is_technician: bool = False,
+        can_read_all: bool = False
     ) -> Sequence[Ticket]:
-        if is_technician:
+        if is_technician or can_read_all:
             return await self.repo.list_tickets()
         else:
             if not user_employee_id:
@@ -303,15 +310,20 @@ class ServiceDeskService:
         schema: TicketInteractionCreate, 
         author_id: uuid.UUID,
         user_employee_id: uuid.UUID | None,
-        is_technician: bool
+        is_technician: bool = False,
+        can_read_all: bool = False,
+        can_internal_notes: bool = False
     ) -> TicketInteraction:
-        ticket = await self.get_ticket_for_user(ticket_id, user_employee_id, is_technician)
+        ticket = await self.get_ticket_for_user(
+            ticket_id, user_employee_id, is_technician=is_technician, can_read_all=can_read_all
+        )
 
         if ticket.status == "CLOSED":
             raise BusinessRuleException("Não é possível adicionar interações a um chamado fechado.")
 
-        if schema.is_internal and not is_technician:
-            raise ForbiddenException("Apenas técnicos podem criar notas internas.")
+        can_internal = is_technician or can_internal_notes
+        if schema.is_internal and not can_internal:
+            raise ForbiddenException("Apenas técnicos ou gestores podem criar notas internas.")
 
         interaction = TicketInteraction(
             ticket_id=ticket.id,
@@ -395,9 +407,13 @@ class ServiceDeskService:
         self,
         ticket_id: uuid.UUID,
         user_employee_id: uuid.UUID | None,
-        is_technician: bool
+        is_technician: bool = False,
+        can_read_all: bool = False,
+        can_see_internal: bool = False
     ) -> list[dict]:
-        ticket = await self.get_ticket_for_user(ticket_id, user_employee_id, is_technician)
+        ticket = await self.get_ticket_for_user(
+            ticket_id, user_employee_id, is_technician=is_technician, can_read_all=can_read_all
+        )
 
         from app.audit.models import AuditLog
         from sqlalchemy import select
@@ -410,9 +426,10 @@ class ServiceDeskService:
         res = await self.session.execute(stmt)
         logs = list(res.scalars().all())
 
+        can_view_int = is_technician or can_see_internal
         history = []
         for log in logs:
-            if not is_technician and log.event_type == "ticket.interaction_added" and log.data.get("is_internal"):
+            if not can_view_int and log.event_type == "ticket.interaction_added" and log.data.get("is_internal"):
                 continue
 
             action, desc = self._format_history_description(log.event_type, log.data, log.user_name)
@@ -441,6 +458,35 @@ class ServiceDeskService:
             })
 
         return history
+
+    async def get_tickets_summary_report(self) -> dict:
+        """Gera resumo gerencial de métricas para o perfil de Gestão e Administração."""
+        tickets = await self.repo.list_tickets()
+        total = len(tickets)
+        status_counts = {"OPENED": 0, "IN_PROGRESS": 0, "PENDING": 0, "RESOLVED": 0, "CLOSED": 0}
+        priority_counts = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
+        by_category: dict[str, int] = {}
+
+        for t in tickets:
+            st = t.status
+            if st in status_counts:
+                status_counts[st] += 1
+            prio = t.priority
+            if prio in priority_counts:
+                priority_counts[prio] += 1
+            cat_name = t.category.name if t.category else "Sem Categoria"
+            by_category[cat_name] = by_category.get(cat_name, 0) + 1
+
+        resolved_or_closed = status_counts["RESOLVED"] + status_counts["CLOSED"]
+        resolution_rate = round((resolved_or_closed / total) * 100, 1) if total > 0 else 100.0
+
+        return {
+            "total_tickets": total,
+            "resolution_rate_percent": resolution_rate,
+            "by_status": status_counts,
+            "by_priority": priority_counts,
+            "by_category": [{"category": k, "count": v} for k, v in by_category.items()],
+        }
 
     def _format_history_description(self, event_type: str, data: dict, user_name: str | None) -> tuple[str, str]:
         by_user = f" por {user_name}" if user_name else ""

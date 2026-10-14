@@ -1,0 +1,605 @@
+<div class="admin-container">
+  <div class="header-section">
+    <div>
+      <h1 class="page-title">Administração do Sistema</h1>
+      <p class="page-subtitle">Central de controle para integrações, importação/exportação, backups e governança de acessos.</p>
+    </div>
+    <div class="header-badges">
+      <span class="badge-status">
+        <mat-icon>security</mat-icon> Controle RBAC Ativo
+      </span>
+    </div>
+  </div>
+
+  <mat-tab-group animationDuration="200ms" class="admin-tabs" [(selectedIndex)]="activeTabIndex">
+    <!-- ABA 1: WHATSAPP BOT -->
+    <mat-tab>
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">chat</mat-icon>
+        Bot do WhatsApp
+      </ng-template>
+
+      <div class="tab-content">
+        <div class="two-column-grid">
+          <!-- Configuração Geral -->
+          <mat-card class="admin-card">
+            <mat-card-header>
+              <mat-icon mat-card-avatar color="primary">settings_cell</mat-icon>
+              <mat-card-title>Configurações da Integração</mat-card-title>
+              <mat-card-subtitle>Parametrização do canal de atendimento via WhatsApp</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content>
+              <div class="status-toggle-box" [class.active]="waConfig.is_active">
+                <div class="toggle-info">
+                  <strong>Status do Bot</strong>
+                  <span>{{ waConfig.is_active ? 'Ativo e processando mensagens' : 'Inativo (mensagens recebidas serão ignoradas)' }}</span>
+                </div>
+                <mat-slide-toggle [(ngModel)]="waConfig.is_active" color="primary"></mat-slide-toggle>
+              </div>
+
+              <div class="form-grid">
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>Provedor da Integração</mat-label>
+                  <mat-select [(ngModel)]="waConfig.provider">
+                    <mat-option value="EVOLUTION_API">Evolution API (Recomendado - Código Aberto / Auto-hospedado)</mat-option>
+                    <mat-option value="MOCK">Mock Simulado (Ambiente de Testes / Desenvolvimento)</mat-option>
+                    <mat-option value="META_CLOUD">Meta Cloud API (Oficial WhatsApp Business)</mat-option>
+                  </mat-select>
+                </mat-form-field>
+
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>URL Base da API</mat-label>
+                  <input matInput [(ngModel)]="waConfig.base_url" placeholder="Ex: http://evolution-api:8080 ou https://wa.empresa.com.br">
+                  <mat-hint>Endereço onde a instância do gateway está hospedada</mat-hint>
+                </mat-form-field>
+
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>Nome da Instância</mat-label>
+                  <input matInput [(ngModel)]="waConfig.instance_name" placeholder="Ex: gestao_chamados">
+                  <mat-hint>Identificador da sessão no gateway de mensagens</mat-hint>
+                </mat-form-field>
+
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>Chave de API / Token (API Key)</mat-label>
+                  <input matInput type="password" [(ngModel)]="waApiKeyInput" [placeholder]="waConfig.api_key_configured ? '•••••••• (Configurada - digite para alterar)' : 'Digite a chave de API'">
+                  <mat-hint>{{ waConfig.api_key_configured ? 'Chave cadastrada com segurança' : 'Nenhuma chave informada' }}</mat-hint>
+                </mat-form-field>
+
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>Segredo do Webhook (Opcional)</mat-label>
+                  <input matInput type="password" [(ngModel)]="waWebhookSecretInput" [placeholder]="waConfig.webhook_secret_configured ? '•••••••• (Configurado)' : 'Token para validação de assinatura'">
+                </mat-form-field>
+              </div>
+
+              <div class="action-row">
+                <button mat-flat-button color="primary" [disabled]="loadingWaConfig" (click)="saveWaConfig()">
+                  <mat-icon>save</mat-icon> Salvar Configurações
+                </button>
+              </div>
+            </mat-card-content>
+          </mat-card>
+
+          <!-- Webhook e Teste de Envio -->
+          <div class="right-column-stack">
+            <!-- Instruções do Webhook -->
+            <mat-card class="admin-card webhook-card">
+              <mat-card-header>
+                <mat-icon mat-card-avatar color="accent">webhook</mat-icon>
+                <mat-card-title>Endpoint de Webhook</mat-card-title>
+                <mat-card-subtitle>Configure esta URL no painel da sua Evolution API</mat-card-subtitle>
+              </mat-card-header>
+              <mat-card-content>
+                <p class="webhook-desc">Cadastre a URL abaixo na sua instância do WhatsApp para receber mensagens recebidas (evento <code>MESSAGES_UPSERT</code>):</p>
+                <div class="code-box">
+                  <code>{{ currentOrigin }}/api/v1/integrations/whatsapp/webhook</code>
+                </div>
+                <div class="feature-bullets">
+                  <div><mat-icon>check_circle</mat-icon> Autoatendimento guiado com menu numérico</div>
+                  <div><mat-icon>check_circle</mat-icon> Consulta em tempo real de status dos chamados</div>
+                  <div><mat-icon>check_circle</mat-icon> Respostas e interações registradas no chamado</div>
+                  <div><mat-icon>check_circle</mat-icon> Notificações automáticas de movimentações</div>
+                </div>
+              </mat-card-content>
+            </mat-card>
+
+            <!-- Teste de Envio -->
+            <mat-card class="admin-card">
+              <mat-card-header>
+                <mat-icon mat-card-avatar>send</mat-icon>
+                <mat-card-title>Testar Envio de Mensagem</mat-card-title>
+                <mat-card-subtitle>Verifique a conectividade com o gateway</mat-card-subtitle>
+              </mat-card-header>
+              <mat-card-content>
+                <div class="form-grid">
+                  <mat-form-field appearance="outline" class="full-width">
+                    <mat-label>Telefone de Destino (DDI + DDD + Número)</mat-label>
+                    <input matInput [(ngModel)]="testPhone" placeholder="Ex: 5511999998888">
+                    <mat-hint>Apenas números, incluindo código do país (55)</mat-hint>
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline" class="full-width">
+                    <mat-label>Mensagem de Teste</mat-label>
+                    <textarea matInput rows="2" [(ngModel)]="testMessage" placeholder="Mensagem de teste do sistema"></textarea>
+                  </mat-form-field>
+                </div>
+
+                <div class="test-feedback" *ngIf="testFeedback">
+                  <div [class]="'alert-box ' + (testFeedback.success ? 'alert-success' : 'alert-error')">
+                    <mat-icon>{{ testFeedback.success ? 'check_circle' : 'error' }}</mat-icon>
+                    <span>{{ testFeedback.message }}</span>
+                  </div>
+                </div>
+
+                <div class="action-row">
+                  <button mat-stroked-button color="primary" [disabled]="testingSend || !testPhone" (click)="sendTestWhatsApp()">
+                    <mat-icon>send</mat-icon> Enviar Teste
+                  </button>
+                </div>
+              </mat-card-content>
+            </mat-card>
+          </div>
+        </div>
+      </div>
+    </mat-tab>
+
+    <!-- ABA 2: IMPORTAÇÃO DE DADOS CSV -->
+    <mat-tab>
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">upload_file</mat-icon>
+        Importação CSV
+      </ng-template>
+
+      <div class="tab-content">
+        <mat-card class="admin-card">
+          <mat-card-header>
+            <mat-icon mat-card-avatar color="primary">input</mat-icon>
+            <mat-card-title>Assistente de Importação de Registros</mat-card-title>
+            <mat-card-subtitle>Envio seguro de dados em lote com validação e detecção de duplicidades</mat-card-subtitle>
+          </mat-card-header>
+
+          <mat-card-content>
+            <!-- Wizard Steps Progress -->
+            <div class="wizard-steps-indicator">
+              <div class="step-badge" [class.active]="importStep === 1" [class.completed]="importStep > 1">1. Arquivo & Módulo</div>
+              <div class="step-divider"></div>
+              <div class="step-badge" [class.active]="importStep === 2" [class.completed]="importStep > 2">2. Mapeamento & Pré-visualização</div>
+              <div class="step-divider"></div>
+              <div class="step-badge" [class.active]="importStep === 3" [class.completed]="importStep > 3">3. Execução & Resultado</div>
+            </div>
+
+            <!-- PASSO 1: Seleção de Entidade e Upload -->
+            <div *ngIf="importStep === 1" class="wizard-panel">
+              <div class="form-row-2">
+                <mat-form-field appearance="outline">
+                  <mat-label>Módulo / Entidade de Destino</mat-label>
+                  <mat-select [(ngModel)]="selectedImportEntity">
+                    <mat-option value="categories">Categorias de Chamados</mat-option>
+                    <mat-option value="sectors">Setores Organizacionais</mat-option>
+                    <mat-option value="units">Unidades de Atendimento</mat-option>
+                    <mat-option value="employees">Colaboradores</mat-option>
+                    <mat-option value="users">Usuários do Sistema</mat-option>
+                  </mat-select>
+                </mat-form-field>
+
+                <div class="file-upload-box">
+                  <input type="file" #fileInput accept=".csv,text/csv" (change)="onFileSelected($event)" style="display: none">
+                  <button mat-stroked-button (click)="fileInput.click()" type="button">
+                    <mat-icon>attach_file</mat-icon> {{ selectedFile ? selectedFile.name : 'Selecionar Arquivo .CSV' }}
+                  </button>
+                  <span *ngIf="selectedFile" class="file-size-info">({{ formatBytes(selectedFile.size) }})</span>
+                </div>
+              </div>
+
+              <div class="guidelines-box">
+                <h4><mat-icon>info</mat-icon> Requisitos para o arquivo CSV</h4>
+                <ul>
+                  <li>Codificação UTF-8 ou ISO-8859-1 recomendada.</li>
+                  <li>Delimitadores suportados automaticamente: ponto-e-vírgula (<code>;</code>) ou vírgula (<code>,</code>).</li>
+                  <li>A primeira linha deve conter os cabeçalhos das colunas.</li>
+                  <li>Transação atômica: caso ocorra inconsistência severa, a operação é revertida para manter integridade.</li>
+                </ul>
+              </div>
+
+              <div class="action-row">
+                <button mat-flat-button color="primary" [disabled]="!selectedFile || analyzingFile" (click)="analyzeSelectedFile()">
+                  <mat-icon>search</mat-icon> Analisar e Validar Arquivo
+                </button>
+              </div>
+            </div>
+
+            <!-- PASSO 2: Mapeamento e Preview -->
+            <div *ngIf="importStep === 2 && analysisResult" class="wizard-panel">
+              <div class="analysis-meta-summary">
+                <div class="meta-item">
+                  <label>Arquivo:</label>
+                  <span>{{ analysisResult.filename }}</span>
+                </div>
+                <div class="meta-item">
+                  <label>Delimitador Detectado:</label>
+                  <code>"{{ analysisResult.detected_delimiter }}"</code>
+                </div>
+                <div class="meta-item">
+                  <label>Linhas Detectadas:</label>
+                  <span>{{ analysisResult.total_rows_detected }} registros</span>
+                </div>
+              </div>
+
+              <h3 class="section-heading">Mapeamento de Colunas</h3>
+              <div class="mapping-table-container">
+                <table class="data-table mapping-table">
+                  <thead>
+                    <tr>
+                      <th>Coluna no Arquivo CSV</th>
+                      <th>Campo no Sistema</th>
+                      <th>Obrigatório?</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr *ngFor="let map of analysisResult.column_mappings">
+                      <td><strong>{{ map.file_column }}</strong></td>
+                      <td>
+                        <select class="custom-select" [(ngModel)]="map.system_field">
+                          <option value="">-- Ignorar esta coluna --</option>
+                          <option *ngFor="let field of analysisResult.available_system_fields" [value]="field.field">
+                            {{ field.label }} ({{ field.field }}) {{ field.required ? '*' : '' }}
+                          </option>
+                        </select>
+                      </td>
+                      <td>
+                        <span class="badge-req" *ngIf="map.required">Sim</span>
+                        <span class="badge-opt" *ngIf="!map.required">Opcional</span>
+                      </td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <h3 class="section-heading">Pré-visualização dos Dados (Primeiras Linhas)</h3>
+              <div class="preview-table-container">
+                <table class="data-table">
+                  <thead>
+                    <tr>
+                      <th *ngFor="let h of analysisResult.headers">{{ h }}</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr *ngFor="let row of analysisResult.preview_rows">
+                      <td *ngFor="let h of analysisResult.headers">{{ row[h] }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              <div class="form-row-2 execution-options">
+                <mat-form-field appearance="outline">
+                  <mat-label>Tratamento de Duplicidades</mat-label>
+                  <mat-select [(ngModel)]="importOnDuplicate">
+                    <mat-option value="skip">Ignorar registros existentes (Pular)</mat-option>
+                    <mat-option value="update">Atualizar registros existentes</mat-option>
+                    <mat-option value="error">Interromper importação com erro</mat-option>
+                  </mat-select>
+                </mat-form-field>
+
+                <div class="checkbox-option">
+                  <mat-checkbox [(ngModel)]="importDryRun">Executar apenas como Simulação (Dry Run)</mat-checkbox>
+                  <small>Testa toda a validação sem gravar no banco de dados.</small>
+                </div>
+              </div>
+
+              <div class="action-row space-between">
+                <button mat-stroked-button (click)="importStep = 1">
+                  <mat-icon>arrow_back</mat-icon> Voltar
+                </button>
+                <button mat-flat-button color="primary" [disabled]="executingImport" (click)="executeImport()">
+                  <mat-icon>play_arrow</mat-icon> {{ importDryRun ? 'Executar Simulação' : 'Confirmar e Importar' }}
+                </button>
+              </div>
+            </div>
+
+            <!-- PASSO 3: Relatório de Execução -->
+            <div *ngIf="importStep === 3 && importResult" class="wizard-panel">
+              <div class="result-summary-grid">
+                <div class="result-card total">
+                  <span class="count">{{ importResult.total_processed }}</span>
+                  <span class="label">Total Processado</span>
+                </div>
+                <div class="result-card success">
+                  <span class="count">{{ importResult.success_count }}</span>
+                  <span class="label">Sucessos</span>
+                </div>
+                <div class="result-card error">
+                  <span class="count">{{ importResult.error_count }}</span>
+                  <span class="label">Erros</span>
+                </div>
+                <div class="result-card skipped">
+                  <span class="count">{{ importResult.skipped_count }}</span>
+                  <span class="label">Descartados / Pulados</span>
+                </div>
+              </div>
+
+              <div *ngIf="importResult.errors && importResult.errors.length > 0" class="error-report-section">
+                <h3 class="section-heading error-title">Detalhamento das Inconsistências</h3>
+                <div class="error-table-container">
+                  <table class="data-table error-table">
+                    <thead>
+                      <tr>
+                        <th>Linha</th>
+                        <th>Campo</th>
+                        <th>Motivo da Rejeição</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr *ngFor="let err of importResult.errors">
+                        <td><strong>#{{ err.row }}</strong></td>
+                        <td><code>{{ err.field }}</code></td>
+                        <td>{{ err.message }}</td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div class="action-row">
+                <button mat-flat-button color="primary" (click)="resetImportWizard()">
+                  <mat-icon>refresh</mat-icon> Nova Importação
+                </button>
+              </div>
+            </div>
+          </mat-card-content>
+        </mat-card>
+      </div>
+    </mat-tab>
+
+    <!-- ABA 3: EXPORTAÇÃO DE DADOS CSV -->
+    <mat-tab>
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">download</mat-icon>
+        Exportação CSV
+      </ng-template>
+
+      <div class="tab-content">
+        <mat-card class="admin-card">
+          <mat-card-header>
+            <mat-icon mat-card-avatar color="primary">output</mat-icon>
+            <mat-card-title>Exportação Sanitizada de Registros</mat-card-title>
+            <mat-card-subtitle>Gere planilhas CSV com codificação UTF-8 BOM e proteção automática contra CSV Injection</mat-card-subtitle>
+          </mat-card-header>
+
+          <mat-card-content>
+            <div class="security-banner">
+              <mat-icon>verified_user</mat-icon>
+              <div>
+                <strong>Proteção de Integridade & Planilhas:</strong>
+                <p>Todos os campos exportados são sanitizados para neutralizar fórmulas maliciosas (prefixadas com <code>=</code>, <code>+</code>, <code>-</code>, <code>@</code>) e incluem cabeçalho BOM para abertura direta no Microsoft Excel sem caracteres corrompidos.</p>
+              </div>
+            </div>
+
+            <div class="export-form-grid">
+              <mat-form-field appearance="outline">
+                <mat-label>Entidade / Módulo</mat-label>
+                <mat-select [(ngModel)]="exportEntity">
+                  <mat-option value="tickets">Chamados de Atendimento</mat-option>
+                  <mat-option value="users">Usuários do Sistema</mat-option>
+                  <mat-option value="categories">Categorias de Chamados</mat-option>
+                  <mat-option value="sectors">Setores Organizacionais</mat-option>
+                  <mat-option value="units">Unidades de Atendimento</mat-option>
+                  <mat-option value="employees">Colaboradores</mat-option>
+                  <mat-option value="assets">Patrimônio & Ativos</mat-option>
+                  <mat-option value="stock_items">Itens de Estoque & Insumos</mat-option>
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline">
+                <mat-label>Delimitador de Coluna</mat-label>
+                <mat-select [(ngModel)]="exportDelimiter">
+                  <mat-option value=";">Ponto e Vírgula (;) - Padrão Excel Brasil</mat-option>
+                  <mat-option value=",">Vírgula (,) - Padrão Internacional</mat-option>
+                </mat-select>
+              </mat-form-field>
+
+              <mat-form-field appearance="outline">
+                <mat-label>Data Inicial (Opcional)</mat-label>
+                <input matInput type="date" [(ngModel)]="exportDateFrom">
+              </mat-form-field>
+
+              <mat-form-field appearance="outline">
+                <mat-label>Data Final (Opcional)</mat-label>
+                <input matInput type="date" [(ngModel)]="exportDateTo">
+              </mat-form-field>
+            </div>
+
+            <div class="export-options">
+              <mat-checkbox [(ngModel)]="exportIncludeHeaders">Incluir linha de cabeçalhos no CSV</mat-checkbox>
+            </div>
+
+            <div class="action-row">
+              <button mat-flat-button color="primary" [disabled]="exporting" (click)="executeExport()">
+                <mat-icon>file_download</mat-icon> {{ exporting ? 'Gerando Arquivo...' : 'Gerar e Baixar CSV' }}
+              </button>
+            </div>
+          </mat-card-content>
+        </mat-card>
+      </div>
+    </mat-tab>
+
+    <!-- ABA 4: BACKUP E RESTAURAÇÃO -->
+    <mat-tab>
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">backup</mat-icon>
+        Backups do Banco de Dados
+      </ng-template>
+
+      <div class="tab-content">
+        <mat-card class="admin-card">
+          <mat-card-header>
+            <mat-icon mat-card-avatar color="primary">storage</mat-icon>
+            <mat-card-title>Gerenciador de Backups do Banco de Dados</mat-card-title>
+            <mat-card-subtitle>Snapshots completos e consistentes do PostgreSQL com compactação Gzip e integridade SHA-256</mat-card-subtitle>
+          </mat-card-header>
+
+          <mat-card-content>
+            <div class="backup-distinction-banner">
+              <mat-icon color="accent">lightbulb</mat-icon>
+              <div>
+                <strong>Atenção à finalidade:</strong>
+                <p>A exportação CSV serve para relatórios e intercâmbio de dados tabulares. Os backups abaixo contêm a estrutura completa (DDL), esquemas, dados relacionais e auditoria do PostgreSQL em arquivos compactados <code>.sql.gz</code>, necessários para a recuperação de desastres (Disaster Recovery).</p>
+              </div>
+            </div>
+
+            <div class="backup-action-bar">
+              <button mat-flat-button color="primary" [disabled]="generatingBackup" (click)="generateBackupNow()">
+                <mat-icon>add_circle</mat-icon> {{ generatingBackup ? 'Gerando Snapshot...' : 'Gerar Backup Agora' }}
+              </button>
+              <button mat-stroked-button (click)="loadBackups()">
+                <mat-icon>refresh</mat-icon> Atualizar Lista
+              </button>
+            </div>
+
+            <div class="backup-table-container">
+              <table class="data-table">
+                <thead>
+                  <tr>
+                    <th>Arquivo</th>
+                    <th>Tamanho</th>
+                    <th>Integridade (SHA-256)</th>
+                    <th>Status</th>
+                    <th>Criado Em</th>
+                    <th>Responsável</th>
+                    <th>Ações</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr *ngFor="let b of backups">
+                    <td>
+                      <div class="file-name-cell">
+                        <mat-icon>archive</mat-icon>
+                        <span>{{ b.filename }}</span>
+                      </div>
+                    </td>
+                    <td>{{ formatBytes(b.size_bytes) }}</td>
+                    <td>
+                      <code class="hash-code" [title]="b.sha256_hash">{{ b.sha256_hash ? b.sha256_hash.substring(0, 16) + '...' : 'N/A' }}</code>
+                    </td>
+                    <td>
+                      <span class="status-badge" [class.success]="b.status === 'SUCCESS'" [class.failed]="b.status === 'FAILED'">
+                        {{ b.status === 'SUCCESS' ? 'Concluído' : b.status }}
+                      </span>
+                    </td>
+                    <td>{{ b.created_at | date:'dd/MM/yyyy HH:mm' }}</td>
+                    <td>{{ b.created_by_email || 'Sistema' }}</td>
+                    <td class="action-buttons-cell">
+                      <button mat-icon-button color="primary" title="Baixar Backup" (click)="downloadBackupFile(b)">
+                        <mat-icon>download</mat-icon>
+                      </button>
+                      <button mat-icon-button color="warn" title="Excluir Backup" (click)="deleteBackupFile(b)">
+                        <mat-icon>delete</mat-icon>
+                      </button>
+                    </td>
+                  </tr>
+                  <tr *ngIf="backups.length === 0">
+                    <td colspan="7" class="empty-cell">Nenhum backup gerado até o momento.</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+
+            <!-- Instruções de Restauração -->
+            <div class="restore-guide-card">
+              <h4><mat-icon>terminal</mat-icon> Procedimento Operacional de Restauração</h4>
+              <p>Para restaurar o banco de dados a partir de um backup <code>.sql.gz</code> baixado:</p>
+              <pre><code># 1. Descompactar e aplicar no container do banco de dados:
+gzip -d &lt; backup_YYYYMMDD_HHMMSS.sql.gz | docker exec -i gestao-ti-db psql -U gestao_user -d gestao_ti_db</code></pre>
+            </div>
+          </mat-card-content>
+        </mat-card>
+      </div>
+    </mat-tab>
+
+    <!-- ABA 5: MATRIZ DE PERFIS RBAC -->
+    <mat-tab>
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">admin_panel_settings</mat-icon>
+        Perfis & Matriz RBAC
+      </ng-template>
+
+      <div class="tab-content">
+        <mat-card class="admin-card">
+          <mat-card-header>
+            <mat-icon mat-card-avatar color="primary">shield</mat-icon>
+            <mat-card-title>Estrutura de Perfis Operacionais</mat-card-title>
+            <mat-card-subtitle>Separação de privilégios conforme as atribuições operacionais do sistema</mat-card-subtitle>
+          </mat-card-header>
+
+          <mat-card-content>
+            <div class="profiles-cards-grid">
+              <div class="profile-card gestao">
+                <div class="profile-header">
+                  <mat-icon>analytics</mat-icon>
+                  <h3>Gestão</h3>
+                </div>
+                <p class="profile-desc">Liderança operacional e acompanhamento de indicadores da organização.</p>
+                <ul class="profile-features">
+                  <li>Visualização de chamados de toda a organização</li>
+                  <li>Relatórios consolidados de SLA e atendimento</li>
+                  <li>Exportação autorizada de dados</li>
+                  <li>Acompanhamento de filas e desempenho</li>
+                </ul>
+              </div>
+
+              <div class="profile-card atendente">
+                <div class="profile-header">
+                  <mat-icon>support_agent</mat-icon>
+                  <h3>Atendente</h3>
+                </div>
+                <p class="profile-desc">Equipe técnica responsável pelo atendimento e resolução das demandas.</p>
+                <ul class="profile-features">
+                  <li>Assunção e atendimento de chamados da fila</li>
+                  <li>Registro de comentários técnicos internos</li>
+                  <li>Uso de materiais com baixa em estoque</li>
+                  <li>Encerramento com registro de resolução</li>
+                </ul>
+              </div>
+
+              <div class="profile-card solicitante">
+                <div class="profile-header">
+                  <mat-icon>person</mat-icon>
+                  <h3>Solicitante</h3>
+                </div>
+                <p class="profile-desc">Usuários finais da organização que necessitam de suporte técnico.</p>
+                <ul class="profile-features">
+                  <li>Abertura rápida com formulários dinâmicos</li>
+                  <li>Acompanhamento estrito dos próprios chamados</li>
+                  <li>Interação e resposta a dúvidas técnicas</li>
+                  <li>Isolamento total de dados administrativos</li>
+                </ul>
+              </div>
+
+              <div class="profile-card admin">
+                <div class="profile-header">
+                  <mat-icon>security</mat-icon>
+                  <h3>Administrador</h3>
+                </div>
+                <p class="profile-desc">Responsáveis técnicos pela configuração e governança da plataforma.</p>
+                <ul class="profile-features">
+                  <li>Gerenciamento de usuários e perfis</li>
+                  <li>Configuração do bot WhatsApp e integrações</li>
+                  <li>Importação em lote e gestão de backups</li>
+                  <li>Acesso irrestrito a todos os módulos</li>
+                </ul>
+              </div>
+            </div>
+
+            <div class="quick-links-bar">
+              <a mat-stroked-button color="primary" routerLink="/identity/users">
+                <mat-icon>people</mat-icon> Gerenciar Contas de Usuários
+              </a>
+              <a mat-stroked-button color="primary" routerLink="/identity/roles">
+                <mat-icon>lock</mat-icon> Gerenciar Perfis & Permissões
+              </a>
+            </div>
+          </mat-card-content>
+        </mat-card>
+      </div>
+    </mat-tab>
+  </mat-tab-group>
+</div>

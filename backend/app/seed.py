@@ -93,6 +93,18 @@ async def seed() -> None:
             {"code": "service_desk.tickets.manage", "description": "Atender e gerenciar chamados (técnico)"},
             {"code": "service_desk.tickets.create", "description": "Abrir novos chamados de suporte"},
             {"code": "service_desk.tickets.read", "description": "Visualizar próprios chamados"},
+            {"code": "service_desk.tickets.read_all", "description": "Visualizar todos os chamados da organização (Gestão)"},
+            {"code": "service_desk.reports.read", "description": "Acessar relatórios e métricas de desempenho/SLA"},
+            {"code": "service_desk.interactions.internal", "description": "Registrar e visualizar notas internas no chamado"},
+
+            # Sistema, Dados e Backups
+            {"code": "system.data.export", "description": "Exportar dados do sistema em formato CSV"},
+            {"code": "system.data.import", "description": "Importar dados no sistema via CSV"},
+            {"code": "system.backup.manage", "description": "Gerenciar e gerar backups do banco de dados"},
+            {"code": "system.backup.download", "description": "Baixar arquivos de backup do banco de dados"},
+
+            # Integrações
+            {"code": "integrations.whatsapp.manage", "description": "Configurar e gerenciar bot do WhatsApp"},
         ]
         
         for p_data in permissions_data:
@@ -123,29 +135,71 @@ async def seed() -> None:
             await session.flush()
             print(f"Perfil '{admin_role.name}' sincronizado com {len(all_perms)} permissões.")
 
-        # 5. Criar Perfil Solicitante (Apenas abertura e acompanhamento dos próprios chamados)
-        stmt_solicitante_perms = select(Permission).where(
-            Permission.code.in_(["service_desk.tickets.create", "service_desk.tickets.read"])
+        # Helper para sincronizar perfil
+        async def sync_role(name: str, desc: str, perm_codes: list[str]) -> Role:
+            stmt_p = select(Permission).where(Permission.code.in_(perm_codes))
+            perms = list((await session.execute(stmt_p)).scalars().all())
+            stmt_r = select(Role).options(selectinload(Role.permissions)).where(Role.name == name)
+            role = (await session.execute(stmt_r)).scalar_one_or_none()
+            if not role:
+                role = Role(name=name, description=desc)
+                role.permissions = perms
+                session.add(role)
+                await session.flush()
+                print(f"Perfil '{role.name}' criado com {len(perms)} permissões.")
+            else:
+                role.description = desc
+                role.permissions = perms
+                await session.flush()
+                print(f"Perfil '{role.name}' sincronizado com {len(perms)} permissões.")
+            return role
+
+        # 5. Perfis Operacionais: Gestão, Atendente e Solicitante
+        gestao_codes = [
+            "service_desk.tickets.read_all",
+            "service_desk.tickets.read",
+            "service_desk.tickets.create",
+            "service_desk.reports.read",
+            "service_desk.interactions.internal",
+            "organization.company.read",
+            "organization.units.read",
+            "organization.sectors.read",
+            "organization.employees.read",
+            "assets.read",
+            "stock.read",
+            "inventory.read",
+            "system.data.export",
+        ]
+        await sync_role(
+            name="Gestão",
+            desc="Visualização gerencial, relatórios, SLAs, indicadores e exportação de dados.",
+            perm_codes=gestao_codes,
         )
-        solicitante_perms = list((await session.execute(stmt_solicitante_perms)).scalars().all())
 
-        stmt = select(Role).options(selectinload(Role.permissions)).where(Role.name == "Solicitante")
-        result = await session.execute(stmt)
-        solicitante_role = result.scalar_one_or_none()
+        atendente_codes = [
+            "service_desk.tickets.manage",
+            "service_desk.tickets.read_all",
+            "service_desk.tickets.read",
+            "service_desk.tickets.create",
+            "service_desk.interactions.internal",
+            "assets.read",
+            "stock.read",
+        ]
+        await sync_role(
+            name="Atendente",
+            desc="Atendimento operacional de chamados, encaminhamento, notas técnicas e consumo de estoque.",
+            perm_codes=atendente_codes,
+        )
 
-        if not solicitante_role:
-            solicitante_role = Role(
-                name="Solicitante",
-                description="Perfil restrito para abertura e acompanhamento dos próprios chamados."
-            )
-            solicitante_role.permissions = solicitante_perms
-            session.add(solicitante_role)
-            await session.flush()
-            print(f"Perfil '{solicitante_role.name}' criado com {len(solicitante_perms)} permissões.")
-        else:
-            solicitante_role.permissions = solicitante_perms
-            await session.flush()
-            print(f"Perfil '{solicitante_role.name}' sincronizado com {len(solicitante_perms)} permissões.")
+        solicitante_codes = [
+            "service_desk.tickets.create",
+            "service_desk.tickets.read",
+        ]
+        await sync_role(
+            name="Solicitante",
+            desc="Perfil restrito para abertura e acompanhamento dos próprios chamados.",
+            perm_codes=solicitante_codes,
+        )
 
         # 6. Criar Categorias Iniciais de Estoque
         stock_categories_data = [

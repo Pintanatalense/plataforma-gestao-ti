@@ -34,7 +34,13 @@ async def get_user_context(
     session: AsyncSession = Depends(get_db)
 ) -> dict:
     user_id = uuid.UUID(payload["sub"])
-    is_technician = payload.get("is_admin", False) or "service_desk.tickets.manage" in payload.get("permissions", [])
+    perms = payload.get("permissions", [])
+    is_admin = payload.get("is_admin", False)
+    
+    is_technician = is_admin or "service_desk.tickets.manage" in perms
+    can_read_all = is_admin or is_technician or "service_desk.tickets.read_all" in perms
+    can_internal_notes = is_admin or is_technician or "service_desk.interactions.internal" in perms
+    can_view_reports = is_admin or "service_desk.reports.read" in perms
     
     # precisamos do employee_id do usuário logado
     repo = IdentityRepository(session)
@@ -57,7 +63,10 @@ async def get_user_context(
         "employee_id": employee_id,
         "unit_id": employee_unit_id,
         "sector_id": employee_sector_id,
-        "is_technician": is_technician
+        "is_technician": is_technician,
+        "can_read_all": can_read_all,
+        "can_internal_notes": can_internal_notes,
+        "can_view_reports": can_view_reports,
     }
 
 
@@ -114,7 +123,7 @@ async def update_category(
 @router.get(
     "",
     response_model=list[TicketResponse],
-    summary="Lista chamados do usuário ou todos (se técnico)"
+    summary="Lista chamados do usuário ou todos (se técnico ou gestão)"
 )
 async def list_tickets(
     ctx: dict = Depends(get_user_context),
@@ -123,17 +132,33 @@ async def list_tickets(
     service = ServiceDeskService(session)
     tickets = await service.list_tickets_for_user(
         user_employee_id=ctx["employee_id"],
-        is_technician=ctx["is_technician"]
+        is_technician=ctx["is_technician"],
+        can_read_all=ctx["can_read_all"]
     )
     
     responses = []
     for t in tickets:
         resp = TicketResponse.model_validate(t)
-        if not ctx["is_technician"]:
+        if not ctx["can_internal_notes"]:
             resp.interactions = [i for i in resp.interactions if not i.is_internal]
         responses.append(resp)
         
     return responses
+
+
+@router.get(
+    "/reports/summary",
+    summary="Resumo gerencial de chamados, métricas e distribuição por status/prioridade"
+)
+async def get_tickets_summary_report(
+    ctx: dict = Depends(get_user_context),
+    session: AsyncSession = Depends(get_db)
+) -> dict:
+    if not ctx["can_view_reports"]:
+        from app.core.exceptions import ForbiddenException
+        raise ForbiddenException("Apenas o perfil de Gestão ou Administrador pode visualizar relatórios.")
+    service = ServiceDeskService(session)
+    return await service.get_tickets_summary_report()
 
 
 @router.get(
@@ -150,11 +175,12 @@ async def get_ticket(
     ticket = await service.get_ticket_for_user(
         ticket_id=ticket_id,
         user_employee_id=ctx["employee_id"],
-        is_technician=ctx["is_technician"]
+        is_technician=ctx["is_technician"],
+        can_read_all=ctx["can_read_all"]
     )
     
     resp = TicketResponse.model_validate(ticket)
-    if not ctx["is_technician"]:
+    if not ctx["can_internal_notes"]:
         resp.interactions = [i for i in resp.interactions if not i.is_internal]
         
     return resp
@@ -226,7 +252,9 @@ async def get_ticket_history(
     history = await service.get_ticket_history(
         ticket_id=ticket_id,
         user_employee_id=ctx["employee_id"],
-        is_technician=ctx["is_technician"]
+        is_technician=ctx["is_technician"],
+        can_read_all=ctx["can_read_all"],
+        can_see_internal=ctx["can_internal_notes"]
     )
     return [TicketHistoryItem.model_validate(h) for h in history]
 
@@ -249,7 +277,9 @@ async def add_interaction(
         schema=schema,
         author_id=ctx["user_id"],
         user_employee_id=ctx["employee_id"],
-        is_technician=ctx["is_technician"]
+        is_technician=ctx["is_technician"],
+        can_read_all=ctx["can_read_all"],
+        can_internal_notes=ctx["can_internal_notes"]
     )
     await session.commit()
     return interaction

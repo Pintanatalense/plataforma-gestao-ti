@@ -51,6 +51,11 @@ class Settings(BaseSettings):
     # --- Chamados ---
     TICKET_REOPEN_DAYS: int = 3
 
+    # --- Backups ---
+    BACKUP_STORAGE_PATH: str = "/data/backups"
+    BACKUP_RETENTION_DAYS: int = 30
+    BACKUP_MAX_KEEP: int = 15
+
     # --- CORS ---
     CORS_ORIGINS: list[str] = ["http://localhost:4200"]
 
@@ -63,6 +68,11 @@ class Settings(BaseSettings):
     def attachment_storage_dir(self) -> Path:
         """Diretório de armazenamento de anexos como Path."""
         return Path(self.ATTACHMENT_STORAGE_PATH)
+
+    @property
+    def backup_storage_dir(self) -> Path:
+        """Diretório de armazenamento de backups como Path."""
+        return Path(self.BACKUP_STORAGE_PATH)
 
 
 @lru_cache

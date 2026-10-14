@@ -369,3 +369,184 @@ async def test_ticket_lifecycle_history_and_requester_closing(client: AsyncClien
     assert "Abertura de Chamado" in actions
     assert any("Status" in a or "Finalização" in a for a in actions)
 
+
+@pytest.mark.asyncio
+async def test_tripartite_rbac_gestao_atendente_solicitante(client: AsyncClient, db_session: AsyncSession):
+    """
+    Testa a matriz de autorização tripartite no Service Desk:
+    - Gestão: Leitura global de chamados, relatórios (/reports/summary), notas internas; BLOQUEADO para alterações operacionais.
+    - Atendente: Atendimento, alteração de status/prioridade/responsável, notas internas.
+    - Solicitante: Apenas seus próprios chamados, sem acesso a relatórios gerenciais ou notas internas.
+    """
+    from app.core.security import hash_password
+    from sqlalchemy import select
+    from app.organization.models import Company, Unit, Sector, Employee
+    from app.identity.models import UserAccount, Role, Permission
+    from app.service_desk.models import TicketCategory
+
+    # 1. Setup da estrutura organizacional
+    company = Company(name="RBAC Tripartite Corp", cnpj="99.888.777/0001-99")
+    db_session.add(company)
+    await db_session.flush()
+
+    unit = Unit(company_id=company.id, name="Matriz Central", code="MC-01", type="MATRIZ")
+    db_session.add(unit)
+    await db_session.flush()
+
+    sector = Sector(unit_id=unit.id, name="Tecnologia", code="TEC-01")
+    db_session.add(sector)
+    await db_session.flush()
+
+    # 2. Criar colaboradores
+    emp_solic1 = Employee(unit_id=unit.id, sector_id=sector.id, name="Solicitante Um", registration_number="SOL-001")
+    emp_solic2 = Employee(unit_id=unit.id, sector_id=sector.id, name="Solicitante Dois", registration_number="SOL-002")
+    emp_atend = Employee(unit_id=unit.id, sector_id=sector.id, name="Técnico Atendente", registration_number="ATD-001")
+    emp_gestor = Employee(unit_id=unit.id, sector_id=sector.id, name="Gerente Gestão", registration_number="GES-001")
+    db_session.add_all([emp_solic1, emp_solic2, emp_atend, emp_gestor])
+    await db_session.flush()
+
+    # 3. Criar permissões necessárias
+    needed_codes = [
+        "service_desk.tickets.create",
+        "service_desk.tickets.read",
+        "service_desk.tickets.manage",
+        "service_desk.tickets.read_all",
+        "service_desk.reports.read",
+        "service_desk.interactions.internal"
+    ]
+    perms_dict = {}
+    for code in needed_codes:
+        res = await db_session.execute(select(Permission).where(Permission.code == code))
+        p = res.scalar_one_or_none()
+        if not p:
+            p = Permission(code=code, description=code)
+            db_session.add(p)
+            await db_session.flush()
+        perms_dict[code] = p
+
+    # 4. Criar Roles
+    role_solic = Role(name="Role_Solicitante_Test", description="Test Solicitante")
+    role_solic.permissions = [perms_dict["service_desk.tickets.create"], perms_dict["service_desk.tickets.read"]]
+
+    role_atend = Role(name="Role_Atendente_Test", description="Test Atendente")
+    role_atend.permissions = [
+        perms_dict["service_desk.tickets.create"],
+        perms_dict["service_desk.tickets.read"],
+        perms_dict["service_desk.tickets.read_all"],
+        perms_dict["service_desk.tickets.manage"],
+        perms_dict["service_desk.interactions.internal"]
+    ]
+
+    role_gestao = Role(name="Role_Gestao_Test", description="Test Gestão")
+    role_gestao.permissions = [
+        perms_dict["service_desk.tickets.create"],
+        perms_dict["service_desk.tickets.read"],
+        perms_dict["service_desk.tickets.read_all"],
+        perms_dict["service_desk.reports.read"],
+        perms_dict["service_desk.interactions.internal"]
+    ]
+    db_session.add_all([role_solic, role_atend, role_gestao])
+    await db_session.flush()
+
+    # 5. Criar Contas de Usuário
+    u_solic1 = UserAccount(email="solic1@rbac.com", hashed_password=hash_password("Senha123!"), employee_id=emp_solic1.id)
+    u_solic1.roles = [role_solic]
+
+    u_solic2 = UserAccount(email="solic2@rbac.com", hashed_password=hash_password("Senha123!"), employee_id=emp_solic2.id)
+    u_solic2.roles = [role_solic]
+
+    u_atend = UserAccount(email="atend@rbac.com", hashed_password=hash_password("Senha123!"), employee_id=emp_atend.id)
+    u_atend.roles = [role_atend]
+
+    u_gestor = UserAccount(email="gestor@rbac.com", hashed_password=hash_password("Senha123!"), employee_id=emp_gestor.id)
+    u_gestor.roles = [role_gestao]
+
+    cat = TicketCategory(name="Suporte Técnico RBAC", default_sector_id=sector.id)
+    db_session.add_all([u_solic1, u_solic2, u_atend, u_gestor, cat])
+    await db_session.commit()
+
+    # Helpers de autenticação
+    async def get_auth(email: str) -> dict:
+        r = await client.post("/api/v1/identity/login", data={"username": email, "password": "Senha123!"})
+        assert r.status_code == 200, r.text
+        return {"Authorization": f"Bearer {r.json()['access_token']}"}
+
+    headers_solic1 = await get_auth("solic1@rbac.com")
+    headers_solic2 = await get_auth("solic2@rbac.com")
+    headers_atend = await get_auth("atend@rbac.com")
+    headers_gestor = await get_auth("gestor@rbac.com")
+
+    # 6. Solicitante 1 cria um chamado
+    create_r = await client.post("/api/v1/tickets", json={
+        "title": "Problema no servidor de arquivos",
+        "description": "Pasta de rede não acessível",
+        "priority": "HIGH",
+        "category_id": str(cat.id)
+    }, headers=headers_solic1)
+    assert create_r.status_code == 201
+    ticket_id = create_r.json()["id"]
+
+    # 7. Solicitante 2 tenta ver o chamado de Solicitante 1 -> Bloqueado 403
+    r_solic2 = await client.get(f"/api/v1/tickets/{ticket_id}", headers=headers_solic2)
+    assert r_solic2.status_code == 403
+
+    # 8. Atendente vê o chamado -> Permitido 200
+    r_atend = await client.get(f"/api/v1/tickets/{ticket_id}", headers=headers_atend)
+    assert r_atend.status_code == 200
+
+    # 9. Gestão vê o chamado (leitura global) -> Permitido 200
+    r_gestor = await client.get(f"/api/v1/tickets/{ticket_id}", headers=headers_gestor)
+    assert r_gestor.status_code == 200
+
+    # 10. Gestão tenta alterar status operacional -> Bloqueado 403 (Gestão não é técnico)
+    patch_gestor = await client.patch(f"/api/v1/tickets/{ticket_id}", json={
+        "status": "IN_PROGRESS"
+    }, headers=headers_gestor)
+    assert patch_gestor.status_code == 403
+
+    # 11. Atendente altera status operacional -> Permitido 200
+    patch_atend = await client.patch(f"/api/v1/tickets/{ticket_id}", json={
+        "status": "IN_PROGRESS"
+    }, headers=headers_atend)
+    assert patch_atend.status_code == 200
+    assert patch_atend.json()["status"] == "IN_PROGRESS"
+
+    # 12. Atendente adiciona nota técnica interna -> Permitido 201
+    int_resp = await client.post(f"/api/v1/tickets/{ticket_id}/interactions", json={
+        "message": "Nota interna confidencial sobre reinicialização de switch",
+        "is_internal": True
+    }, headers=headers_atend)
+    assert int_resp.status_code == 201
+
+    # 13. Solicitante 1 consulta chamado -> Não vê a nota interna
+    ticket_solic1 = await client.get(f"/api/v1/tickets/{ticket_id}", headers=headers_solic1)
+    assert ticket_solic1.status_code == 200
+    interactions_solic = ticket_solic1.json()["interactions"]
+    assert not any(i["is_internal"] for i in interactions_solic)
+
+    # 14. Gestão consulta chamado -> Vê a nota interna
+    ticket_gestao = await client.get(f"/api/v1/tickets/{ticket_id}", headers=headers_gestor)
+    assert ticket_gestao.status_code == 200
+    interactions_gestao = ticket_gestao.json()["interactions"]
+    assert any(i["is_internal"] for i in interactions_gestao)
+
+    # 15. Solicitante 1 tenta criar nota interna -> Bloqueado 403
+    int_solic_block = await client.post(f"/api/v1/tickets/{ticket_id}/interactions", json={
+        "message": "Tentativa indevida de nota interna",
+        "is_internal": True
+    }, headers=headers_solic1)
+    assert int_solic_block.status_code == 403
+
+    # 16. Gestão acessa resumo de métricas (/reports/summary) -> Permitido 200
+    rep_gestao = await client.get("/api/v1/tickets/reports/summary", headers=headers_gestor)
+    assert rep_gestao.status_code == 200
+    rep_data = rep_gestao.json()
+    assert rep_data["total_tickets"] >= 1
+    assert "by_status" in rep_data
+    assert "resolution_rate_percent" in rep_data
+
+    # 17. Solicitante 1 tenta acessar resumo de métricas -> Bloqueado 403
+    rep_solic = await client.get("/api/v1/tickets/reports/summary", headers=headers_solic1)
+    assert rep_solic.status_code == 403
+
+

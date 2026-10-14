@@ -152,6 +152,15 @@ def _mount_routers(app: FastAPI) -> None:
     from app.audit.router import router as audit_router
     app.include_router(audit_router, prefix=prefix)
 
+    from app.data_transfer.router import router as data_transfer_router
+    app.include_router(data_transfer_router, prefix=prefix)
+
+    from app.backup.router import router as backup_router
+    app.include_router(backup_router, prefix=prefix)
+
+    from app.whatsapp.router import router as whatsapp_router
+    app.include_router(whatsapp_router, prefix=prefix)
+
 
 # Instância da aplicação
 app = create_app()

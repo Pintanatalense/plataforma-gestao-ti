@@ -124,6 +124,31 @@ Este documento sumariza o status atual do projeto, as funcionalidades recém-ent
       - `AuthService` com persistência em cache (`USER_KEY`) e revalidação transparente em segundo plano, evitando deslogue indevido por recarregamento.
       - Redirecionamento correto e feedback visual no fluxo de primeiro login (`must_change_password`).
 
+14. **Plano de Evolução do Sistema de Gestão de Chamados (Fases 1 a 6)**
+    - **Perfis e Permissões Tripartites (RBAC Granular)**:
+      - Perfis operacionais pré-configurados e sincronizados: `Gestão` (13 permissões, foco gerencial, relatórios e visão global de chamados), `Atendente` (7 permissões, foco operacional, notas internas, baixa de insumos e solução), `Solicitante` (2 permissões, autoatendimento estrito) e `Administrador` (35 permissões, controle pleno).
+      - Isolamento estrito no backend: verificação de escopo de permissões nas rotas (`can_read_all`, `can_internal_notes`, `can_view_reports`, `system.backup.manage`, `system.data.export`, `system.data.import`, `integrations.whatsapp.manage`).
+    - **Importação e Exportação Segura de Dados CSV**:
+      - **Exportação Sanitizada**: Proteção automática contra vulnerabilidade de *CSV Formula Injection* (prefixando `=`, `+`, `-`, `@`, `\t`, `\r` com `'`), delimitador configurável (`;` para Excel Brasil ou `,`), cabeçalhos opcionais e injeção de UTF-8 BOM (`\xef\xbb\xbf`) para abertura direta em planilhas sem corrupção de caracteres acentuados.
+      - **Assistente de Importação em Lote**: Wizard com detecção inteligente de delimitador/encoding, auto-sugestão de mapeamento de colunas, pré-visualização tabular das primeiras linhas, tratamento de duplicidades (`pular`, `atualizar` ou `erro`), simulação prévia (*Dry Run*) e relatório analítico de execução com identificação pontual de linhas com inconsistências.
+    - **Central de Backup e Integridade do Banco de Dados**:
+      - Geração de snapshots consistentes do PostgreSQL compactados em `.sql.gz` em diretório protegido contra acesso público direto.
+      - Cálculo e registro do Hash criptográfico SHA-256 para cada arquivo gerado para auditoria e garantia de integridade física.
+      - Política de retenção configurável para limpeza automatizada de arquivos antigos.
+      - Rota autenticada de download de backups com verificação estrita de permissões (`system.backup.download`).
+      - Tabela de histórico com metadados (tamanho em KB/MB, status, data/hora, e-mail do autor) e guia operacional de restauração via terminal.
+    - **Integração Desacoplada com Bot de Atendimento via WhatsApp**:
+      - Arquitetura baseada no padrão *Adapter*: suporte nativo para `Evolution API` (código aberto e auto-hospedado), `Mock` (desenvolvimento e testes unitários) e `Meta Cloud API`.
+      - Máquina de estados conversacional para WhatsApp:
+        1. Vinculação e identificação segura do colaborador via matrícula funcional (`REG`).
+        2. Abertura interativa de chamados com seleção numerada de categoria, preenchimento de título e descrição detalhada.
+        3. Consulta dinâmica dos chamados em aberto do solicitante e seus respectivos status.
+        4. Resposta e envio de interações diretamente pelo WhatsApp registradas no histórico do chamado.
+      - *Notification Dispatcher*: disparador de alertas automáticos quando um chamado for atribuído ou tiver seu status alterado.
+    - **Painel Administrativo Unificado no Frontend (`/admin`)**:
+      - Hub administrativo centralizado com 5 abas integradas: *Bot do WhatsApp* (com painel de teste de disparo e status toggle), *Importação CSV* (Wizard progressivo de 3 passos), *Exportação CSV* (com filtros de data e delimitador), *Backups do Banco* (com download e exclusão) e *Perfis & Matriz RBAC* (com cards explicativos e atalhos operacionais).
+      - Rota protegida `/admin` e link destacado na barra lateral de navegação (`SidebarComponent`).
+
 ---
 
 ## 🎯 Status do MVP
@@ -135,8 +160,10 @@ Todas as Fases do roadmap foram concluídas integralmente:
 - Perfil Solicitante restrito e Form Builder com pré-requisitos obrigatórios homologados.
 - Categorias de estoque com especificações técnicas dinâmicas integradas.
 - Histórico completo de auditoria e linha do tempo do Service Desk com encerramento pelo solicitante.
-- Suíte automatizada de testes cobrindo unidade, integração, auditoria, anexos, notificações e E2E (**98 backend + 36 frontend aprovados com 100% de sucesso**).
+- Módulos avançados do Plano de Evolução: RBAC Tripartite, CSV Import/Export, DB Backups, WhatsApp Bot e Painel Admin entregues.
+- Suíte automatizada de testes cobrindo unidade, integração, auditoria, anexos, notificações e E2E (**110 backend + 39 frontend aprovados com 100% de sucesso**).
 - Sistema publicado, ativo e acessível via Docker Compose em `http://localhost`.
+
 
 
 
