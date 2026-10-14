@@ -13,6 +13,7 @@ class AssetMovementCreate(BaseModel):
     to_unit_id: uuid.UUID | None = None
     to_employee_id: uuid.UUID | None = None
     status_to: AssetStatus | None = None
+    ticket_id: uuid.UUID | None = None
     notes: str | None = None
 
 
@@ -26,8 +27,32 @@ class AssetMovementResponse(BaseModel):
     to_employee_id: uuid.UUID | None = None
     status_from: str | None = None
     status_to: str | None = None
+    ticket_id: uuid.UUID | None = None
     notes: str | None = None
     author_id: uuid.UUID
     created_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class AssetReserveRequest(BaseModel):
+    employee_id: uuid.UUID | None = None
+    ticket_id: uuid.UUID | None = None
+    notes: str | None = None
+
+
+class AssetDeliveryRequest(BaseModel):
+    employee_id: uuid.UUID
+    ticket_id: uuid.UUID | None = None
+    notes: str | None = None
+
+
+class AssetReturnRequest(BaseModel):
+    ticket_id: uuid.UUID | None = None
+    notes: str | None = None
+
+
+class AssetInspectionRequest(BaseModel):
+    approved: bool
+    send_to_maintenance: bool = False
+    notes: str | None = None

@@ -19,6 +19,7 @@ export interface AssetMovement {
   to_employee_id?: string;
   status_from?: string;
   status_to?: string;
+  ticket_id?: string;
   notes?: string;
   author_id: string;
   created_at: string;
@@ -91,6 +92,27 @@ export class AssetService {
 
   createMovement(data: any): Observable<AssetMovement> {
     return this.http.post<AssetMovement>(`${this.movementsUrl}/`, data);
+  }
+
+  // Lifecycle & State Machine Operations
+  reserveAsset(assetId: string, data: { employee_id?: string; ticket_id?: string; notes?: string }): Observable<AssetMovement> {
+    return this.http.post<AssetMovement>(`${this.movementsUrl}/${assetId}/reserve`, data);
+  }
+
+  cancelReservation(assetId: string): Observable<AssetMovement> {
+    return this.http.post<AssetMovement>(`${this.movementsUrl}/${assetId}/cancel-reservation`, {});
+  }
+
+  deliverAsset(assetId: string, data: { employee_id: string; ticket_id?: string; notes?: string }): Observable<AssetMovement> {
+    return this.http.post<AssetMovement>(`${this.movementsUrl}/${assetId}/deliver`, data);
+  }
+
+  returnAsset(assetId: string, data: { ticket_id?: string; notes?: string }): Observable<AssetMovement> {
+    return this.http.post<AssetMovement>(`${this.movementsUrl}/${assetId}/return`, data);
+  }
+
+  inspectAsset(assetId: string, data: { approved: boolean; send_to_maintenance?: boolean; notes?: string }): Observable<AssetMovement> {
+    return this.http.post<AssetMovement>(`${this.movementsUrl}/${assetId}/inspect`, data);
   }
 
   // Responsibility Statement

@@ -58,8 +58,12 @@ export class AssetListComponent implements OnInit {
     switch (status) {
       case 'IN_STOCK':
         return 'badge-stock';
+      case 'RESERVED':
+        return 'badge-reserved';
       case 'IN_USE':
         return 'badge-use';
+      case 'PENDING_INSPECTION':
+        return 'badge-inspection';
       case 'MAINTENANCE':
         return 'badge-maint';
       case 'DECOMMISSIONED':
@@ -73,8 +77,12 @@ export class AssetListComponent implements OnInit {
     switch (status) {
       case 'IN_STOCK':
         return 'Em Estoque';
+      case 'RESERVED':
+        return 'Reservado';
       case 'IN_USE':
         return 'Em Uso';
+      case 'PENDING_INSPECTION':
+        return 'Aguardando Inspeção';
       case 'MAINTENANCE':
         return 'Manutenção';
       case 'DECOMMISSIONED':

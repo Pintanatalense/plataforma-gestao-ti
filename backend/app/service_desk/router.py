@@ -312,3 +312,120 @@ async def add_material(
     )
     await session.commit()
     return material
+
+
+# ==============================================================================
+# Ticket Asset Lifecycle Actions
+# ==============================================================================
+
+@router.post(
+    "/{ticket_id}/assets/{asset_id}/reserve",
+    summary="Reserva um ativo patrimonial para o chamado",
+)
+async def reserve_ticket_asset(
+    ticket_id: uuid.UUID,
+    asset_id: uuid.UUID,
+    payload: dict = {},
+    ctx: dict = Depends(get_user_context),
+    session: AsyncSession = Depends(get_db),
+):
+    service = ServiceDeskService(session)
+    notes = payload.get("notes") if isinstance(payload, dict) else None
+    emp_raw = payload.get("employee_id") if isinstance(payload, dict) else None
+    employee_id = uuid.UUID(str(emp_raw)) if emp_raw else None
+
+    movement = await service.reserve_ticket_asset(
+        ticket_id=ticket_id,
+        asset_id=asset_id,
+        author_id=ctx["user_id"],
+        user_employee_id=ctx["employee_id"],
+        is_technician=ctx["is_technician"],
+        employee_id=employee_id,
+        notes=notes,
+    )
+    await session.commit()
+    return {"message": "Ativo reservado com sucesso", "movement_id": str(movement.id)}
+
+
+@router.post(
+    "/{ticket_id}/assets/{asset_id}/deliver",
+    summary="Efetiva a entrega do ativo ao solicitante do chamado",
+)
+async def deliver_ticket_asset(
+    ticket_id: uuid.UUID,
+    asset_id: uuid.UUID,
+    payload: dict = {},
+    ctx: dict = Depends(get_user_context),
+    session: AsyncSession = Depends(get_db),
+):
+    service = ServiceDeskService(session)
+    notes = payload.get("notes") if isinstance(payload, dict) else None
+    emp_raw = payload.get("employee_id") if isinstance(payload, dict) else None
+    employee_id = uuid.UUID(str(emp_raw)) if emp_raw else None
+
+    movement = await service.deliver_ticket_asset(
+        ticket_id=ticket_id,
+        asset_id=asset_id,
+        author_id=ctx["user_id"],
+        user_employee_id=ctx["employee_id"],
+        is_technician=ctx["is_technician"],
+        employee_id=employee_id,
+        notes=notes,
+    )
+    await session.commit()
+    return {"message": "Ativo entregue ao solicitante com sucesso", "movement_id": str(movement.id)}
+
+
+@router.post(
+    "/{ticket_id}/assets/{asset_id}/return",
+    summary="Registra devolução física do ativo via chamado (encaminhando para inspeção)",
+)
+async def return_ticket_asset(
+    ticket_id: uuid.UUID,
+    asset_id: uuid.UUID,
+    payload: dict = {},
+    ctx: dict = Depends(get_user_context),
+    session: AsyncSession = Depends(get_db),
+):
+    service = ServiceDeskService(session)
+    notes = payload.get("notes") if isinstance(payload, dict) else None
+    movement = await service.return_ticket_asset(
+        ticket_id=ticket_id,
+        asset_id=asset_id,
+        author_id=ctx["user_id"],
+        user_employee_id=ctx["employee_id"],
+        is_technician=ctx["is_technician"],
+        notes=notes,
+    )
+    await session.commit()
+    return {"message": "Devolução do ativo registrada (aguarda inspeção)", "movement_id": str(movement.id)}
+
+
+@router.post(
+    "/{ticket_id}/assets/{asset_id}/inspect",
+    summary="Registra conferência/inspeção do ativo e libera para estoque",
+)
+async def inspect_ticket_asset(
+    ticket_id: uuid.UUID,
+    asset_id: uuid.UUID,
+    payload: dict = {},
+    ctx: dict = Depends(get_user_context),
+    session: AsyncSession = Depends(get_db),
+):
+    service = ServiceDeskService(session)
+    approved = payload.get("approved", True) if isinstance(payload, dict) else True
+    notes = payload.get("notes") if isinstance(payload, dict) else None
+    send_to_maintenance = payload.get("send_to_maintenance", False) if isinstance(payload, dict) else False
+
+    movement = await service.inspect_ticket_asset(
+        ticket_id=ticket_id,
+        asset_id=asset_id,
+        approved=approved,
+        author_id=ctx["user_id"],
+        user_employee_id=ctx["employee_id"],
+        is_technician=ctx["is_technician"],
+        notes=notes,
+        send_to_maintenance=send_to_maintenance,
+    )
+    await session.commit()
+    return {"message": "Inspeção do ativo concluída", "movement_id": str(movement.id)}

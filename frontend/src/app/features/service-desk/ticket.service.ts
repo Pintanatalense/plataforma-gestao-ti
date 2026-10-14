@@ -52,6 +52,15 @@ export interface TicketHistoryItem {
   created_at: string;
 }
 
+export interface TicketAssetBrief {
+  id: string;
+  tag: string;
+  name: string;
+  status: string;
+  unit_id: string;
+  employee_id?: string | null;
+}
+
 export interface Ticket {
   id: string;
   title: string;
@@ -65,6 +74,7 @@ export interface Ticket {
   category_id?: string;
   category?: TicketCategory;
   asset_ids?: string[];
+  assets?: TicketAssetBrief[];
   custom_fields?: Record<string, any>;
   created_at: string;
   updated_at: string;
@@ -145,5 +155,42 @@ export class TicketService {
 
   getTicketHistory(ticketId: string): Observable<TicketHistoryItem[]> {
     return this.http.get<TicketHistoryItem[]>(`${this.apiUrl}/${ticketId}/history`);
+  }
+
+  // Ticket Assets Lifecycle
+  reserveTicketAsset(
+    ticketId: string,
+    assetId: string,
+    payload?: { employee_id?: string; notes?: string }
+  ): Observable<any> {
+    return this.http.post(`${this.apiUrl}/${ticketId}/assets/${assetId}/reserve`, payload || {});
+  }
+
+  deliverTicketAsset(
+    ticketId: string,
+    assetId: string,
+    payload?: { employee_id?: string; notes?: string }
+  ): Observable<any> {
+    return this.http.post(`${this.apiUrl}/${ticketId}/assets/${assetId}/deliver`, payload || {});
+  }
+
+  returnTicketAsset(
+    ticketId: string,
+    assetId: string,
+    payload?: { notes?: string }
+  ): Observable<any> {
+    return this.http.post(`${this.apiUrl}/${ticketId}/assets/${assetId}/return`, payload || {});
+  }
+
+  inspectTicketAsset(
+    ticketId: string,
+    assetId: string,
+    payload: {
+      approved: boolean;
+      notes?: string;
+      send_to_maintenance?: boolean;
+    }
+  ): Observable<any> {
+    return this.http.post(`${this.apiUrl}/${ticketId}/assets/${assetId}/inspect`, payload);
   }
 }

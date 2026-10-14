@@ -101,6 +101,17 @@ class TicketUpdate(BaseModel):
     custom_fields: dict | None = None
     notes: str | None = None
 
+class TicketAssetBrief(BaseModel):
+    id: uuid.UUID
+    tag: str
+    name: str
+    status: str
+    unit_id: uuid.UUID
+    employee_id: uuid.UUID | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class TicketResponse(TicketBase):
     id: uuid.UUID
     status: str
@@ -117,6 +128,7 @@ class TicketResponse(TicketBase):
     category: TicketCategoryResponse | None = None
     interactions: list[TicketInteractionResponse] = []
     materials: list[TicketMaterialResponse] = []
+    assets: list[TicketAssetBrief] = []
     
     model_config = ConfigDict(from_attributes=True)
 

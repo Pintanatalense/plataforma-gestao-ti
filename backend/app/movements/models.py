@@ -21,8 +21,11 @@ if TYPE_CHECKING:
 
 class MovementType(enum.StrEnum):
     INITIAL_STOCK = "INITIAL_STOCK"
+    RESERVATION = "RESERVATION"
+    RESERVATION_CANCEL = "RESERVATION_CANCEL"
     ASSIGNMENT = "ASSIGNMENT"
     RETURN = "RETURN"
+    INSPECTION_RELEASE = "INSPECTION_RELEASE"
     TRANSFER = "TRANSFER"
     MAINTENANCE = "MAINTENANCE"
     DECOMMISSION = "DECOMMISSION"
@@ -34,7 +37,7 @@ class AssetMovement(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     asset_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("assets.id"), nullable=False)
 
-    # "INITIAL_STOCK", "ASSIGNMENT", "RETURN", "TRANSFER", "MAINTENANCE", "DECOMMISSION"
+    # "INITIAL_STOCK", "RESERVATION", "RESERVATION_CANCEL", "ASSIGNMENT", "RETURN", "INSPECTION_RELEASE", "TRANSFER", "MAINTENANCE", "DECOMMISSION"
     movement_type: Mapped[str] = mapped_column(String(50), nullable=False)
 
     # State tracking
@@ -48,6 +51,9 @@ class AssetMovement(Base, TimestampMixin):
     status_from: Mapped[str | None] = mapped_column(String(50), nullable=True)
     status_to: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
+    # Vínculo formal com Chamado do Service Desk (quando aplicável)
+    ticket_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sd_ticket.id", ondelete="SET NULL"), nullable=True)
+
     # Details
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
@@ -56,6 +62,7 @@ class AssetMovement(Base, TimestampMixin):
 
     asset = relationship("Asset")
     author = relationship("UserAccount")
+    ticket = relationship("Ticket", foreign_keys=[ticket_id])
 
     # Note: These relationships avoid circular imports by referring to string class names,
     # but we will resolve them appropriately in the application logic.

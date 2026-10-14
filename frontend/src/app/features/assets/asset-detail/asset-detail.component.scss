@@ -78,6 +78,16 @@
           color: #2563eb;
         }
 
+        &.status-reserved {
+          background-color: #fef3c7;
+          color: #b45309;
+        }
+
+        &.status-pending_inspection {
+          background-color: #f3e8ff;
+          color: #7e22ce;
+        }
+
         &.status-maintenance {
           background-color: #fffbeb;
           color: #d97706;
@@ -100,6 +110,190 @@
 
     .tab-content {
       padding: 24px;
+
+      .lifecycle-card {
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        border-radius: 12px;
+        box-shadow: 0 4px 14px rgba(0, 0, 0, 0.04);
+        margin-bottom: 24px;
+        padding: 24px;
+        transition: all 0.2s ease-in-out;
+
+        &.lifecycle-in_stock {
+          border-left: 5px solid #059669;
+        }
+
+        &.lifecycle-reserved {
+          border-left: 5px solid #d97706;
+          background: #fffdf5;
+        }
+
+        &.lifecycle-in_use {
+          border-left: 5px solid #2563eb;
+        }
+
+        &.lifecycle-pending_inspection {
+          border-left: 5px solid #7c3aed;
+          background: #faf5ff;
+        }
+
+        &.lifecycle-maintenance {
+          border-left: 5px solid #dc2626;
+        }
+
+        .lifecycle-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 16px;
+          flex-wrap: wrap;
+          gap: 12px;
+
+          .lifecycle-title {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+
+            .lifecycle-icon {
+              font-size: 28px;
+              width: 28px;
+              height: 28px;
+              color: var(--mat-sys-primary, #1e293b);
+            }
+
+            h3 {
+              margin: 0;
+              font-size: 17px;
+              font-weight: 600;
+              color: #0f172a;
+            }
+
+            .lifecycle-subtitle {
+              margin: 2px 0 0;
+              font-size: 13px;
+              color: #64748b;
+            }
+          }
+
+          .lifecycle-state-badge {
+            padding: 6px 14px;
+            border-radius: 16px;
+            font-size: 12px;
+            font-weight: 600;
+
+            &.status-in_stock {
+              background-color: #ecfdf5;
+              color: #059669;
+            }
+
+            &.status-reserved {
+              background-color: #fef3c7;
+              color: #b45309;
+            }
+
+            &.status-in_use {
+              background-color: #eff6ff;
+              color: #2563eb;
+            }
+
+            &.status-pending_inspection {
+              background-color: #f3e8ff;
+              color: #7e22ce;
+            }
+
+            &.status-maintenance {
+              background-color: #fffbeb;
+              color: #d97706;
+            }
+
+            &.status-decommissioned {
+              background-color: #fef2f2;
+              color: #dc2626;
+            }
+          }
+        }
+
+        .lifecycle-body {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          gap: 20px;
+          flex-wrap: wrap;
+
+          .lifecycle-desc {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            flex: 1;
+            min-width: 280px;
+
+            .state-icon {
+              font-size: 26px;
+              width: 26px;
+              height: 26px;
+              flex-shrink: 0;
+
+              &.stock-color {
+                color: #059669;
+              }
+              &.reserved-color {
+                color: #d97706;
+              }
+              &.inuse-color {
+                color: #2563eb;
+              }
+              &.inspection-color {
+                color: #7c3aed;
+              }
+            }
+
+            p {
+              margin: 0;
+              font-size: 14px;
+              color: #334155;
+              line-height: 1.5;
+            }
+
+            .inspection-alert {
+              color: #581c87;
+            }
+          }
+
+          .lifecycle-actions {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+
+            .op-btn {
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
+              font-weight: 500;
+              font-size: 13px;
+              padding: 0 16px;
+              height: 40px;
+              border-radius: 8px;
+
+              mat-icon {
+                font-size: 18px;
+                width: 18px;
+                height: 18px;
+              }
+
+              &.success-btn {
+                background-color: #059669;
+                color: #ffffff;
+
+                &:hover {
+                  background-color: #047857;
+                }
+              }
+            }
+          }
+        }
+      }
 
       .cards-grid {
         display: grid;
@@ -473,9 +667,38 @@
                 .title {
                   display: flex;
                   align-items: center;
-                  gap: 6px;
+                  gap: 8px;
                   font-size: 14px;
                   color: #1e293b;
+                  flex-wrap: wrap;
+
+                  .ticket-link-badge {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 4px;
+                    padding: 3px 8px;
+                    border-radius: 6px;
+                    background-color: #eff6ff;
+                    color: #1d4ed8;
+                    border: 1px solid #bfdbfe;
+                    font-size: 12px;
+                    font-weight: 500;
+                    cursor: pointer;
+                    text-decoration: none;
+                    transition: all 0.2s;
+
+                    .tiny-icon {
+                      font-size: 14px;
+                      width: 14px;
+                      height: 14px;
+                    }
+
+                    &:hover {
+                      background-color: #dbeafe;
+                      border-color: #93c5fd;
+                      transform: translateY(-1px);
+                    }
+                  }
                 }
 
                 .date {
@@ -547,5 +770,98 @@
         }
       }
     }
+  }
+
+  .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    animation: fadeIn 0.15s ease-out;
+
+    .modal-card {
+      background: #ffffff;
+      border-radius: 14px;
+      width: 100%;
+      max-width: 520px;
+      padding: 24px;
+      display: flex;
+      flex-direction: column;
+      gap: 18px;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+      border: 1px solid #e2e8f0;
+
+      .modal-header {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        padding-bottom: 12px;
+        border-bottom: 1px solid #f1f5f9;
+
+        mat-icon {
+          font-size: 26px;
+          width: 26px;
+          height: 26px;
+        }
+
+        h3 {
+          margin: 0;
+          font-size: 18px;
+          font-weight: 600;
+          color: #0f172a;
+        }
+      }
+
+      .modal-body {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+
+        .w-100 {
+          width: 100%;
+        }
+
+        .modal-info-text {
+          margin: 0;
+          font-size: 13px;
+          color: #475569;
+          background: #f8fafc;
+          border-left: 3px solid #3b82f6;
+          padding: 10px 12px;
+          border-radius: 4px;
+          line-height: 1.5;
+        }
+      }
+
+      .modal-actions {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 10px;
+        padding-top: 14px;
+        border-top: 1px solid #f1f5f9;
+
+        button {
+          border-radius: 8px;
+          font-weight: 500;
+        }
+      }
+    }
+  }
+}
+
+@keyframes fadeIn {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
   }
 }

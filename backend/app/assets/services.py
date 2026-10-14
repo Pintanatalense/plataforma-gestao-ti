@@ -62,8 +62,8 @@ class AssetService:
             asset_data["status"] = status_val
 
         # Validações de consistência de estado inicial
-        if status_val == AssetStatus.IN_STOCK.value and asset_data.get("employee_id"):
-            raise ValidationException("Ativo em estoque (IN_STOCK) não pode possuir colaborador atribuído.")
+        if status_val in (AssetStatus.IN_STOCK.value, AssetStatus.PENDING_INSPECTION.value, AssetStatus.DECOMMISSIONED.value) and asset_data.get("employee_id"):
+            raise ValidationException(f"Ativo com status {status_val} não pode possuir colaborador atribuído.")
         if status_val == AssetStatus.IN_USE.value and not asset_data.get("employee_id"):
             raise ValidationException("Ativo em uso (IN_USE) deve possuir um colaborador atribuído.")
 
@@ -112,10 +112,8 @@ class AssetService:
             update_data["status"] = new_status
 
         target_employee = update_data.get("employee_id", asset.employee_id)
-        if new_status == AssetStatus.IN_STOCK.value and target_employee is not None:
-            raise ValidationException("Ativo em estoque (IN_STOCK) não pode possuir colaborador atribuído.")
-        if new_status == AssetStatus.DECOMMISSIONED.value and target_employee is not None:
-            raise ValidationException("Ativo baixado (DECOMMISSIONED) não pode possuir colaborador atribuído.")
+        if new_status in (AssetStatus.IN_STOCK.value, AssetStatus.PENDING_INSPECTION.value, AssetStatus.DECOMMISSIONED.value) and target_employee is not None:
+            raise ValidationException(f"Ativo com status {new_status} não pode possuir colaborador atribuído.")
 
         for key, value in update_data.items():
             setattr(asset, key, value)
@@ -134,10 +132,14 @@ class AssetService:
             elif from_employee_id and not asset.employee_id:
                 movement_type = MovementType.RETURN.value
 
-            if asset.status == AssetStatus.MAINTENANCE.value:
+            if asset.status == AssetStatus.RESERVED.value:
+                movement_type = MovementType.RESERVATION.value
+            elif asset.status == AssetStatus.MAINTENANCE.value:
                 movement_type = MovementType.MAINTENANCE.value
             elif asset.status == AssetStatus.DECOMMISSIONED.value:
                 movement_type = MovementType.DECOMMISSION.value
+            elif asset.status == AssetStatus.IN_STOCK.value and status_from == AssetStatus.PENDING_INSPECTION.value:
+                movement_type = MovementType.INSPECTION_RELEASE.value
 
             movement = AssetMovement(
                 asset_id=asset.id,

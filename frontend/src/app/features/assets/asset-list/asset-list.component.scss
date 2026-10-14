@@ -99,9 +99,19 @@
           color: #059669;
         }
 
+        &.badge-reserved {
+          background-color: #fef3c7;
+          color: #b45309;
+        }
+
         &.badge-use {
           background-color: #eff6ff;
           color: #2563eb;
+        }
+
+        &.badge-inspection {
+          background-color: #f3e8ff;
+          color: #7e22ce;
         }
 
         &.badge-maint {

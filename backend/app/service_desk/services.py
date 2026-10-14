@@ -400,6 +400,194 @@ class ServiceDeskService:
         return created_material
 
     # ==========================================================================
+    # Assets Lifecycle (Reserva, Entrega, Devolução e Inspeção)
+    # ==========================================================================
+
+    async def reserve_ticket_asset(
+        self,
+        ticket_id: uuid.UUID,
+        asset_id: uuid.UUID,
+        author_id: uuid.UUID,
+        user_employee_id: uuid.UUID | None,
+        is_technician: bool = False,
+        employee_id: uuid.UUID | None = None,
+        notes: str | None = None,
+    ):
+        if not is_technician:
+            raise ForbiddenException("Apenas técnicos podem gerenciar o ciclo de ativos.")
+
+        ticket = await self.repo.get_ticket(ticket_id)
+        if not ticket:
+            raise NotFoundException("Ticket", ticket_id)
+
+        # Se o ativo ainda não estiver associado na lista do chamado, associa automaticamente
+        if not any(a.id == asset_id for a in ticket.assets):
+            assets_to_add = await self.repo.get_assets_by_ids([asset_id])
+            if assets_to_add:
+                ticket.assets.append(assets_to_add[0])
+                await self.session.flush()
+
+        from app.assets.repository import AssetRepository
+        from app.movements.repository import AssetMovementRepository
+        from app.movements.services import AssetMovementService
+
+        mov_service = AssetMovementService(AssetMovementRepository(self.session), AssetRepository(self.session))
+        target_employee = employee_id or ticket.requester_id
+        movement = await mov_service.reserve_asset(
+            asset_id=asset_id,
+            author_id=author_id,
+            employee_id=target_employee,
+            ticket_id=ticket.id,
+            notes=notes or f"Ativo reservado para o chamado #{str(ticket.id)[:8]}.",
+        )
+
+        await self._record_audit_event(
+            event_type="ticket.asset_reserved",
+            ticket_id=ticket.id,
+            data={
+                "asset_id": str(asset_id),
+                "notes": notes,
+            },
+            user_id=author_id,
+        )
+
+        return movement
+
+    async def deliver_ticket_asset(
+        self,
+        ticket_id: uuid.UUID,
+        asset_id: uuid.UUID,
+        author_id: uuid.UUID,
+        user_employee_id: uuid.UUID | None,
+        is_technician: bool = False,
+        employee_id: uuid.UUID | None = None,
+        notes: str | None = None,
+    ):
+        if not is_technician:
+            raise ForbiddenException("Apenas técnicos podem entregar ativos.")
+
+        ticket = await self.repo.get_ticket(ticket_id)
+        if not ticket:
+            raise NotFoundException("Ticket", ticket_id)
+
+        if not any(a.id == asset_id for a in ticket.assets):
+            assets_to_add = await self.repo.get_assets_by_ids([asset_id])
+            if assets_to_add:
+                ticket.assets.append(assets_to_add[0])
+                await self.session.flush()
+
+        from app.assets.repository import AssetRepository
+        from app.movements.repository import AssetMovementRepository
+        from app.movements.services import AssetMovementService
+
+        mov_service = AssetMovementService(AssetMovementRepository(self.session), AssetRepository(self.session))
+        target_employee = employee_id or ticket.requester_id
+        movement = await mov_service.deliver_asset(
+            asset_id=asset_id,
+            author_id=author_id,
+            employee_id=target_employee,
+            ticket_id=ticket.id,
+            notes=notes or f"Ativo entregue ao solicitante via chamado #{str(ticket.id)[:8]}.",
+        )
+
+        await self._record_audit_event(
+            event_type="ticket.asset_delivered",
+            ticket_id=ticket.id,
+            data={
+                "asset_id": str(asset_id),
+                "notes": notes,
+            },
+            user_id=author_id,
+        )
+
+        return movement
+
+    async def return_ticket_asset(
+        self,
+        ticket_id: uuid.UUID,
+        asset_id: uuid.UUID,
+        author_id: uuid.UUID,
+        user_employee_id: uuid.UUID | None,
+        is_technician: bool = False,
+        notes: str | None = None,
+    ):
+        if not is_technician:
+            raise ForbiddenException("Apenas técnicos podem registrar devolução de ativos.")
+
+        ticket = await self.repo.get_ticket(ticket_id)
+        if not ticket:
+            raise NotFoundException("Ticket", ticket_id)
+
+        from app.assets.repository import AssetRepository
+        from app.movements.repository import AssetMovementRepository
+        from app.movements.services import AssetMovementService
+
+        mov_service = AssetMovementService(AssetMovementRepository(self.session), AssetRepository(self.session))
+        movement = await mov_service.return_asset(
+            asset_id=asset_id,
+            author_id=author_id,
+            ticket_id=ticket.id,
+            notes=notes or f"Ativo devolvido via chamado #{str(ticket.id)[:8]} (aguarda inspeção).",
+        )
+
+        await self._record_audit_event(
+            event_type="ticket.asset_returned",
+            ticket_id=ticket.id,
+            data={
+                "asset_id": str(asset_id),
+                "notes": notes,
+            },
+            user_id=author_id,
+        )
+
+        return movement
+
+    async def inspect_ticket_asset(
+        self,
+        ticket_id: uuid.UUID,
+        asset_id: uuid.UUID,
+        approved: bool,
+        author_id: uuid.UUID,
+        user_employee_id: uuid.UUID | None,
+        is_technician: bool = False,
+        notes: str | None = None,
+        send_to_maintenance: bool = False,
+    ):
+        if not is_technician:
+            raise ForbiddenException("Apenas técnicos podem inspecionar ativos.")
+
+        ticket = await self.repo.get_ticket(ticket_id)
+        if not ticket:
+            raise NotFoundException("Ticket", ticket_id)
+
+        from app.assets.repository import AssetRepository
+        from app.movements.repository import AssetMovementRepository
+        from app.movements.services import AssetMovementService
+
+        mov_service = AssetMovementService(AssetMovementRepository(self.session), AssetRepository(self.session))
+        movement = await mov_service.inspect_asset(
+            asset_id=asset_id,
+            author_id=author_id,
+            approved=approved,
+            ticket_id=ticket.id,
+            notes=notes or f"Inspeção técnica concluída via chamado #{str(ticket.id)[:8]}.",
+            send_to_maintenance=send_to_maintenance,
+        )
+
+        await self._record_audit_event(
+            event_type="ticket.asset_inspected",
+            ticket_id=ticket.id,
+            data={
+                "asset_id": str(asset_id),
+                "approved": approved,
+                "notes": notes,
+            },
+            user_id=author_id,
+        )
+
+        return movement
+
+    # ==========================================================================
     # History & Audit Trail (Vida do Chamado)
     # ==========================================================================
 
@@ -513,6 +701,15 @@ class ServiceDeskService:
         elif event_type == "ticket.material_added":
             qtd = data.get("quantity", 1)
             return "Consumo de Insumo", f"Insumo do estoque lançado (Qtd: {qtd}){by_user}."
+        elif event_type == "ticket.asset_reserved":
+            return "Equipamento Reservado", f"Ativo patrimonial reservado para o chamado{by_user}."
+        elif event_type == "ticket.asset_delivered":
+            return "Equipamento Entregue", f"Ativo entregue ao solicitante com emissão de Termo de Responsabilidade{by_user}."
+        elif event_type == "ticket.asset_returned":
+            return "Equipamento Devolvido", f"Ativo devolvido fisicamente e encaminhado para inspeção técnica{by_user}."
+        elif event_type == "ticket.asset_inspected":
+            aprovado = "Aprovado e liberado para estoque" if data.get("approved") else "Reprovado (encaminhado para manutenção)"
+            return "Inspeção Técnica de Ativo", f"Conferência concluída: {aprovado}{by_user}."
         return event_type, f"Ação '{event_type}' executada{by_user}."
 
     def _translate_status(self, status: str) -> str:

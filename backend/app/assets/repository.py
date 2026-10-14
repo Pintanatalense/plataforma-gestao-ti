@@ -33,6 +33,11 @@ class AssetRepository:
         stmt = select(Asset).options(selectinload(Asset.category)).where(Asset.id == asset_id, Asset.is_active == True)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def get_asset_for_update(self, asset_id: uuid.UUID) -> Asset | None:
+        stmt = select(Asset).options(selectinload(Asset.category)).where(Asset.id == asset_id, Asset.is_active == True).with_for_update()
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
         
     async def get_asset_by_tag(self, tag: str) -> Asset | None:
         stmt = select(Asset).options(selectinload(Asset.category)).where(Asset.tag == tag, Asset.is_active == True)

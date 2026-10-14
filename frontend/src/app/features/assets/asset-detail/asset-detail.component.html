@@ -13,8 +13,8 @@
       <button mat-stroked-button color="primary" class="print-btn" (click)="printResponsibilityStatement()" title="Imprimir Termo de Responsabilidade e Cautela">
         <mat-icon>print</mat-icon> Termo de Cautela
       </button>
-      <span class="status-badge" [ngClass]="'status-' + asset.status.toLowerCase()">
-        {{ asset.status }}
+      <span class="status-badge" [ngClass]="getStatusBadgeClass(asset.status)">
+        {{ getStatusLabel(asset.status) }}
       </span>
     </div>
   </div>
@@ -23,6 +23,106 @@
     <!-- TAB: Overview -->
     <mat-tab label="Visão Geral">
       <div class="tab-content">
+
+        <!-- LIFECYCLE & STATE MACHINE ACTION CARD -->
+        <div class="glass-card lifecycle-card" [ngClass]="'lifecycle-' + asset.status.toLowerCase()">
+          <div class="card-header lifecycle-header">
+            <div class="lifecycle-title">
+              <mat-icon class="lifecycle-icon">sync_alt</mat-icon>
+              <div>
+                <h3>Ciclo de Vida & Operações do Equipamento</h3>
+                <p class="lifecycle-subtitle">Máquina de estados operacional: Reserva, Entrega, Devolução e Inspeção Técnica</p>
+              </div>
+            </div>
+            <span class="lifecycle-state-badge" [ngClass]="getStatusBadgeClass(asset.status)">
+              {{ getStatusLabel(asset.status) }}
+            </span>
+          </div>
+
+          <!-- State: IN_STOCK -->
+          <div *ngIf="asset.status === 'IN_STOCK'" class="lifecycle-body">
+            <div class="lifecycle-desc">
+              <mat-icon class="state-icon stock-color">check_circle</mat-icon>
+              <p>O equipamento está <strong>disponível em estoque</strong> na unidade <strong>{{ getUnitName(asset.unit_id) }}</strong>. Você pode reservá-lo antecipadamente para uma admissão/chamado ou entregá-lo diretamente a um colaborador.</p>
+            </div>
+            <div class="lifecycle-actions">
+              <button mat-stroked-button color="primary" class="op-btn" (click)="openModal('reserve')">
+                <mat-icon>bookmark_add</mat-icon> Reservar Ativo
+              </button>
+              <button mat-flat-button color="primary" class="op-btn" (click)="openModal('deliver')">
+                <mat-icon>handshake</mat-icon> Entregar ao Colaborador
+              </button>
+            </div>
+          </div>
+
+          <!-- State: RESERVED -->
+          <div *ngIf="asset.status === 'RESERVED'" class="lifecycle-body">
+            <div class="lifecycle-desc">
+              <mat-icon class="state-icon reserved-color">bookmark</mat-icon>
+              <p>Equipamento <strong>reservado</strong> para <strong>{{ getEmployeeName(asset.employee_id) }}</strong>. Está protegido contra alocações duplicadas por outros técnicos.</p>
+            </div>
+            <div class="lifecycle-actions">
+              <button mat-flat-button color="primary" class="op-btn" (click)="openModal('deliver')">
+                <mat-icon>assignment_turned_in</mat-icon> Efetivar Entrega Oficial
+              </button>
+              <button mat-stroked-button color="warn" class="op-btn" (click)="confirmCancelReservation()">
+                <mat-icon>cancel</mat-icon> Cancelar Reserva
+              </button>
+            </div>
+          </div>
+
+          <!-- State: IN_USE -->
+          <div *ngIf="asset.status === 'IN_USE'" class="lifecycle-body">
+            <div class="lifecycle-desc">
+              <mat-icon class="state-icon inuse-color">badge</mat-icon>
+              <p>Equipamento em <strong>uso ativo</strong> com o colaborador <strong>{{ getEmployeeName(asset.employee_id) }}</strong>. Ao retornar à empresa, registre a devolução para encaminhar à conferência técnica.</p>
+            </div>
+            <div class="lifecycle-actions">
+              <button mat-stroked-button color="warn" class="op-btn" (click)="openModal('return')">
+                <mat-icon>keyboard_return</mat-icon> Registrar Devolução Física
+              </button>
+            </div>
+          </div>
+
+          <!-- State: PENDING_INSPECTION -->
+          <div *ngIf="asset.status === 'PENDING_INSPECTION'" class="lifecycle-body inspection-box">
+            <div class="lifecycle-desc">
+              <mat-icon class="state-icon inspection-color">engineering</mat-icon>
+              <p class="inspection-alert">
+                <strong>Devolução física registrada!</strong> O equipamento está em <em>quarentena</em> e aguarda conferência técnica. Não pode ser entregue ou reservado antes da aprovação da inspeção.
+              </p>
+            </div>
+            <div class="lifecycle-actions">
+              <button mat-flat-button color="primary" class="op-btn success-btn" (click)="confirmInspect(true)">
+                <mat-icon>verified</mat-icon> Aprovar Conferência & Liberar para Estoque
+              </button>
+              <button mat-stroked-button color="warn" class="op-btn" (click)="openModal('inspect')">
+                <mat-icon>build</mat-icon> Identificado Defeito (Manutenção)
+              </button>
+            </div>
+          </div>
+
+          <!-- State: MAINTENANCE -->
+          <div *ngIf="asset.status === 'MAINTENANCE'" class="lifecycle-body">
+            <div class="lifecycle-desc">
+              <mat-icon class="state-icon maintenance-color">build_circle</mat-icon>
+              <p>O equipamento está em <strong>manutenção técnica</strong> ou reparo de componentes.</p>
+            </div>
+            <div class="lifecycle-actions">
+              <button mat-flat-button color="primary" class="op-btn" (click)="confirmInspect(true)">
+                <mat-icon>check_circle</mat-icon> Concluir Manutenção & Liberar
+              </button>
+            </div>
+          </div>
+
+          <!-- State: DECOMMISSIONED -->
+          <div *ngIf="asset.status === 'DECOMMISSIONED'" class="lifecycle-body">
+            <div class="lifecycle-desc">
+              <mat-icon class="state-icon decommissioned-color">delete_forever</mat-icon>
+              <p>Patrimônio <strong>baixado definitivamente</strong> do inventário institucional.</p>
+            </div>
+          </div>
+        </div>
         
         <div class="cards-grid">
           <!-- BASIC INFO CARD -->
@@ -45,7 +145,7 @@
                 <span class="value">{{ getUnitName(asset.unit_id) }}</span>
               </div>
               <div class="info-item">
-                <span class="label">Responsável</span>
+                <span class="label">Responsável / Posse</span>
                 <span class="value">{{ getEmployeeName(asset.employee_id) }}</span>
               </div>
             </div>
@@ -98,51 +198,37 @@
                 <span class="step-title">Gerar Termo Oficial</span>
                 <span class="step-desc">Gera o documento formal pronto com os dados do equipamento e do colaborador responsável.</span>
                 <button mat-stroked-button color="primary" class="step-action-btn" (click)="printResponsibilityStatement()">
-                  <mat-icon>description</mat-icon> Gerar / Imprimir Termo
+                  <mat-icon>print</mat-icon> Abrir / Imprimir Termo
                 </button>
               </div>
             </div>
 
-            <div class="flow-arrow">
-              <mat-icon>arrow_forward</mat-icon>
-            </div>
-
             <!-- Passo 2 -->
-            <div class="flow-step" [class.step-done]="hasSignedStatement">
+            <div class="flow-step">
               <div class="step-badge">2</div>
               <div class="step-content">
                 <span class="step-title">Coletar Assinatura Externa</span>
-                <span class="step-desc">Envie o documento para assinatura no Clicksign, DocuSign, Gov.br ou recolha assinatura física.</span>
-                <div class="step-info-tag">
-                  <mat-icon>open_in_new</mat-icon> Realizada em sistema externo
-                </div>
+                <span class="step-desc">Submeta o PDF para assinatura digital na sua plataforma de preferência (DocuSign, Clicksign, Assinador Gov.br) ou colha a via física assinada.</span>
               </div>
             </div>
 
-            <div class="flow-arrow">
-              <mat-icon>arrow_forward</mat-icon>
-            </div>
-
             <!-- Passo 3 -->
-            <div class="flow-step" [class.step-done]="hasSignedStatement">
+            <div class="flow-step" [ngClass]="{ 'step-highlight': !hasSignedStatement, 'step-done': hasSignedStatement }">
               <div class="step-badge">3</div>
               <div class="step-content">
                 <span class="step-title">Anexar Documento Assinado</span>
-                <span class="step-desc" *ngIf="hasSignedStatement">
-                  Documento assinado vinculado: <strong>{{ signedStatementFile?.filename }}</strong>
-                </span>
-                <span class="step-desc" *ngIf="!hasSignedStatement">
-                  Faça o upload do termo assinado (.pdf, .jpg, .png) para vincular permanentemente ao histórico do ativo.
-                </span>
-
-                <div class="step-actions">
-                  <input type="file" #statementFileInput (change)="onUploadStatementFile($event)" style="display: none" accept=".pdf,.png,.jpg,.jpeg">
-                  <button mat-flat-button color="primary" class="step-action-btn" (click)="statementFileInput.click()" [disabled]="isUploadingStatement">
-                    <mat-icon>{{ isUploadingStatement ? 'hourglass_top' : 'cloud_upload' }}</mat-icon>
-                    {{ hasSignedStatement ? 'Substituir / Novo Termo' : 'Anexar Termo Assinado' }}
+                <span class="step-desc">Envie o arquivo final assinado para vincular permanentemente a este ativo.</span>
+                
+                <div class="step-action-row">
+                  <input type="file" #fileInput (change)="onUploadStatementFile($event)" style="display: none;" accept=".pdf,image/*">
+                  
+                  <button mat-flat-button color="primary" class="step-action-btn" (click)="fileInput.click()" [disabled]="isUploadingStatement">
+                    <mat-icon>upload_file</mat-icon>
+                    <span>{{ hasSignedStatement ? 'Substituir Termo Assinado' : 'Enviar Termo Assinado' }}</span>
                   </button>
-                  <button *ngIf="signedStatementFile" mat-stroked-button class="step-action-btn secondary" (click)="downloadAttachment(signedStatementFile)">
-                    <mat-icon>visibility</mat-icon> Visualizar Termo
+
+                  <button *ngIf="signedStatementFile" mat-stroked-button class="view-statement-btn" (click)="downloadAttachment(signedStatementFile)" title="Visualizar documento assinado">
+                    <mat-icon>visibility</mat-icon> Ver Anexo
                   </button>
                 </div>
               </div>
@@ -161,11 +247,11 @@
               <mat-icon class="stock-info-icon">inventory_2</mat-icon>
               <div>
                 <h3>Termo de Responsabilidade e Cautela</h3>
-                <p class="flow-subtitle">Ativo em estoque (sem colaborador responsável vinculado)</p>
+                <p class="flow-subtitle">Ativo em estoque ou reserva</p>
               </div>
             </div>
             <p class="instock-text">
-              Este equipamento não possui colaborador atribuído no momento. Assim que uma movimentação vincular o ativo a um colaborador, o fluxo de geração e anexo do termo assinado ficará disponível nesta seção.
+              Assim que o ativo for entregue e atribuído a um colaborador responsável, o fluxo de geração e anexo do termo ficará disponível nesta seção.
             </p>
           </div>
         </ng-template>
@@ -189,17 +275,21 @@
               <div class="timeline-header">
                 <div class="title">
                   <mat-icon>compare_arrows</mat-icon>
-                  <strong>{{ mov.movement_type }}</strong>
+                  <strong>{{ getMovementLabel(mov.movement_type) }}</strong>
+                  <span *ngIf="mov.ticket_id" class="ticket-link-badge" [routerLink]="['/service-desk', mov.ticket_id]" title="Ver chamado relacionado">
+                    <mat-icon class="tiny-icon">confirmation_number</mat-icon>
+                    Chamado #{{ mov.ticket_id.substring(0, 8) }}
+                  </span>
                 </div>
                 <span class="date">{{ mov.created_at | date:'dd/MM/yyyy HH:mm' }}</span>
               </div>
               
               <div class="timeline-body">
                 <div class="change-row" *ngIf="mov.status_from !== mov.status_to">
-                  <span class="change-label">Status:</span>
-                  <span class="change-val from">{{ mov.status_from || 'N/A' }}</span>
+                  <span class="change-label">Transição de Estado:</span>
+                  <span class="change-val from">{{ getStatusLabel(mov.status_from || '') }}</span>
                   <mat-icon>arrow_right_alt</mat-icon>
-                  <span class="change-val to">{{ mov.status_to }}</span>
+                  <span class="change-val to">{{ getStatusLabel(mov.status_to || '') }}</span>
                 </div>
                 <div class="change-row" *ngIf="mov.from_employee_id || mov.to_employee_id">
                   <span class="change-label">Responsável:</span>
@@ -224,4 +314,75 @@
       </div>
     </mat-tab>
   </mat-tab-group>
+
+  <!-- ACTION MODALS OVERLAY -->
+  <div class="modal-overlay" *ngIf="activeModal">
+    <div class="modal-card mat-elevation-z8" [formGroup]="actionForm">
+      
+      <!-- Header -->
+      <div class="modal-header">
+        <mat-icon color="primary" *ngIf="activeModal === 'reserve'">bookmark_add</mat-icon>
+        <mat-icon color="primary" *ngIf="activeModal === 'deliver'">handshake</mat-icon>
+        <mat-icon color="warn" *ngIf="activeModal === 'return'">keyboard_return</mat-icon>
+        <mat-icon color="warn" *ngIf="activeModal === 'inspect'">build</mat-icon>
+        
+        <h3 *ngIf="activeModal === 'reserve'">Reservar Ativo #{{ asset.tag }}</h3>
+        <h3 *ngIf="activeModal === 'deliver'">Efetivar Entrega de Ativo #{{ asset.tag }}</h3>
+        <h3 *ngIf="activeModal === 'return'">Registrar Devolução de Ativo #{{ asset.tag }}</h3>
+        <h3 *ngIf="activeModal === 'inspect'">Encaminhar para Manutenção</h3>
+      </div>
+
+      <!-- Body -->
+      <div class="modal-body">
+        
+        <!-- Reserve / Deliver: Employee Selection -->
+        <mat-form-field appearance="outline" class="w-100" *ngIf="activeModal === 'reserve' || activeModal === 'deliver'">
+          <mat-label>Colaborador Destinatário *</mat-label>
+          <mat-select formControlName="employee_id">
+            <mat-option *ngFor="let emp of employees" [value]="emp.id">
+              {{ emp.name }} ({{ emp.registration }})
+            </mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <!-- Return Prompt -->
+        <p class="modal-info-text" *ngIf="activeModal === 'return'">
+          Ao registrar a devolução, o equipamento será colocado no estado <strong>Aguardando Inspeção Técnica</strong>. Ele não voltará imediatamente ao estoque antes que uma conferência seja concluída.
+        </p>
+
+        <!-- Inspect / Maintenance Prompt -->
+        <p class="modal-info-text" *ngIf="activeModal === 'inspect'">
+          A conferência técnica identificou inconformidades ou necessidade de reparo. O equipamento será marcado como <strong>Em Manutenção</strong>.
+        </p>
+
+        <!-- Notes -->
+        <mat-form-field appearance="outline" class="w-100">
+          <mat-label>Observações / Justificativa</mat-label>
+          <textarea matInput rows="3" formControlName="notes" placeholder="Descreva os detalhes da operação..."></textarea>
+        </mat-form-field>
+      </div>
+
+      <!-- Actions -->
+      <div class="modal-actions">
+        <button mat-button (click)="closeModal()">Cancelar</button>
+        
+        <button *ngIf="activeModal === 'reserve'" mat-flat-button color="primary" (click)="confirmReserve()">
+          <mat-icon>check</mat-icon> Confirmar Reserva
+        </button>
+
+        <button *ngIf="activeModal === 'deliver'" mat-flat-button color="primary" (click)="confirmDeliver()">
+          <mat-icon>check</mat-icon> Confirmar Entrega
+        </button>
+
+        <button *ngIf="activeModal === 'return'" mat-flat-button color="warn" (click)="confirmReturn()">
+          <mat-icon>check</mat-icon> Confirmar Devolução
+        </button>
+
+        <button *ngIf="activeModal === 'inspect'" mat-flat-button color="warn" (click)="confirmInspect(false)">
+          <mat-icon>build</mat-icon> Enviar para Manutenção
+        </button>
+      </div>
+
+    </div>
+  </div>
 </div>

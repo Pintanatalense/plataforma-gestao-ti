@@ -24,10 +24,12 @@ import {
   TicketCategory,
   CategoryFormField,
   TicketHistoryItem,
-  TicketInteraction
+  TicketInteraction,
+  TicketAssetBrief
 } from '../ticket.service';
 import { AuthService } from '../../../core/auth/auth.service';
 import { StockItem, StockService } from '../../../core/services/stock.service';
+import { Employee, OrganizationService } from '../../../core/services/organization.service';
 import { AttachmentsComponent } from '../../../shared/components/attachments/attachments.component';
 
 @Component({
@@ -60,6 +62,7 @@ export class TicketDetailComponent implements OnInit {
   private route = inject(ActivatedRoute);
   private ticketService = inject(TicketService);
   private stockService = inject(StockService);
+  private orgService = inject(OrganizationService);
   public authService = inject(AuthService);
   private fb = inject(FormBuilder);
   private snackBar = inject(MatSnackBar);
@@ -72,6 +75,7 @@ export class TicketDetailComponent implements OnInit {
   messageForm: FormGroup;
   materialForm: FormGroup;
   statusNoteForm: FormGroup;
+  assetActionForm: FormGroup;
 
   isTechnician = false;
   showStatusModal = false;
@@ -80,6 +84,10 @@ export class TicketDetailComponent implements OnInit {
   stockItems: StockItem[] = [];
   materialColumns = ['item', 'quantity', 'created_at'];
   categories: TicketCategory[] = [];
+  employees: Employee[] = [];
+
+  selectedAssetForAction: TicketAssetBrief | null = null;
+  assetActionType: 'reserve' | 'deliver' | 'return' | 'inspect' | null = null;
 
   constructor() {
     this.messageForm = this.fb.group({
@@ -93,6 +101,12 @@ export class TicketDetailComponent implements OnInit {
     });
 
     this.statusNoteForm = this.fb.group({
+      notes: ['']
+    });
+
+    this.assetActionForm = this.fb.group({
+      employee_id: [''],
+      approved: [true],
       notes: ['']
     });
   }
@@ -119,6 +133,7 @@ export class TicketDetailComponent implements OnInit {
 
     if (this.isTechnician) {
       this.loadStockItems();
+      this.loadEmployees();
     }
   }
 
@@ -309,6 +324,124 @@ export class TicketDetailComponent implements OnInit {
     }
   }
 
+  loadEmployees() {
+    this.orgService.getEmployees().subscribe({
+      next: (emps) => {
+        this.employees = emps;
+        this.cdr.markForCheck();
+      },
+      error: () => {}
+    });
+  }
+
+  getEmployeeName(empId?: string | null): string {
+    if (!empId) return '-';
+    const emp = this.employees.find((e) => e.id === empId);
+    return emp ? `${emp.name} (${emp.registration})` : `Colaborador #${empId.substring(0, 8)}`;
+  }
+
+  openAssetActionModal(asset: TicketAssetBrief, action: 'reserve' | 'deliver' | 'return' | 'inspect') {
+    this.selectedAssetForAction = asset;
+    this.assetActionType = action;
+    const defaultEmpId = asset.employee_id || this.ticket?.requester_id || '';
+    this.assetActionForm.reset({
+      employee_id: defaultEmpId,
+      approved: true,
+      notes: ''
+    });
+  }
+
+  closeAssetActionModal() {
+    this.selectedAssetForAction = null;
+    this.assetActionType = null;
+    this.assetActionForm.reset();
+  }
+
+  submitAssetAction() {
+    if (!this.ticket || !this.selectedAssetForAction || !this.assetActionType) return;
+
+    const val = this.assetActionForm.value;
+    const ticketId = this.ticket.id;
+    const assetId = this.selectedAssetForAction.id;
+
+    let obs;
+    let successMsg = '';
+
+    if (this.assetActionType === 'reserve') {
+      if (!val.employee_id) {
+        this.snackBar.open('Selecione o colaborador para a reserva.', 'Fechar', { duration: 3000 });
+        return;
+      }
+      obs = this.ticketService.reserveTicketAsset(ticketId, assetId, {
+        employee_id: val.employee_id,
+        notes: val.notes || undefined
+      });
+      successMsg = `Ativo #${this.selectedAssetForAction.tag} reservado com sucesso!`;
+    } else if (this.assetActionType === 'deliver') {
+      if (!val.employee_id) {
+        this.snackBar.open('Selecione o colaborador destinatário.', 'Fechar', { duration: 3000 });
+        return;
+      }
+      obs = this.ticketService.deliverTicketAsset(ticketId, assetId, {
+        employee_id: val.employee_id,
+        notes: val.notes || undefined
+      });
+      successMsg = `Ativo #${this.selectedAssetForAction.tag} entregue com sucesso!`;
+    } else if (this.assetActionType === 'return') {
+      obs = this.ticketService.returnTicketAsset(ticketId, assetId, {
+        notes: val.notes || undefined
+      });
+      successMsg = `Devolução física registrada! Ativo #${this.selectedAssetForAction.tag} encaminhado para inspeção técnica.`;
+    } else if (this.assetActionType === 'inspect') {
+      obs = this.ticketService.inspectTicketAsset(ticketId, assetId, {
+        approved: !!val.approved,
+        notes: val.notes || undefined
+      });
+      successMsg = val.approved
+        ? `Ativo #${this.selectedAssetForAction.tag} aprovado na conferência e liberado para o estoque!`
+        : `Ativo #${this.selectedAssetForAction.tag} reprovado e encaminhado para manutenção!`;
+    }
+
+    if (obs) {
+      obs.subscribe({
+        next: () => {
+          this.snackBar.open(successMsg, 'Fechar', { duration: 4000 });
+          this.closeAssetActionModal();
+          this.loadTicket(ticketId);
+        },
+        error: (err) => {
+          console.error(err);
+          const msg = err?.error?.error?.message || err?.error?.detail || 'Erro ao processar operação do ativo.';
+          this.snackBar.open(msg, 'Fechar', { duration: 5000 });
+        }
+      });
+    }
+  }
+
+  getAssetStatusLabel(status: string): string {
+    switch (status) {
+      case 'IN_STOCK': return 'Em Estoque';
+      case 'RESERVED': return 'Reservado';
+      case 'IN_USE': return 'Em Uso';
+      case 'PENDING_INSPECTION': return 'Aguardando Inspeção';
+      case 'MAINTENANCE': return 'Em Manutenção';
+      case 'DECOMMISSIONED': return 'Baixado';
+      default: return status;
+    }
+  }
+
+  getAssetStatusBadgeClass(status: string): string {
+    switch (status) {
+      case 'IN_STOCK': return 'badge-stock';
+      case 'RESERVED': return 'badge-reserved';
+      case 'IN_USE': return 'badge-use';
+      case 'PENDING_INSPECTION': return 'badge-inspection';
+      case 'MAINTENANCE': return 'badge-maint';
+      case 'DECOMMISSIONED': return 'badge-decom';
+      default: return 'badge-default';
+    }
+  }
+
   getHistoryIcon(eventType: string): string {
     switch (eventType) {
       case 'ticket.created': return 'add_task';
@@ -318,6 +451,10 @@ export class TicketDetailComponent implements OnInit {
       case 'ticket.material_added': return 'inventory_2';
       case 'ticket.assigned': return 'person_pin';
       case 'ticket.priority_changed': return 'flag';
+      case 'ticket.asset_reserved': return 'bookmark';
+      case 'ticket.asset_delivered': return 'handshake';
+      case 'ticket.asset_returned': return 'keyboard_return';
+      case 'ticket.asset_inspected': return 'verified';
       default: return 'history';
     }
   }
@@ -330,6 +467,10 @@ export class TicketDetailComponent implements OnInit {
       case 'ticket.interaction_added': return 'type-chat';
       case 'ticket.material_added': return 'type-mat';
       case 'ticket.assigned': return 'type-assign';
+      case 'ticket.asset_reserved': return 'type-assign';
+      case 'ticket.asset_delivered': return 'type-create';
+      case 'ticket.asset_returned': return 'type-status';
+      case 'ticket.asset_inspected': return 'type-close';
       default: return 'type-default';
     }
   }

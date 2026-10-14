@@ -22,6 +22,9 @@
           <mat-icon>person</mat-icon> {{ ticket.requester_name }}
         </span>
         <span class="meta-badge date">{{ ticket.created_at | date:'dd/MM/yyyy HH:mm' }}</span>
+        <span class="meta-badge assets" *ngIf="ticket.assets && ticket.assets.length > 0">
+          <mat-icon>devices</mat-icon> {{ ticket.assets.length }} Equipamento(s)
+        </span>
       </div>
     </div>
 
@@ -119,6 +122,73 @@
           <mat-icon>check</mat-icon> Confirmar Alteração
         </button>
       </div>
+    </div>
+  </div>
+
+  <!-- Asset Action Modal -->
+  <div class="modal-overlay" *ngIf="selectedAssetForAction && assetActionType">
+    <div class="modal-card mat-elevation-z8" [formGroup]="assetActionForm">
+      
+      <!-- Header -->
+      <div class="modal-header">
+        <mat-icon color="primary" *ngIf="assetActionType === 'reserve'">bookmark_add</mat-icon>
+        <mat-icon color="primary" *ngIf="assetActionType === 'deliver'">handshake</mat-icon>
+        <mat-icon color="warn" *ngIf="assetActionType === 'return'">keyboard_return</mat-icon>
+        <mat-icon color="primary" *ngIf="assetActionType === 'inspect'">engineering</mat-icon>
+        
+        <h3 *ngIf="assetActionType === 'reserve'">Reservar Ativo #{{ selectedAssetForAction.tag }}</h3>
+        <h3 *ngIf="assetActionType === 'deliver'">Entregar Ativo #{{ selectedAssetForAction.tag }}</h3>
+        <h3 *ngIf="assetActionType === 'return'">Registrar Devolução #{{ selectedAssetForAction.tag }}</h3>
+        <h3 *ngIf="assetActionType === 'inspect'">Conferência Técnica / Inspeção #{{ selectedAssetForAction.tag }}</h3>
+      </div>
+
+      <!-- Body -->
+      <div class="modal-body">
+        
+        <!-- Reserve / Deliver: Employee Selection -->
+        <mat-form-field appearance="outline" class="w-100" *ngIf="assetActionType === 'reserve' || assetActionType === 'deliver'">
+          <mat-label>Colaborador Destinatário *</mat-label>
+          <mat-select formControlName="employee_id">
+            <mat-option *ngFor="let emp of employees" [value]="emp.id">
+              {{ emp.name }} ({{ emp.registration }})
+            </mat-option>
+          </mat-select>
+        </mat-form-field>
+
+        <!-- Return prompt -->
+        <p class="modal-subtitle" *ngIf="assetActionType === 'return'">
+          Ao registrar a devolução física pelo chamado, o equipamento entrará automaticamente no estado de <strong>Quarentena (Aguardando Inspeção)</strong>. O vínculo do colaborador será encerrado e o equipamento não será liberado ao estoque até passar pela conferência técnica.
+        </p>
+
+        <!-- Inspect options -->
+        <div *ngIf="assetActionType === 'inspect'" class="inspection-form-group">
+          <p class="modal-subtitle">
+            Informe o resultado da conferência física do equipamento #{{ selectedAssetForAction.tag }}:
+          </p>
+          <mat-form-field appearance="outline" class="w-100">
+            <mat-label>Resultado da Avaliação</mat-label>
+            <mat-select formControlName="approved">
+              <mat-option [value]="true">Aprovado 100% — Liberar para Estoque Disponível</mat-option>
+              <mat-option [value]="false">Reprovado / Defeito — Encaminhar para Manutenção</mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+
+        <!-- Notes -->
+        <mat-form-field appearance="outline" class="w-100">
+          <mat-label>Observações / Parecer da Operação</mat-label>
+          <textarea matInput rows="3" formControlName="notes" placeholder="Descreva os detalhes da operação realizada..."></textarea>
+        </mat-form-field>
+      </div>
+
+      <!-- Actions -->
+      <div class="modal-actions">
+        <button mat-button (click)="closeAssetActionModal()">Cancelar</button>
+        <button mat-flat-button color="primary" (click)="submitAssetAction()">
+          <mat-icon>check</mat-icon> Confirmar Operação
+        </button>
+      </div>
+
     </div>
   </div>
 
@@ -373,6 +443,107 @@
               </tr>
             </table>
           </div>
+        </div>
+      </div>
+    </mat-tab>
+
+    <!-- TAB 6: Linked Assets -->
+    <mat-tab>
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-label-icon">devices</mat-icon>
+        Equipamentos Vinculados
+        <span class="tab-count-badge" *ngIf="ticket.assets && ticket.assets.length > 0">{{ ticket.assets.length }}</span>
+      </ng-template>
+      <div class="tab-body p-4">
+        <div class="assets-management-container">
+          
+          <div class="assets-header-info">
+            <div class="title-group">
+              <h3>Equipamentos Associados a este Chamado</h3>
+              <p>Rastreamento integrado do ciclo de vida: reserva antecipada, entrega técnica, devolução física e quarentena de inspeção.</p>
+            </div>
+          </div>
+
+          <div class="assets-cards-grid" *ngIf="ticket.assets && ticket.assets.length > 0">
+            <div class="asset-item-card glass-card" *ngFor="let asset of ticket.assets" [ngClass]="'border-' + asset.status.toLowerCase()">
+              
+              <div class="asset-item-header">
+                <div class="asset-identity">
+                  <span class="asset-tag">#{{ asset.tag }}</span>
+                  <h4 class="asset-name">{{ asset.name }}</h4>
+                </div>
+                <span class="status-badge" [ngClass]="getAssetStatusBadgeClass(asset.status)">
+                  {{ getAssetStatusLabel(asset.status) }}
+                </span>
+              </div>
+
+              <div class="asset-item-body">
+                <div class="asset-detail-row" *ngIf="asset.employee_id">
+                  <mat-icon>person</mat-icon>
+                  <span>Alocado para: <strong>{{ getEmployeeName(asset.employee_id) }}</strong></span>
+                </div>
+                
+                <div class="asset-inspection-alert" *ngIf="asset.status === 'PENDING_INSPECTION'">
+                  <mat-icon>engineering</mat-icon>
+                  <div>
+                    <strong>Em Quarentena / Aguardando Inspeção</strong>
+                    <p>O equipamento foi devolvido fisicamente e não pode ser entregue até ser aprovado.</p>
+                  </div>
+                </div>
+              </div>
+
+              <div class="asset-item-actions" *ngIf="isTechnician">
+                <!-- If IN_STOCK -->
+                <ng-container *ngIf="asset.status === 'IN_STOCK'">
+                  <button mat-stroked-button color="primary" class="asset-op-btn" (click)="openAssetActionModal(asset, 'reserve')">
+                    <mat-icon>bookmark_add</mat-icon> Reservar
+                  </button>
+                  <button mat-flat-button color="primary" class="asset-op-btn" (click)="openAssetActionModal(asset, 'deliver')">
+                    <mat-icon>handshake</mat-icon> Entregar
+                  </button>
+                </ng-container>
+
+                <!-- If RESERVED -->
+                <ng-container *ngIf="asset.status === 'RESERVED'">
+                  <button mat-flat-button color="primary" class="asset-op-btn" (click)="openAssetActionModal(asset, 'deliver')">
+                    <mat-icon>assignment_turned_in</mat-icon> Efetivar Entrega
+                  </button>
+                </ng-container>
+
+                <!-- If IN_USE -->
+                <ng-container *ngIf="asset.status === 'IN_USE'">
+                  <button mat-stroked-button color="warn" class="asset-op-btn" (click)="openAssetActionModal(asset, 'return')">
+                    <mat-icon>keyboard_return</mat-icon> Registrar Devolução
+                  </button>
+                </ng-container>
+
+                <!-- If PENDING_INSPECTION -->
+                <ng-container *ngIf="asset.status === 'PENDING_INSPECTION'">
+                  <button mat-flat-button color="primary" class="asset-op-btn success-btn" (click)="openAssetActionModal(asset, 'inspect')">
+                    <mat-icon>verified</mat-icon> Concluir Inspeção
+                  </button>
+                </ng-container>
+
+                <button mat-icon-button class="view-asset-btn" [routerLink]="['/assets', asset.id]" matTooltip="Ver ficha completa do ativo">
+                  <mat-icon>open_in_new</mat-icon>
+                </button>
+              </div>
+
+              <div class="asset-item-actions" *ngIf="!isTechnician">
+                <button mat-stroked-button [routerLink]="['/assets', asset.id]">
+                  <mat-icon>visibility</mat-icon> Ver Detalhes do Equipamento
+                </button>
+              </div>
+
+            </div>
+          </div>
+
+          <div class="empty-state-card glass-card" *ngIf="!ticket.assets || ticket.assets.length === 0">
+            <mat-icon>devices</mat-icon>
+            <h4>Nenhum equipamento vinculado a este chamado</h4>
+            <p>Quando um chamado envolve entrega ou devolução de patrimônio, os ativos selecionados são listados aqui para controle operacional.</p>
+          </div>
+
         </div>
       </div>
     </mat-tab>
