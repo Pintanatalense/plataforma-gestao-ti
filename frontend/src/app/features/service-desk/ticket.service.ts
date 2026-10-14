@@ -2,17 +2,31 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
+export interface CategoryFormField {
+  id: string;
+  label: string;
+  type: 'text' | 'textarea' | 'number' | 'select' | 'checkbox' | 'date';
+  required: boolean;
+  placeholder?: string;
+  help_text?: string;
+  options?: string[];
+}
+
 export interface TicketCategory {
   id: string;
   name: string;
   description?: string;
   default_sector_id?: string | null;
+  form_schema?: CategoryFormField[];
+  is_active?: boolean;
 }
 
 export interface TicketInteraction {
   id: string;
   ticket_id: string;
   author_id: string;
+  author_name?: string;
+  author_email?: string;
   message: string;
   is_internal: boolean;
   created_at: string;
@@ -27,6 +41,17 @@ export interface TicketMaterial {
   created_at: string;
 }
 
+export interface TicketHistoryItem {
+  id: string;
+  event_type: string;
+  action: string;
+  description: string;
+  user_name?: string | null;
+  user_email?: string | null;
+  data?: Record<string, any>;
+  created_at: string;
+}
+
 export interface Ticket {
   id: string;
   title: string;
@@ -34,9 +59,13 @@ export interface Ticket {
   status: string;
   priority: string;
   requester_id: string;
+  requester_name?: string;
   assignee_id?: string;
+  assignee_name?: string;
   category_id?: string;
+  category?: TicketCategory;
   asset_ids?: string[];
+  custom_fields?: Record<string, any>;
   created_at: string;
   updated_at: string;
   interactions: TicketInteraction[];
@@ -58,7 +87,14 @@ export class TicketService {
     return this.http.get<Ticket>(`${this.apiUrl}/${id}`);
   }
 
-  createTicket(payload: { title: string; description: string; priority: string; category_id?: string; asset_ids?: string[] }): Observable<Ticket> {
+  createTicket(payload: {
+    title: string;
+    description: string;
+    priority: string;
+    category_id?: string;
+    asset_ids?: string[];
+    custom_fields?: Record<string, any>;
+  }): Observable<Ticket> {
     return this.http.post<Ticket>(this.apiUrl, payload);
   }
 
@@ -77,15 +113,37 @@ export class TicketService {
     return this.http.get<TicketCategory[]>(`${this.apiUrl}/categories`);
   }
 
-  createCategory(payload: { name: string; description?: string; default_sector_id?: string | null }): Observable<TicketCategory> {
+  createCategory(payload: {
+    name: string;
+    description?: string;
+    default_sector_id?: string | null;
+    form_schema?: CategoryFormField[];
+  }): Observable<TicketCategory> {
     return this.http.post<TicketCategory>(`${this.apiUrl}/categories`, payload);
   }
 
-  updateCategory(id: string, payload: { name?: string; description?: string; default_sector_id?: string | null }): Observable<TicketCategory> {
+  updateCategory(
+    id: string,
+    payload: {
+      name?: string;
+      description?: string;
+      default_sector_id?: string | null;
+      form_schema?: CategoryFormField[];
+      is_active?: boolean;
+    }
+  ): Observable<TicketCategory> {
     return this.http.patch<TicketCategory>(`${this.apiUrl}/categories/${id}`, payload);
   }
 
   updateTicket(ticketId: string, payload: any): Observable<Ticket> {
     return this.http.patch<Ticket>(`${this.apiUrl}/${ticketId}`, payload);
+  }
+
+  updateTicketStatus(ticketId: string, status: string, notes?: string): Observable<Ticket> {
+    return this.http.patch<Ticket>(`${this.apiUrl}/${ticketId}`, { status, notes });
+  }
+
+  getTicketHistory(ticketId: string): Observable<TicketHistoryItem[]> {
+    return this.http.get<TicketHistoryItem[]>(`${this.apiUrl}/${ticketId}/history`);
   }
 }

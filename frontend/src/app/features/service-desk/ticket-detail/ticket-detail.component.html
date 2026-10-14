@@ -3,23 +3,122 @@
   <div class="chat-header mat-elevation-z2">
     <div class="header-info">
       <div class="title-row">
-        <button mat-icon-button routerLink="/service-desk">
+        <button mat-icon-button routerLink="/service-desk" matTooltip="Voltar para a lista">
           <mat-icon>arrow_back</mat-icon>
         </button>
         <h1>{{ ticket.title }}</h1>
       </div>
       <div class="meta-row">
         <span class="meta-badge status" [ngClass]="'status-' + ticket.status.toLowerCase()">
-          {{ ticket.status }}
+          {{ getStatusLabel(ticket.status) }}
         </span>
-        <span class="meta-badge priority">Prioridade: {{ ticket.priority }}</span>
-        <span class="meta-badge date">{{ ticket.created_at | date:'short' }}</span>
+        <span class="meta-badge category">
+          <mat-icon>category</mat-icon> {{ getCategoryName() }}
+        </span>
+        <span class="meta-badge priority">
+          Prioridade: {{ ticket.priority }}
+        </span>
+        <span class="meta-badge requester" *ngIf="ticket.requester_name">
+          <mat-icon>person</mat-icon> {{ ticket.requester_name }}
+        </span>
+        <span class="meta-badge date">{{ ticket.created_at | date:'dd/MM/yyyy HH:mm' }}</span>
       </div>
     </div>
-    <div class="header-actions" *ngIf="isTechnician && ticket.status !== 'CLOSED'">
-      <button mat-stroked-button color="warn" (click)="closeTicket()">
-        <mat-icon>task_alt</mat-icon> Encerrar Chamado
-      </button>
+
+    <!-- Header Actions (Status and Actions) -->
+    <div class="header-actions">
+      <!-- Status Actions for Technician -->
+      <ng-container *ngIf="isTechnician">
+        <button
+          mat-flat-button
+          color="primary"
+          [matMenuTriggerFor]="statusMenu"
+          [disabled]="ticket.status === 'CLOSED'"
+          class="action-btn"
+        >
+          <mat-icon>tune</mat-icon> Alterar Status
+        </button>
+
+        <mat-menu #statusMenu="matMenu">
+          <button
+            mat-menu-item
+            (click)="openStatusChange('IN_PROGRESS')"
+            [disabled]="ticket.status === 'IN_PROGRESS'"
+          >
+            <mat-icon color="primary">play_arrow</mat-icon>
+            <span>Em Atendimento</span>
+          </button>
+          <button
+            mat-menu-item
+            (click)="openStatusChange('PENDING')"
+            [disabled]="ticket.status === 'PENDING'"
+          >
+            <mat-icon color="accent">hourglass_empty</mat-icon>
+            <span>Pendente</span>
+          </button>
+          <button
+            mat-menu-item
+            (click)="openStatusChange('RESOLVED')"
+            [disabled]="ticket.status === 'RESOLVED'"
+          >
+            <mat-icon color="primary">done_all</mat-icon>
+            <span>Resolvido</span>
+          </button>
+          <button
+            mat-menu-item
+            (click)="openStatusChange('CLOSED')"
+            [disabled]="ticket.status === 'CLOSED'"
+          >
+            <mat-icon color="warn">check_circle</mat-icon>
+            <span>Encerrar Chamado</span>
+          </button>
+        </mat-menu>
+      </ng-container>
+
+      <!-- Finalize action for Requester -->
+      <ng-container *ngIf="!isTechnician && isRequester() && ticket.status !== 'CLOSED'">
+        <button
+          mat-flat-button
+          color="accent"
+          (click)="openStatusChange('CLOSED')"
+          class="action-btn finalize-btn"
+        >
+          <mat-icon>task_alt</mat-icon> Finalizar Chamado
+        </button>
+      </ng-container>
+    </div>
+  </div>
+
+  <!-- Status Change Modal -->
+  <div class="modal-overlay" *ngIf="showStatusModal">
+    <div class="modal-card mat-elevation-z8">
+      <div class="modal-header">
+        <mat-icon color="primary">swap_horiz</mat-icon>
+        <h3>Alterar Status para "{{ getStatusLabel(pendingStatus || '') }}"</h3>
+      </div>
+      <div class="modal-body">
+        <p class="modal-subtitle">
+          Confirma a alteração do status deste chamado? Você pode opcionalmente incluir uma justificativa ou nota de resolução que ficará registrada na linha do tempo.
+        </p>
+
+        <form [formGroup]="statusNoteForm">
+          <mat-form-field appearance="outline" class="w-100" subscriptSizing="dynamic">
+            <mat-label>Justificativa / Nota de Resolução (Opcional)</mat-label>
+            <textarea
+              matInput
+              rows="3"
+              formControlName="notes"
+              placeholder="Ex: Problema corrigido após substituição de componente..."
+            ></textarea>
+          </mat-form-field>
+        </form>
+      </div>
+      <div class="modal-actions">
+        <button mat-button (click)="cancelStatusChange()">Cancelar</button>
+        <button mat-flat-button color="primary" (click)="confirmStatusChange()">
+          <mat-icon>check</mat-icon> Confirmar Alteração
+        </button>
+      </div>
     </div>
   </div>
 
@@ -28,13 +127,38 @@
     <!-- TAB 1: Chat / Interactions -->
     <mat-tab label="Atendimento & Chat">
       <div class="tab-body">
+
+        <!-- Banner de Pré-requisitos Preenchidos -->
+        <div class="prereqs-summary-card" *ngIf="hasCustomFields()">
+          <div class="prereqs-card-title">
+            <mat-icon>assignment_turned_in</mat-icon>
+            <span>Pré-requisitos da Categoria ({{ getCategoryName() }})</span>
+          </div>
+          <div class="prereqs-grid">
+            <div *ngFor="let item of getCustomFieldEntries()" class="prereq-item">
+              <span class="prereq-label">{{ item.label }}:</span>
+              <span *ngIf="item.type === 'checkbox'" class="prereq-val-check">
+                <mat-icon [color]="item.value ? 'primary' : 'warn'">{{ item.value ? 'check_circle' : 'cancel' }}</mat-icon>
+                {{ item.value ? 'Confirmado' : 'Não' }}
+              </span>
+              <span *ngIf="item.type !== 'checkbox'" class="prereq-val-text">{{ item.value || '-' }}</span>
+            </div>
+          </div>
+        </div>
         
         <!-- Chat Area -->
         <div id="chat-container" class="chat-history">
           <!-- Initial Description as first message -->
           <div class="message-wrapper" [class.is-mine]="isMyMessage(ticket.requester_id)">
-            <div class="message-bubble">
-              <div class="message-author">Solicitante</div>
+            <div class="message-bubble initial-bubble">
+              <div class="message-header">
+                <span class="message-author">
+                  <mat-icon class="author-icon">person</mat-icon>
+                  {{ ticket.requester_name || 'Solicitante' }}
+                </span>
+                <span class="role-badge requester-badge">Abertura</span>
+                <span class="message-time">{{ ticket.created_at | date:'dd/MM/yyyy HH:mm' }}</span>
+              </div>
               <div class="message-text">{{ ticket.description }}</div>
             </div>
           </div>
@@ -46,8 +170,12 @@
               <div *ngIf="msg.is_internal" class="internal-badge">
                 <mat-icon>lock</mat-icon> NOTA INTERNA (TI)
               </div>
-              <div class="message-author">
-                <span>{{ msg.created_at | date:'shortTime' }}</span>
+              <div class="message-header">
+                <span class="message-author">
+                  <mat-icon class="author-icon">{{ isMyMessage(msg.author_id) ? 'account_circle' : 'person' }}</mat-icon>
+                  {{ getAuthorDisplayName(msg) }}
+                </span>
+                <span class="message-time">{{ msg.created_at | date:'dd/MM/yyyy HH:mm' }}</span>
               </div>
               <div class="message-text">{{ msg.message }}</div>
             </div>
@@ -57,12 +185,20 @@
         <!-- Input Area -->
         <div class="chat-input-area mat-elevation-z2">
           <div *ngIf="ticket.status === 'CLOSED'" class="closed-notice">
+            <mat-icon>lock</mat-icon>
             Este chamado está encerrado e não aceita novas interações.
           </div>
 
           <form *ngIf="ticket.status !== 'CLOSED'" [formGroup]="messageForm" (ngSubmit)="sendMessage()" class="input-form">
             <mat-form-field appearance="outline" class="message-field" subscriptSizing="dynamic">
-              <textarea matInput formControlName="message" placeholder="Escreva sua resposta..." rows="2" (keydown.enter)="$event.preventDefault(); sendMessage()"></textarea>
+              <textarea
+                matInput
+                formControlName="message"
+                placeholder="Escreva sua resposta ou interação..."
+                rows="2"
+                (keydown.control.enter)="sendMessage()"
+              ></textarea>
+              <mat-hint>Pressione Ctrl+Enter para enviar rapidamente</mat-hint>
             </mat-form-field>
             
             <div class="input-actions">
@@ -84,17 +220,96 @@
       </div>
     </mat-tab>
 
-    <!-- TAB 2: Attachments -->
+    <!-- TAB 2: Linha do Tempo & Histórico -->
+    <mat-tab label="Histórico & Auditoria">
+      <div class="tab-body p-4">
+        <div class="timeline-wrapper">
+          <div class="timeline-toolbar">
+            <div class="timeline-title-area">
+              <mat-icon color="primary">history</mat-icon>
+              <div>
+                <h3>Linha do Tempo do Chamado</h3>
+                <p>Todos os eventos, interações, consumos e mudanças de status registrados ao longo da vida do chamado.</p>
+              </div>
+            </div>
+            <button mat-stroked-button (click)="loadHistory(ticket.id)" [disabled]="isLoadingHistory">
+              <mat-icon>refresh</mat-icon> Atualizar
+            </button>
+          </div>
+
+          <div *ngIf="isLoadingHistory" class="loading-box">
+            <mat-spinner diameter="36"></mat-spinner>
+            <p>Carregando histórico...</p>
+          </div>
+
+          <div class="timeline-list" *ngIf="!isLoadingHistory">
+            <div *ngFor="let item of history" class="timeline-item">
+              <div class="timeline-marker" [ngClass]="getHistoryColorClass(item.event_type)">
+                <mat-icon>{{ getHistoryIcon(item.event_type) }}</mat-icon>
+              </div>
+              <div class="timeline-content mat-elevation-z1">
+                <div class="timeline-header">
+                  <span class="timeline-action">{{ item.action }}</span>
+                  <span class="timeline-date">{{ item.created_at | date:'dd/MM/yyyy HH:mm:ss' }}</span>
+                </div>
+                <div class="timeline-desc">{{ item.description }}</div>
+                <div class="timeline-footer" *ngIf="item.user_name || item.user_email">
+                  <mat-icon class="footer-icon">person</mat-icon>
+                  <span>Por: <strong>{{ item.user_name || item.user_email }}</strong></span>
+                </div>
+              </div>
+            </div>
+
+            <div *ngIf="history.length === 0" class="empty-timeline">
+              <mat-icon>event_busy</mat-icon>
+              <p>Nenhum registro de histórico encontrado.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </mat-tab>
+
+    <!-- TAB 3: Pré-requisitos & Detalhes -->
+    <mat-tab label="Pré-requisitos & Dados" *ngIf="hasCustomFields()">
+      <div class="tab-body p-4">
+        <div class="prereqs-full-card">
+          <div class="prereqs-full-header">
+            <mat-icon color="primary">checklist</mat-icon>
+            <div>
+              <h3>Respostas aos Pré-requisitos Obrigatórios</h3>
+              <p>Valores informados pelo solicitante no ato de abertura do chamado.</p>
+            </div>
+          </div>
+
+          <div class="prereqs-detail-list">
+            <div *ngFor="let item of getCustomFieldEntries()" class="prereq-detail-row">
+              <div class="prereq-detail-label">
+                <mat-icon>arrow_right</mat-icon>
+                <span>{{ item.label }}</span>
+              </div>
+              <div class="prereq-detail-value">
+                <span *ngIf="item.type === 'checkbox'" class="prereq-val-check">
+                  <mat-icon [color]="item.value ? 'primary' : 'warn'">{{ item.value ? 'check_circle' : 'cancel' }}</mat-icon>
+                  {{ item.value ? 'Sim / Confirmado' : 'Não' }}
+                </span>
+                <span *ngIf="item.type !== 'checkbox'">{{ item.value || '-' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </mat-tab>
+
+    <!-- TAB 4: Attachments -->
     <mat-tab label="Anexos">
       <div class="tab-body p-4">
         <app-attachments [entityType]="'TICKET'" [entityId]="ticket.id"></app-attachments>
       </div>
     </mat-tab>
 
-    <!-- TAB 3: Consumed Materials -->
+    <!-- TAB 5: Consumed Materials -->
     <mat-tab label="Insumos Utilizados" *ngIf="isTechnician">
       <div class="tab-body p-4">
-        
         <div class="materials-container">
           <div class="add-material-card glass-card" *ngIf="ticket.status !== 'CLOSED'">
             <h3>Lançar Insumo / Peça Consumida</h3>
@@ -159,7 +374,6 @@
             </table>
           </div>
         </div>
-
       </div>
     </mat-tab>
 

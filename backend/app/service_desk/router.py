@@ -22,6 +22,7 @@ from app.service_desk.schemas import (
     TicketMaterialResponse,
     TicketResponse,
     TicketUpdate,
+    TicketHistoryItem,
 )
 from app.service_desk.services import ServiceDeskService
 
@@ -181,7 +182,8 @@ async def create_ticket(
         schema, 
         requester_id=ctx["employee_id"], 
         origin_unit_id=ctx["unit_id"], 
-        origin_sector_id=ctx["sector_id"]
+        origin_sector_id=ctx["sector_id"],
+        user_id=ctx["user_id"]
     )
     await session.commit()
     return ticket
@@ -190,7 +192,7 @@ async def create_ticket(
 @router.patch(
     "/{ticket_id}",
     response_model=TicketResponse,
-    summary="Atualiza status, prioridade, responsável ou categoria (Apenas técnicos)"
+    summary="Atualiza status, prioridade, responsável ou categoria"
 )
 async def update_ticket(
     ticket_id: uuid.UUID,
@@ -202,10 +204,31 @@ async def update_ticket(
     ticket = await service.update_ticket(
         ticket_id=ticket_id,
         schema=schema,
-        is_technician=ctx["is_technician"]
+        is_technician=ctx["is_technician"],
+        user_employee_id=ctx["employee_id"],
+        user_id=ctx["user_id"]
     )
     await session.commit()
     return ticket
+
+
+@router.get(
+    "/{ticket_id}/history",
+    response_model=list[TicketHistoryItem],
+    summary="Recupera o histórico e linha do tempo de eventos do chamado"
+)
+async def get_ticket_history(
+    ticket_id: uuid.UUID,
+    ctx: dict = Depends(get_user_context),
+    session: AsyncSession = Depends(get_db)
+) -> list[TicketHistoryItem]:
+    service = ServiceDeskService(session)
+    history = await service.get_ticket_history(
+        ticket_id=ticket_id,
+        user_employee_id=ctx["employee_id"],
+        is_technician=ctx["is_technician"]
+    )
+    return [TicketHistoryItem.model_validate(h) for h in history]
 
 
 @router.post(

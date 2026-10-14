@@ -1,4 +1,6 @@
 .page-container {
+  max-width: 1400px;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 24px;
@@ -8,20 +10,122 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
 
-  h1 {
-    margin: 0;
-    font-size: 24px;
+  .header-titles {
+    h1 {
+      margin: 0;
+      font-size: 26px;
+      font-weight: 700;
+      color: #1e293b;
+      letter-spacing: -0.02em;
+    }
+
+    .subtitle {
+      margin: 4px 0 0;
+      color: #64748b;
+      font-size: 14px;
+    }
+  }
+
+  button {
+    border-radius: 8px;
     font-weight: 500;
+    padding: 0 16px;
+    height: 42px;
   }
 }
 
-table {
+.table-card {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  overflow: hidden;
+}
+
+.tickets-table {
   width: 100%;
+
+  th {
+    background-color: #f8fafc;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 14px 16px;
+  }
+
+  td {
+    padding: 14px 16px;
+    font-size: 13.5px;
+    color: #334155;
+    border-bottom: 1px solid #f1f5f9;
+  }
+
+  .interactive-row {
+    cursor: pointer;
+    transition: background-color 0.15s ease-in-out;
+
+    &:hover {
+      background-color: #f8fafc;
+    }
+  }
+
+  .ticket-title {
+    font-weight: 600;
+    color: #0f172a;
+  }
+
+  .ticket-date {
+    color: #64748b;
+    font-size: 13px;
+  }
+
+  .priority-badge {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 4px;
+    display: inline-block;
+
+    &.priority-high {
+      background: #fee2e2;
+      color: #dc2626;
+    }
+
+    &.priority-medium {
+      background: #ffedd5;
+      color: #ea580c;
+    }
+
+    &.priority-low {
+      background: #f1f5f9;
+      color: #64748b;
+    }
+  }
 }
 
 .empty-state {
-  padding: 32px;
-  text-align: center;
-  color: #757575;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 48px 16px;
+  color: #94a3b8;
+
+  mat-icon {
+    font-size: 44px;
+    width: 44px;
+    height: 44px;
+    margin-bottom: 8px;
+    color: #cbd5e1;
+  }
+
+  p {
+    margin: 0 0 12px;
+    font-size: 14px;
+    color: #64748b;
+  }
 }

@@ -37,11 +37,19 @@ export class ChangePasswordComponent {
   isLoading = false;
   hideCurrent = true;
   hideNew = true;
+  hideConfirm = true;
 
   form = this.fb.group({
     currentPassword: ['', Validators.required],
-    newPassword: ['', [Validators.required, Validators.minLength(8)]]
-  });
+    newPassword: ['', [Validators.required, Validators.minLength(8)]],
+    confirmPassword: ['', Validators.required]
+  }, { validators: this.passwordMatchValidator });
+
+  passwordMatchValidator(g: any) {
+    const newPwd = g.get('newPassword')?.value;
+    const confirmPwd = g.get('confirmPassword')?.value;
+    return newPwd === confirmPwd ? null : { mismatch: true };
+  }
 
   onSubmit() {
     if (this.form.invalid) return;
@@ -56,7 +64,7 @@ export class ChangePasswordComponent {
       },
       error: (err) => {
         this.isLoading = false;
-        const msg = err.error?.detail || 'Erro ao alterar senha.';
+        const msg = err.error?.error?.message || err.error?.message || err.error?.detail || 'Erro ao alterar senha.';
         this.snackBar.open(msg, 'Fechar', { duration: 5000, panelClass: 'error-snackbar' });
       }
     });

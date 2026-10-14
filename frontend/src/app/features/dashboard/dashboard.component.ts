@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
@@ -36,6 +36,7 @@ export class Dashboard implements OnInit {
   private assetService = inject(AssetService);
   private stockService = inject(StockService);
   private inventoryService = inject(InventoryService);
+  private cdr = inject(ChangeDetectorRef);
 
   today = new Date();
 
@@ -65,40 +66,50 @@ export class Dashboard implements OnInit {
         this.totalTickets = tickets.length;
         this.openedTickets = tickets.filter((t) => t.status === 'OPENED').length;
         this.inProgressTickets = tickets.filter((t) => t.status === 'IN_PROGRESS').length;
-        this.recentTickets = tickets.slice(0, 5);
+        this.recentTickets = [...tickets.slice(0, 5)];
+        this.cdr.markForCheck();
       },
       error: () => {}
     });
 
     // Assets
-    this.assetService.getAssets().subscribe({
-      next: (assets) => {
-        this.totalAssets = assets.length;
-        this.assetsInUse = assets.filter((a) => a.status === 'IN_USE').length;
-        this.assetsInStock = assets.filter((a) => a.status === 'IN_STOCK').length;
-      },
-      error: () => {}
-    });
+    if (this.authService.hasPermission('assets.read')) {
+      this.assetService.getAssets().subscribe({
+        next: (assets) => {
+          this.totalAssets = assets.length;
+          this.assetsInUse = assets.filter((a) => a.status === 'IN_USE').length;
+          this.assetsInStock = assets.filter((a) => a.status === 'IN_STOCK').length;
+          this.cdr.markForCheck();
+        },
+        error: () => {}
+      });
+    }
 
     // Stock
-    this.stockService.getItems().subscribe({
-      next: (items) => {
-        this.totalStockItems = items.length;
-        this.lowStockList = items.filter((i) => i.quantity <= i.min_quantity);
-        this.lowStockItemsCount = this.lowStockList.length;
-      },
-      error: () => {}
-    });
+    if (this.authService.hasPermission('stock.read')) {
+      this.stockService.getItems().subscribe({
+        next: (items) => {
+          this.totalStockItems = items.length;
+          this.lowStockList = items.filter((i) => i.quantity <= i.min_quantity);
+          this.lowStockItemsCount = this.lowStockList.length;
+          this.cdr.markForCheck();
+        },
+        error: () => {}
+      });
+    }
 
     // Inventory Audits
-    this.inventoryService.listAudits().subscribe({
-      next: (audits) => {
-        this.activeAuditsCount = audits.filter(
-          (a) => a.status === 'OPENED' || a.status === 'IN_PROGRESS'
-        ).length;
-      },
-      error: () => {}
-    });
+    if (this.authService.hasPermission('inventory.read')) {
+      this.inventoryService.listAudits().subscribe({
+        next: (audits) => {
+          this.activeAuditsCount = audits.filter(
+            (a) => a.status === 'OPENED' || a.status === 'IN_PROGRESS'
+          ).length;
+          this.cdr.markForCheck();
+        },
+        error: () => {}
+      });
+    }
   }
 
   getTicketStatusClass(status: string): string {

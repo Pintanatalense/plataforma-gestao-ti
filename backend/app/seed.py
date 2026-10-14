@@ -91,6 +91,8 @@ async def seed() -> None:
 
             # Service Desk
             {"code": "service_desk.tickets.manage", "description": "Atender e gerenciar chamados (técnico)"},
+            {"code": "service_desk.tickets.create", "description": "Abrir novos chamados de suporte"},
+            {"code": "service_desk.tickets.read", "description": "Visualizar próprios chamados"},
         ]
         
         for p_data in permissions_data:
@@ -121,7 +123,84 @@ async def seed() -> None:
             await session.flush()
             print(f"Perfil '{admin_role.name}' sincronizado com {len(all_perms)} permissões.")
 
-        # 5. Usuário administrador: criado no primeiro acesso (tela de setup).
+        # 5. Criar Perfil Solicitante (Apenas abertura e acompanhamento dos próprios chamados)
+        stmt_solicitante_perms = select(Permission).where(
+            Permission.code.in_(["service_desk.tickets.create", "service_desk.tickets.read"])
+        )
+        solicitante_perms = list((await session.execute(stmt_solicitante_perms)).scalars().all())
+
+        stmt = select(Role).options(selectinload(Role.permissions)).where(Role.name == "Solicitante")
+        result = await session.execute(stmt)
+        solicitante_role = result.scalar_one_or_none()
+
+        if not solicitante_role:
+            solicitante_role = Role(
+                name="Solicitante",
+                description="Perfil restrito para abertura e acompanhamento dos próprios chamados."
+            )
+            solicitante_role.permissions = solicitante_perms
+            session.add(solicitante_role)
+            await session.flush()
+            print(f"Perfil '{solicitante_role.name}' criado com {len(solicitante_perms)} permissões.")
+        else:
+            solicitante_role.permissions = solicitante_perms
+            await session.flush()
+            print(f"Perfil '{solicitante_role.name}' sincronizado com {len(solicitante_perms)} permissões.")
+
+        # 6. Criar Categorias Iniciais de Estoque
+        stock_categories_data = [
+            {
+                "name": "Periféricos & Acessórios",
+                "description": "Mouses, teclados, fones, webcams e adaptadores USB.",
+                "spec_schema": {
+                    "tipo": {"label": "Tipo de Periférico", "required": True},
+                    "marca": {"label": "Marca / Fabricante", "required": False},
+                    "conexao": {"label": "Tipo de Conexão (USB-A, USB-C, Wireless, Bluetooth)", "required": False},
+                    "cor": {"label": "Cor / Acabamento", "required": False},
+                },
+            },
+            {
+                "name": "Cabos & Conectores",
+                "description": "Cabos de rede, vídeo, força e conversores.",
+                "spec_schema": {
+                    "tipo_cabo": {"label": "Tipo de Cabo (HDMI, DisplayPort, RJ45, USB-C)", "required": True},
+                    "comprimento": {"label": "Comprimento (metros)", "required": False},
+                    "blindagem": {"label": "Blindagem / Padrão (ex: Cat6, 4K 60Hz)", "required": False},
+                },
+            },
+            {
+                "name": "Toners & Suprimentos",
+                "description": "Cartuchos de toner, tintas e cilindros fotocondutores.",
+                "spec_schema": {
+                    "modelo": {"label": "Modelo do Toner/Cartucho", "required": True},
+                    "compatibilidade": {"label": "Impressoras Compatíveis", "required": True},
+                    "cor": {"label": "Cor da Tinta/Toner (Preto, Ciano, Magenta, Amarelo)", "required": False},
+                    "rendimento": {"label": "Rendimento Estimado (páginas)", "required": False},
+                },
+            },
+            {
+                "name": "Componentes & Peças",
+                "description": "Memórias RAM, unidades SSD/HD, coolers e fontes de alimentação.",
+                "spec_schema": {
+                    "tipo_peca": {"label": "Tipo de Componente (RAM, SSD, Fonte, etc.)", "required": True},
+                    "capacidade": {"label": "Capacidade / Frequência", "required": False},
+                    "interface": {"label": "Interface / Fator de Forma (ex: NVMe M.2, DDR4, SATA)", "required": False},
+                    "marca": {"label": "Marca / Fabricante", "required": False},
+                },
+            },
+        ]
+
+        from app.stock.models import StockCategory
+        for sc_data in stock_categories_data:
+            stmt = select(StockCategory).where(StockCategory.name == sc_data["name"])
+            res = await session.execute(stmt)
+            if not res.scalar_one_or_none():
+                cat = StockCategory(**sc_data)
+                session.add(cat)
+        await session.flush()
+        print("Categorias de estoque sincronizadas.")
+
+        # 7. Usuário administrador: criado no primeiro acesso (tela de setup).
         print("Primeiro administrador: acesse o sistema para concluir a configuração inicial.")
 
         await session.commit()

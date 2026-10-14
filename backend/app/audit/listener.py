@@ -19,6 +19,7 @@ async def _audit_handler(event: Event) -> None:
                 data=event.data,
                 user_id=event.user_id,
             )
+            await session.commit()
     except Exception:
         logger.exception("Falha ao gravar log de auditoria para o evento %s", event.event_type)
 

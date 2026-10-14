@@ -1,13 +1,61 @@
 import uuid
-from app.core.exceptions import NotFoundException, BusinessRuleException
+from app.core.exceptions import NotFoundException, BusinessRuleException, ConflictException
 from app.stock.repository import StockRepository
-from app.stock.schemas import StockItemCreate, StockItemUpdate, StockMovementCreate
-from app.stock.models import StockItem, StockMovement
+from app.stock.schemas import (
+    StockCategoryCreate,
+    StockCategoryUpdate,
+    StockItemCreate,
+    StockItemUpdate,
+    StockMovementCreate,
+)
+from app.stock.models import StockCategory, StockItem, StockMovement
+
 
 class StockService:
     def __init__(self, repo: StockRepository):
         self.repo = repo
 
+    # --- Categories ---
+    async def list_categories(self):
+        return await self.repo.get_categories()
+
+    async def get_category(self, category_id: uuid.UUID):
+        cat = await self.repo.get_category(category_id)
+        if not cat:
+            raise NotFoundException("Categoria de Estoque", category_id)
+        return cat
+
+    async def create_category(self, schema: StockCategoryCreate):
+        existing = await self.repo.get_category_by_name(schema.name)
+        if existing:
+            raise ConflictException(f"Já existe uma categoria de estoque com o nome '{schema.name}'.")
+
+        category = StockCategory(
+            name=schema.name,
+            description=schema.description,
+            spec_schema=schema.spec_schema,
+        )
+        return await self.repo.create_category(category)
+
+    async def update_category(self, category_id: uuid.UUID, schema: StockCategoryUpdate):
+        category = await self.get_category(category_id)
+
+        if schema.name != category.name:
+            existing = await self.repo.get_category_by_name(schema.name)
+            if existing and existing.id != category_id:
+                raise ConflictException(f"Já existe uma categoria de estoque com o nome '{schema.name}'.")
+
+        category.name = schema.name
+        category.description = schema.description
+        category.spec_schema = schema.spec_schema
+
+        return await self.repo.update_category(category)
+
+    async def delete_category(self, category_id: uuid.UUID):
+        category = await self.get_category(category_id)
+        await self.repo.delete_category(category)
+
+    # --- Items ---
     async def list_items(self, unit_id: uuid.UUID = None):
         return await self.repo.get_items(unit_id)
 
@@ -18,12 +66,19 @@ class StockService:
         return item
 
     async def create_item(self, schema: StockItemCreate, author_id: uuid.UUID):
+        if schema.category_id:
+            cat = await self.repo.get_category(schema.category_id)
+            if not cat:
+                raise NotFoundException("Categoria de Estoque", schema.category_id)
+
         item = StockItem(
             name=schema.name,
             description=schema.description,
             unit_id=schema.unit_id,
             quantity=schema.initial_quantity,
-            min_quantity=schema.min_quantity
+            min_quantity=schema.min_quantity,
+            category_id=schema.category_id,
+            technical_specs=schema.technical_specs or {},
         )
         item = await self.repo.create_item(item)
         
@@ -47,6 +102,14 @@ class StockService:
             item.description = schema.description
         if schema.min_quantity is not None:
             item.min_quantity = schema.min_quantity
+        if schema.category_id is not None:
+            if schema.category_id:
+                cat = await self.repo.get_category(schema.category_id)
+                if not cat:
+                    raise NotFoundException("Categoria de Estoque", schema.category_id)
+            item.category_id = schema.category_id
+        if schema.technical_specs is not None:
+            item.technical_specs = schema.technical_specs
         
         return await self.repo.update_item(item)
 
@@ -74,7 +137,6 @@ class StockService:
         )
         
         await self.repo.create_movement(mov)
-        # item is automatically saved/committed since they share session or update_item is called
         await self.repo.update_item(item)
         
         return mov

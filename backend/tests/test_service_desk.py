@@ -136,3 +136,236 @@ async def test_ticket_interactions(client: AsyncClient, db_session: AsyncSession
     assert resp.status_code == 200
     interactions = resp.json()["interactions"]
     assert len(interactions) == 2
+
+
+async def test_category_form_builder_and_ticket_prerequisites_validation(client: AsyncClient, db_session: AsyncSession):
+    """
+    Valida a criação de categoria com form_schema (pré-requisitos)
+    e a obrigatoriedade estrita de preenchimento de todos os pré-requisitos para abertura do chamado.
+    """
+    data = await setup_test_data(db_session)
+    user = data["user"]
+    tech = data["tech_user"]
+    dept = data["dept"]
+
+    tech_headers = make_auth_headers(user_id=str(tech.id), is_admin=True)
+    user_headers = make_auth_headers(user_id=str(user.id), is_admin=False)
+
+    # 1. Técnico cria categoria com schema de formulário / pré-requisitos
+    cat_payload = {
+        "name": "Substituição de Notebook",
+        "description": "Exige preenchimento de patrimônio anterior e motivo",
+        "default_sector_id": str(dept.id),
+        "form_schema": [
+            {
+                "id": "patrimonio_anterior",
+                "label": "Patrimônio Anterior",
+                "type": "text",
+                "required": True,
+                "placeholder": "Ex: PAT-1234"
+            },
+            {
+                "id": "motivo_troca",
+                "label": "Motivo da Troca",
+                "type": "select",
+                "required": True,
+                "options": ["Defeito Físico", "Lentidão Excessiva", "Upgrade de Cargo"]
+            },
+            {
+                "id": "termo_concordancia",
+                "label": "Declaro estar ciente da devolução do antigo",
+                "type": "checkbox",
+                "required": True
+            },
+            {
+                "id": "observacoes",
+                "label": "Observações Opcionais",
+                "type": "textarea",
+                "required": False
+            }
+        ]
+    }
+    cat_resp = await client.post("/api/v1/tickets/categories", json=cat_payload, headers=tech_headers)
+    assert cat_resp.status_code == 201, cat_resp.text
+    category_id = cat_resp.json()["id"]
+    assert len(cat_resp.json()["form_schema"]) == 4
+
+    # 2. Usuário tenta abrir chamado SEM preencher os pré-requisitos obrigatórios -> Deve falhar (400)
+    ticket_payload_empty = {
+        "title": "Preciso trocar de notebook",
+        "description": "Meu computador atual queimou a placa mãe.",
+        "priority": "HIGH",
+        "category_id": category_id,
+        "custom_fields": {}
+    }
+    resp_empty = await client.post("/api/v1/tickets", json=ticket_payload_empty, headers=user_headers)
+    assert resp_empty.status_code == 400
+    msg_empty = str(resp_empty.json().get("detail") or resp_empty.json().get("error", {}).get("message", ""))
+    assert "Patrimônio Anterior" in msg_empty
+
+    # 3. Usuário preenche patrimônio anterior, mas não o motivo da troca -> Deve falhar (400)
+    ticket_payload_partial = {
+        "title": "Preciso trocar de notebook",
+        "description": "Meu computador atual queimou a placa mãe.",
+        "priority": "HIGH",
+        "category_id": category_id,
+        "custom_fields": {
+            "patrimonio_anterior": "PAT-9876"
+        }
+    }
+    resp_partial = await client.post("/api/v1/tickets", json=ticket_payload_partial, headers=user_headers)
+    assert resp_partial.status_code == 400
+    msg_partial = str(resp_partial.json().get("detail") or resp_partial.json().get("error", {}).get("message", ""))
+    assert "Motivo da Troca" in msg_partial
+
+    # 4. Usuário fornece opção inválida no select -> Deve falhar (400)
+    ticket_payload_invalid_opt = {
+        "title": "Preciso trocar de notebook",
+        "description": "Meu computador atual queimou a placa mãe.",
+        "priority": "HIGH",
+        "category_id": category_id,
+        "custom_fields": {
+            "patrimonio_anterior": "PAT-9876",
+            "motivo_troca": "Opção Inválida Qualquer",
+            "termo_concordancia": True
+        }
+    }
+    resp_inv = await client.post("/api/v1/tickets", json=ticket_payload_invalid_opt, headers=user_headers)
+    assert resp_inv.status_code == 400
+    msg_inv = str(resp_inv.json().get("detail") or resp_inv.json().get("error", {}).get("message", "")).lower()
+    assert "inválida" in msg_inv
+
+    # 5. Usuário cumpre TODOS os pré-requisitos -> Sucesso (201)
+    ticket_payload_valid = {
+        "title": "Preciso trocar de notebook",
+        "description": "Meu computador atual queimou a placa mãe.",
+        "priority": "HIGH",
+        "category_id": category_id,
+        "custom_fields": {
+            "patrimonio_anterior": "PAT-9876",
+            "motivo_troca": "Defeito Físico",
+            "termo_concordancia": True,
+            "observacoes": "Equipamento já entregue na bancada da TI."
+        }
+    }
+    resp_valid = await client.post("/api/v1/tickets", json=ticket_payload_valid, headers=user_headers)
+    assert resp_valid.status_code == 201, resp_valid.text
+    created_ticket = resp_valid.json()
+    assert created_ticket["custom_fields"]["patrimonio_anterior"] == "PAT-9876"
+    assert created_ticket["custom_fields"]["motivo_troca"] == "Defeito Físico"
+    assert created_ticket["custom_fields"]["termo_concordancia"] is True
+
+    # 6. Consultando o chamado individual -> custom_fields preservados
+    ticket_id = created_ticket["id"]
+    get_resp = await client.get(f"/api/v1/tickets/{ticket_id}", headers=user_headers)
+    assert get_resp.status_code == 200
+    assert get_resp.json()["custom_fields"]["patrimonio_anterior"] == "PAT-9876"
+
+
+async def test_solicitante_profile_rbac_isolation(client: AsyncClient, db_session: AsyncSession):
+    """
+    Validação de segurança do perfil 'Solicitante' (só abrir chamado):
+    - Consegue listar seus próprios chamados
+    - Consegue abrir novos chamados
+    - É BLOQUEADO de gerenciar categorias de chamados
+    - É BLOQUEADO de acessar ativos patrimoniais
+    - É BLOQUEADO de acessar estoque e movimentações
+    """
+    data = await setup_test_data(db_session)
+    user = data["user"]
+    category = data["category"]
+
+    # Usuário com permissões estritas de Solicitante
+    solicitante_headers = make_auth_headers(
+        user_id=str(user.id),
+        is_admin=False,
+        permissions=["service_desk.tickets.create", "service_desk.tickets.read"]
+    )
+
+    # 1. Consegue abrir chamado
+    ticket_resp = await client.post("/api/v1/tickets", json={
+        "title": "Chamado aberto por Solicitante",
+        "description": "Teclado com teclas travando.",
+        "priority": "LOW",
+        "category_id": str(category.id)
+    }, headers=solicitante_headers)
+    assert ticket_resp.status_code == 201
+
+    # 2. Consegue listar seus chamados
+    list_resp = await client.get("/api/v1/tickets", headers=solicitante_headers)
+    assert list_resp.status_code == 200
+    assert len(list_resp.json()) >= 1
+
+    # 3. Bloqueado de criar/gerenciar categorias de chamados (exige service_desk.tickets.manage)
+    cat_block_resp = await client.post("/api/v1/tickets/categories", json={
+        "name": "Tentativa Invasiva"
+    }, headers=solicitante_headers)
+    assert cat_block_resp.status_code == 403
+
+    # 4. Bloqueado de acessar ativos patrimoniais
+    assets_block_resp = await client.get("/api/v1/assets", headers=solicitante_headers)
+    assert assets_block_resp.status_code == 403
+
+    # 5. Bloqueado de acessar estoque
+    stock_block_resp = await client.get("/api/v1/stock/items", headers=solicitante_headers)
+    assert stock_block_resp.status_code == 403
+
+
+async def test_ticket_lifecycle_history_and_requester_closing(client: AsyncClient, db_session: AsyncSession):
+    """
+    Testa o ciclo de vida completo do chamado:
+    1. Abertura do chamado pelo solicitante.
+    2. Técnico atende e altera status para IN_PROGRESS com evento no histórico.
+    3. Solicitante e técnico trocam interações no chamado.
+    4. Solicitante finaliza seu próprio chamado com nota de resolução (CLOSED).
+    5. Histórico completo de eventos é consultado e preservado.
+    """
+    data = await setup_test_data(db_session)
+    user = data["user"]
+    tech = data["tech_user"]
+    category = data["category"]
+
+    user_headers = make_auth_headers(user_id=str(user.id), is_admin=False)
+    tech_headers = make_auth_headers(user_id=str(tech.id), is_admin=True)
+
+    # 1. Solicitante abre chamado
+    open_resp = await client.post("/api/v1/tickets", json={
+        "title": "Problema no monitor",
+        "description": "Tela piscando e com linhas verticais.",
+        "priority": "MEDIUM",
+        "category_id": str(category.id)
+    }, headers=user_headers)
+    assert open_resp.status_code == 201
+    ticket_id = open_resp.json()["id"]
+
+    # 2. Técnico assume e coloca em atendimento
+    patch_resp = await client.patch(f"/api/v1/tickets/{ticket_id}", json={
+        "status": "IN_PROGRESS"
+    }, headers=tech_headers)
+    assert patch_resp.status_code == 200
+    assert patch_resp.json()["status"] == "IN_PROGRESS"
+
+    # 3. Solicitante envia mensagem ao técnico
+    msg_resp = await client.post(f"/api/v1/tickets/{ticket_id}/interactions", json={
+        "message": "Começou a piscar depois da chuva de ontem.",
+        "is_internal": False
+    }, headers=user_headers)
+    assert msg_resp.status_code == 201
+
+    # 4. Solicitante confirma resolução e finaliza seu próprio chamado
+    close_resp = await client.patch(f"/api/v1/tickets/{ticket_id}", json={
+        "status": "CLOSED",
+        "notes": "O cabo HDMI foi trocado e funcionou perfeitamente. Obrigado!"
+    }, headers=user_headers)
+    assert close_resp.status_code == 200
+    assert close_resp.json()["status"] == "CLOSED"
+
+    # 5. Consulta histórico de vida do chamado
+    history_resp = await client.get(f"/api/v1/tickets/{ticket_id}/history", headers=user_headers)
+    assert history_resp.status_code == 200
+    history = history_resp.json()
+    assert len(history) >= 2
+    actions = [h["action"] for h in history]
+    assert "Abertura de Chamado" in actions
+    assert any("Status" in a or "Finalização" in a for a in actions)
+

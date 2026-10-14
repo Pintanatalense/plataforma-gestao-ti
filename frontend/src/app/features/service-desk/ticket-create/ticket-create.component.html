@@ -1,67 +1,206 @@
 <div class="page-container">
   <div class="page-header">
-    <div style="display: flex; align-items: center; gap: 12px;">
-      <button mat-icon-button routerLink="/service-desk">
+    <div class="header-content">
+      <button mat-icon-button routerLink="/service-desk" class="back-btn" matTooltip="Voltar aos chamados">
         <mat-icon>arrow_back</mat-icon>
       </button>
-      <h1>Abrir Novo Chamado</h1>
+      <div>
+        <h1>Abertura de Chamado</h1>
+        <p class="subtitle">Descreva a solicitação ou incidente e atenda aos pré-requisitos da categoria selecionada.</p>
+      </div>
     </div>
   </div>
 
-  <div class="form-container mat-elevation-z1">
+  <div class="form-container">
     <form [formGroup]="ticketForm" (ngSubmit)="onSubmit()">
       
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Assunto (Resumo do problema)</mat-label>
-        <input matInput formControlName="title" placeholder="Ex: Monitor não liga">
-        <mat-error *ngIf="ticketForm.get('title')?.hasError('required')">O assunto é obrigatório</mat-error>
-      </mat-form-field>
+      <!-- Dados Principais -->
+      <div class="section-card">
+        <div class="section-header">
+          <mat-icon color="primary">description</mat-icon>
+          <h3>Identificação da Solicitação</h3>
+        </div>
 
-      <div class="row-fields">
-        <mat-form-field appearance="outline" class="half-width">
-          <mat-label>Categoria</mat-label>
-          <mat-select formControlName="category_id">
-            <mat-option [value]="null">Geral / Não categorizado</mat-option>
-            <mat-option *ngFor="let cat of categories" [value]="cat.id">
-              {{ cat.name }}
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Assunto (Resumo objetivo do problema)</mat-label>
+          <input matInput formControlName="title" placeholder="Ex: Monitor secundário piscando ou sem sinal" required>
+          <mat-error *ngIf="ticketForm.get('title')?.hasError('required')">O assunto é obrigatório</mat-error>
+        </mat-form-field>
+
+        <div class="row-fields">
+          <mat-form-field appearance="outline" class="half-width">
+            <mat-label>Categoria do Chamado</mat-label>
+            <mat-select formControlName="category_id">
+              <mat-option [value]="null">Geral / Sem Categoria Específica</mat-option>
+              <mat-option *ngFor="let cat of categories" [value]="cat.id">
+                {{ cat.name }}
+              </mat-option>
+            </mat-select>
+            <mat-hint *ngIf="selectedCategory && prerequisiteFields.length > 0">
+              Esta categoria possui {{ prerequisiteFields.length }} pré-requisito(s) para preenchimento.
+            </mat-hint>
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="half-width">
+            <mat-label>Prioridade Solicitada</mat-label>
+            <mat-select formControlName="priority">
+              <mat-option value="LOW">🟢 Baixa (Dúvidas e ajustes de rotina)</mat-option>
+              <mat-option value="MEDIUM">🟡 Média (Impacto parcial no posto)</mat-option>
+              <mat-option value="HIGH">🟠 Alta (Posto totalmente paralisado)</mat-option>
+              <mat-option value="CRITICAL">🔴 Crítica (Serviço ou setor inteiro fora)</mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Equipamento / Ativo Vinculado (Opcional)</mat-label>
+          <mat-select formControlName="asset_id">
+            <mat-option [value]="null">Nenhum / Não aplicável</mat-option>
+            <mat-option *ngFor="let asset of availableAssets" [value]="asset.id">
+              [{{ asset.tag }}] {{ asset.name }}
             </mat-option>
           </mat-select>
-        </mat-form-field>
-
-        <mat-form-field appearance="outline" class="half-width">
-          <mat-label>Prioridade</mat-label>
-          <mat-select formControlName="priority">
-            <mat-option value="LOW">Baixa</mat-option>
-            <mat-option value="MEDIUM">Média</mat-option>
-            <mat-option value="HIGH">Alta</mat-option>
-            <mat-option value="CRITICAL">Crítica</mat-option>
-          </mat-select>
+          <mat-icon matPrefix>devices</mat-icon>
         </mat-form-field>
       </div>
 
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Equipamento / Ativo Relacionado (Opcional)</mat-label>
-        <mat-select formControlName="asset_id">
-          <mat-option [value]="null">Nenhum / Não aplicável</mat-option>
-          <mat-option *ngFor="let asset of availableAssets" [value]="asset.id">
-            [{{ asset.tag }}] {{ asset.name }}
-          </mat-option>
-        </mat-select>
-        <mat-icon matPrefix>devices</mat-icon>
-      </mat-form-field>
+      <!-- PRÉ-REQUISITOS VINCULADOS À CATEGORIA -->
+      <div class="section-card prereqs-card" *ngIf="selectedCategory && prerequisiteFields.length > 0">
+        <div class="section-header">
+          <div class="prereqs-badge-icon">
+            <mat-icon>rule</mat-icon>
+          </div>
+          <div class="prereqs-header-info">
+            <div class="prereqs-title-row">
+              <h3>Pré-requisitos da Categoria: {{ selectedCategory.name }}</h3>
+              <span class="required-warning-chip">Obrigatório para Abertura</span>
+            </div>
+            <p class="section-subtitle">
+              Para prosseguir com esta categoria, os campos abaixo devem ser informados para triagem correta pela TI.
+            </p>
+          </div>
+        </div>
 
-      <mat-form-field appearance="outline" class="full-width">
-        <mat-label>Descrição detalhada</mat-label>
-        <textarea matInput formControlName="description" rows="5" placeholder="Descreva com detalhes o que está acontecendo..."></textarea>
-        <mat-error *ngIf="ticketForm.get('description')?.hasError('required')">A descrição é obrigatória</mat-error>
-      </mat-form-field>
+        <div [formGroup]="customFieldsForm" class="prereqs-fields-grid">
+          <ng-container *ngFor="let field of prerequisiteFields">
+            
+            <!-- TIPO: TEXT -->
+            <div *ngIf="field.type === 'text'" class="dynamic-field-row">
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>
+                  {{ field.label }} <span class="req-star" *ngIf="field.required">*</span>
+                </mat-label>
+                <input matInput [formControlName]="field.id" [placeholder]="field.placeholder || ''">
+                <mat-hint *ngIf="field.help_text">{{ field.help_text }}</mat-hint>
+                <mat-error *ngIf="customFieldsForm.get(field.id)?.hasError('required')">
+                  Este pré-requisito é obrigatório.
+                </mat-error>
+              </mat-form-field>
+            </div>
 
+            <!-- TIPO: TEXTAREA -->
+            <div *ngIf="field.type === 'textarea'" class="dynamic-field-row">
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>
+                  {{ field.label }} <span class="req-star" *ngIf="field.required">*</span>
+                </mat-label>
+                <textarea matInput rows="3" [formControlName]="field.id" [placeholder]="field.placeholder || ''"></textarea>
+                <mat-hint *ngIf="field.help_text">{{ field.help_text }}</mat-hint>
+                <mat-error *ngIf="customFieldsForm.get(field.id)?.hasError('required')">
+                  Este pré-requisito é obrigatório.
+                </mat-error>
+              </mat-form-field>
+            </div>
+
+            <!-- TIPO: NUMBER -->
+            <div *ngIf="field.type === 'number'" class="dynamic-field-row">
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>
+                  {{ field.label }} <span class="req-star" *ngIf="field.required">*</span>
+                </mat-label>
+                <input matInput type="number" [formControlName]="field.id" [placeholder]="field.placeholder || ''">
+                <mat-hint *ngIf="field.help_text">{{ field.help_text }}</mat-hint>
+                <mat-error *ngIf="customFieldsForm.get(field.id)?.hasError('required')">
+                  Este pré-requisito é obrigatório.
+                </mat-error>
+              </mat-form-field>
+            </div>
+
+            <!-- TIPO: SELECT -->
+            <div *ngIf="field.type === 'select'" class="dynamic-field-row">
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>
+                  {{ field.label }} <span class="req-star" *ngIf="field.required">*</span>
+                </mat-label>
+                <mat-select [formControlName]="field.id">
+                  <mat-option *ngFor="let opt of (field.options || [])" [value]="opt">
+                    {{ opt }}
+                  </mat-option>
+                </mat-select>
+                <mat-hint *ngIf="field.help_text">{{ field.help_text }}</mat-hint>
+                <mat-error *ngIf="customFieldsForm.get(field.id)?.hasError('required')">
+                  Selecione uma das opções obrigatórias.
+                </mat-error>
+              </mat-form-field>
+            </div>
+
+            <!-- TIPO: CHECKBOX (Confirmação / Termo) -->
+            <div *ngIf="field.type === 'checkbox'" class="dynamic-field-row checkbox-row">
+              <div class="checkbox-box" [class.checkbox-error]="customFieldsForm.get(field.id)?.touched && customFieldsForm.get(field.id)?.invalid">
+                <mat-checkbox [formControlName]="field.id" color="primary">
+                  <span class="checkbox-label-text">
+                    {{ field.label }} <span class="req-star" *ngIf="field.required">*</span>
+                  </span>
+                </mat-checkbox>
+                <p class="checkbox-help-text" *ngIf="field.help_text">{{ field.help_text }}</p>
+                <div class="checkbox-error-text" *ngIf="customFieldsForm.get(field.id)?.touched && customFieldsForm.get(field.id)?.hasError('required')">
+                  Você deve confirmar este pré-requisito para prosseguir.
+                </div>
+              </div>
+            </div>
+
+            <!-- TIPO: DATE -->
+            <div *ngIf="field.type === 'date'" class="dynamic-field-row">
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>
+                  {{ field.label }} <span class="req-star" *ngIf="field.required">*</span>
+                </mat-label>
+                <input matInput type="date" [formControlName]="field.id">
+                <mat-hint *ngIf="field.help_text">{{ field.help_text }}</mat-hint>
+                <mat-error *ngIf="customFieldsForm.get(field.id)?.hasError('required')">
+                  A data é obrigatória.
+                </mat-error>
+              </mat-form-field>
+            </div>
+
+          </ng-container>
+        </div>
+      </div>
+
+      <!-- Descrição Detalhada -->
+      <div class="section-card">
+        <div class="section-header">
+          <mat-icon color="primary">edit_note</mat-icon>
+          <h3>Detalhamento do Chamado</h3>
+        </div>
+
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Descrição Completa da Ocorrência</mat-label>
+          <textarea matInput formControlName="description" rows="5" placeholder="Forneça detalhes adicionais, passos para reproduzir o problema ou orientações relevantes para o atendimento..." required></textarea>
+          <mat-error *ngIf="ticketForm.get('description')?.hasError('required')">A descrição é obrigatória</mat-error>
+        </mat-form-field>
+      </div>
+
+      <!-- Ações -->
       <div class="form-actions">
-        <button mat-button type="button" routerLink="/service-desk">Cancelar</button>
-        <button mat-flat-button color="primary" type="submit" [disabled]="ticketForm.invalid">
-          <mat-icon>save</mat-icon> Abrir Chamado
+        <button mat-stroked-button type="button" routerLink="/service-desk" class="cancel-btn">
+          Cancelar
+        </button>
+        <button mat-flat-button color="primary" type="submit" class="submit-btn" [disabled]="ticketForm.invalid || (prerequisiteFields.length > 0 && customFieldsForm.invalid)">
+          <mat-icon>send</mat-icon> Abrir Chamado
         </button>
       </div>
+
     </form>
   </div>
 </div>

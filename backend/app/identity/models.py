@@ -54,7 +54,7 @@ class UserAccount(Base, TimestampMixin, SoftDeleteMixin):
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_login_ip: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
-    employee: Mapped["Employee | None"] = relationship("Employee", back_populates="user_account")
+    employee: Mapped["Employee | None"] = relationship("Employee", back_populates="user_account", lazy="selectin")
     roles: Mapped[list["Role"]] = relationship("Role", secondary=user_role_association, back_populates="users")
 
 

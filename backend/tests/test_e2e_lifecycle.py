@@ -289,7 +289,8 @@ async def test_multi_profile_rbac_matrix_e2e(client: AsyncClient, db_session: As
     emp_gestor = Employee(name="Gestora Maria", registration_number="GEST01", unit_id=unit.id, sector_id=sector.id)
     emp_tecnico = Employee(name="Tecnico Joao", registration_number="TEC01", unit_id=unit.id, sector_id=sector.id)
     emp_colab = Employee(name="Colaborador Pedro", registration_number="COL01", unit_id=unit.id, sector_id=sector.id)
-    db_session.add_all([emp_gestor, emp_tecnico, emp_colab])
+    emp_solicitante = Employee(name="Solicitante Lucas", registration_number="SOL01", unit_id=unit.id, sector_id=sector.id)
+    db_session.add_all([emp_gestor, emp_tecnico, emp_colab, emp_solicitante])
     await db_session.flush()
 
     # Contas com perfis distintos
@@ -297,7 +298,8 @@ async def test_multi_profile_rbac_matrix_e2e(client: AsyncClient, db_session: As
     u_gestor = UserAccount(email="gestor@corp.com", hashed_password=hash_password("123"), is_admin=False, employee_id=emp_gestor.id)
     u_tecnico = UserAccount(email="tecnico@corp.com", hashed_password=hash_password("123"), is_admin=False, employee_id=emp_tecnico.id)
     u_colab = UserAccount(email="colab@corp.com", hashed_password=hash_password("123"), is_admin=False, employee_id=emp_colab.id)
-    db_session.add_all([u_admin, u_gestor, u_tecnico, u_colab])
+    u_solicitante = UserAccount(email="solicitante@corp.com", hashed_password=hash_password("123"), is_admin=False, employee_id=emp_solicitante.id)
+    db_session.add_all([u_admin, u_gestor, u_tecnico, u_colab, u_solicitante])
     await db_session.commit()
 
     # Headers JWT com as permissões atribuídas a cada perfil
@@ -313,6 +315,11 @@ async def test_multi_profile_rbac_matrix_e2e(client: AsyncClient, db_session: As
         permissions=["tickets.read", "tickets.update", "stock.read", "stock.update"]
     )
     h_colab = make_auth_headers(user_id=str(u_colab.id), is_admin=False, permissions=[])
+    h_solicitante = make_auth_headers(
+        user_id=str(u_solicitante.id),
+        is_admin=False,
+        permissions=["service_desk.tickets.create", "service_desk.tickets.read"]
+    )
 
     # MATRIZ RBAC:
 
@@ -321,25 +328,30 @@ async def test_multi_profile_rbac_matrix_e2e(client: AsyncClient, db_session: As
     assert (await client.get("/api/v1/audit", headers=h_gestor)).status_code == 403
     assert (await client.get("/api/v1/audit", headers=h_tecnico)).status_code == 403
     assert (await client.get("/api/v1/audit", headers=h_colab)).status_code == 403
+    assert (await client.get("/api/v1/audit", headers=h_solicitante)).status_code == 403
 
     # B) Gestão de Usuários (/api/v1/identity/users) -> APENAS Admin (ou role específica)
     assert (await client.get("/api/v1/identity/users", headers=h_admin)).status_code == 200
     assert (await client.get("/api/v1/identity/users", headers=h_gestor)).status_code == 403
     assert (await client.get("/api/v1/identity/users", headers=h_tecnico)).status_code == 403
     assert (await client.get("/api/v1/identity/users", headers=h_colab)).status_code == 403
+    assert (await client.get("/api/v1/identity/users", headers=h_solicitante)).status_code == 403
 
     # C) Visualização da Estrutura Organizacional (/api/v1/organization/units) -> Admin e Gestor
     assert (await client.get("/api/v1/organization/units", headers=h_admin)).status_code == 200
     assert (await client.get("/api/v1/organization/units", headers=h_gestor)).status_code == 200
     assert (await client.get("/api/v1/organization/units", headers=h_tecnico)).status_code == 403
     assert (await client.get("/api/v1/organization/units", headers=h_colab)).status_code == 403
+    assert (await client.get("/api/v1/organization/units", headers=h_solicitante)).status_code == 403
 
     # D) Gestão de Estoque (/api/v1/stock/items) -> Admin e Técnico
     assert (await client.get("/api/v1/stock/items", headers=h_admin)).status_code == 200
     assert (await client.get("/api/v1/stock/items", headers=h_tecnico)).status_code == 200
+    assert (await client.get("/api/v1/stock/items", headers=h_solicitante)).status_code == 403
 
     # E) Notificações (/api/v1/notifications) -> Todos os perfis têm acesso às suas próprias notificações
     assert (await client.get("/api/v1/notifications", headers=h_admin)).status_code == 200
     assert (await client.get("/api/v1/notifications", headers=h_gestor)).status_code == 200
     assert (await client.get("/api/v1/notifications", headers=h_tecnico)).status_code == 200
     assert (await client.get("/api/v1/notifications", headers=h_colab)).status_code == 200
+    assert (await client.get("/api/v1/notifications", headers=h_solicitante)).status_code == 200

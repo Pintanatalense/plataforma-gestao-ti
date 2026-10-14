@@ -5,14 +5,14 @@
     <div class="welcome-text">
       <h1>Painel de Controle de TI</h1>
       <p class="subtitle">
-        Visão unificada de chamados, parque patrimonial, estoque e inventário &bull; {{ today | date:'EEEE, dd/MM/yyyy' }}
+        Visão de chamados, parque patrimonial, estoque e inventário &bull; {{ today | date:'EEEE, dd/MM/yyyy' }}
       </p>
     </div>
     <div class="quick-actions">
       <button mat-flat-button color="primary" routerLink="/service-desk/new">
         <mat-icon>add_circle</mat-icon> Abrir Chamado
       </button>
-      <button mat-stroked-button color="primary" routerLink="/assets/new">
+      <button mat-stroked-button color="primary" routerLink="/assets/new" *ngIf="authService.hasPermission('assets.write')">
         <mat-icon>devices</mat-icon> Novo Ativo
       </button>
     </div>
@@ -24,7 +24,7 @@
     <!-- Tickets KPI -->
     <div class="kpi-card" routerLink="/service-desk">
       <div class="kpi-header">
-        <span class="kpi-title">Chamados Pendentes</span>
+        <span class="kpi-title">{{ authService.hasPermission('service_desk.tickets.manage') ? 'Chamados Pendentes' : 'Meus Chamados Pendentes' }}</span>
         <div class="kpi-icon-wrap icon-tickets">
           <mat-icon>forum</mat-icon>
         </div>
@@ -39,7 +39,7 @@
     </div>
 
     <!-- Assets KPI -->
-    <div class="kpi-card" routerLink="/assets">
+    <div class="kpi-card" routerLink="/assets" *ngIf="authService.hasPermission('assets.read')">
       <div class="kpi-header">
         <span class="kpi-title">Parque de Ativos</span>
         <div class="kpi-icon-wrap icon-assets">
@@ -56,7 +56,7 @@
     </div>
 
     <!-- Stock KPI -->
-    <div class="kpi-card" routerLink="/stock">
+    <div class="kpi-card" routerLink="/stock" *ngIf="authService.hasPermission('stock.read')">
       <div class="kpi-header">
         <span class="kpi-title">Estoque & Insumos</span>
         <div class="kpi-icon-wrap icon-stock">
@@ -76,7 +76,7 @@
     </div>
 
     <!-- Inventory Audits KPI -->
-    <div class="kpi-card" routerLink="/inventory">
+    <div class="kpi-card" routerLink="/inventory" *ngIf="authService.hasPermission('inventory.read')">
       <div class="kpi-header">
         <span class="kpi-title">Auditorias de Inventário</span>
         <div class="kpi-icon-wrap icon-inventory">
@@ -102,7 +102,7 @@
       <div class="card-header">
         <div class="header-title">
           <mat-icon color="primary">receipt_long</mat-icon>
-          <h2>Chamados Recentes</h2>
+          <h2>{{ authService.hasPermission('service_desk.tickets.manage') ? 'Chamados Recentes' : 'Meus Chamados Recentes' }}</h2>
         </div>
         <button mat-button color="primary" routerLink="/service-desk">
           Ver Todos <mat-icon iconPositionEnd>arrow_forward</mat-icon>
@@ -138,29 +138,29 @@
           </ng-container>
 
           <ng-container matColumnDef="created_at">
-            <th mat-header-cell *matHeaderCellDef> Abertura </th>
+            <th mat-header-cell *matHeaderCellDef> Data </th>
             <td mat-cell *matCellDef="let ticket">
-              <span class="date-text">{{ ticket.created_at | date:'dd/MM HH:mm' }}</span>
+              <span class="ticket-date">{{ ticket.created_at | date:'dd/MM/yyyy' }}</span>
             </td>
           </ng-container>
 
           <ng-container matColumnDef="actions">
-            <th mat-header-cell *matHeaderCellDef class="text-right"> Ações </th>
-            <td mat-cell *matCellDef="let ticket" class="text-right">
-              <button mat-icon-button [routerLink]="['/service-desk', ticket.id]" matTooltip="Acessar Atendimento">
-                <mat-icon color="primary">open_in_new</mat-icon>
+            <th mat-header-cell *matHeaderCellDef> Ações </th>
+            <td mat-cell *matCellDef="let ticket" (click)="$event.stopPropagation()">
+              <button mat-icon-button color="primary" [routerLink]="['/service-desk', ticket.id]" matTooltip="Acessar Chamado">
+                <mat-icon>chat</mat-icon>
               </button>
             </td>
           </ng-container>
 
           <tr mat-header-row *matHeaderRowDef="ticketColumns"></tr>
-          <tr mat-row *matRowDef="let row; columns: ticketColumns;" class="interactive-row"></tr>
+          <tr mat-row *matRowDef="let row; columns: ticketColumns;" class="interactive-row" [routerLink]="['/service-desk', row.id]"></tr>
 
           <tr class="mat-row" *matNoDataRow>
             <td class="mat-cell" colspan="5">
               <div class="empty-state">
                 <mat-icon>inbox</mat-icon>
-                <p>Nenhum chamado aberto no momento.</p>
+                <p>Nenhum chamado registrado no momento.</p>
               </div>
             </td>
           </tr>
@@ -168,11 +168,11 @@
       </div>
     </div>
 
-    <!-- RIGHT: Alerts & Quick Nav -->
+    <!-- RIGHT: Alerts & Quick Nav (Operacional vs Solicitante) -->
     <div class="grid-card side-panel-card">
       
-      <!-- Critical stock section -->
-      <div class="side-section">
+      <!-- Se for técnico/admin: Insumos críticos -->
+      <div class="side-section" *ngIf="authService.hasPermission('stock.read'); else requesterHelp">
         <div class="header-title">
           <mat-icon color="warn">warning_amber</mat-icon>
           <h3>Insumos Críticos</h3>
@@ -201,31 +201,50 @@
         </ng-template>
       </div>
 
-      <div class="divider"></div>
+      <!-- Se for solicitante: Autoatendimento & Ajuda -->
+      <ng-template #requesterHelp>
+        <div class="side-section">
+          <div class="header-title">
+            <mat-icon color="primary">support_agent</mat-icon>
+            <h3>Autoatendimento TI</h3>
+          </div>
+          <p style="font-size: 13px; color: #64748b; line-height: 1.5; margin: 8px 0 16px;">
+            Acompanhe o andamento dos seus tickets, responda interações do técnico ou abra novas solicitações.
+          </p>
+          <div class="shortcuts-list">
+            <a class="shortcut-item" routerLink="/service-desk/new">
+              <mat-icon>add_circle</mat-icon>
+              <span>Abrir Novo Chamado</span>
+            </a>
+            <a class="shortcut-item" routerLink="/service-desk">
+              <mat-icon>history</mat-icon>
+              <span>Histórico de Meus Chamados</span>
+            </a>
+          </div>
+        </div>
+      </ng-template>
 
-      <!-- Quick Shortcuts -->
-      <div class="side-section">
+      <div class="divider" *ngIf="authService.hasPermission('assets.read') || authService.hasPermission('inventory.read')"></div>
+
+      <!-- Quick Shortcuts se tiver permissões adicionais -->
+      <div class="side-section" *ngIf="authService.hasPermission('assets.read') || authService.hasPermission('inventory.read')">
         <div class="header-title">
           <mat-icon color="primary">apps</mat-icon>
           <h3>Acesso Rápido</h3>
         </div>
         
         <div class="shortcuts-list">
-          <a class="shortcut-item" routerLink="/assets">
+          <a class="shortcut-item" routerLink="/assets" *ngIf="authService.hasPermission('assets.read')">
             <mat-icon>laptop_chromebook</mat-icon>
             <span>Consultar Patrimônio</span>
           </a>
-          <a class="shortcut-item" routerLink="/inventory">
+          <a class="shortcut-item" routerLink="/inventory" *ngIf="authService.hasPermission('inventory.read')">
             <mat-icon>checklist</mat-icon>
             <span>Conferências de Inventário</span>
           </a>
-          <a class="shortcut-item" routerLink="/organization">
+          <a class="shortcut-item" routerLink="/organization" *ngIf="authService.hasPermission('organization.units.read')">
             <mat-icon>domain</mat-icon>
             <span>Unidades & Colaboradores</span>
-          </a>
-          <a class="shortcut-item" routerLink="/identity/users" *ngIf="authService.currentUserValue?.is_admin">
-            <mat-icon>manage_accounts</mat-icon>
-            <span>Gestão de Usuários</span>
           </a>
         </div>
       </div>
@@ -233,5 +252,4 @@
     </div>
 
   </div>
-
 </div>

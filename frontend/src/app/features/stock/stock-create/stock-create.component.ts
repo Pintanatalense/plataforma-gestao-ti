@@ -1,6 +1,6 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -9,8 +9,14 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
-import { StockService } from '../../../core/services/stock.service';
+import { StockCategory, StockService } from '../../../core/services/stock.service';
 import { OrganizationService, Unit } from '../../../core/services/organization.service';
+
+interface SpecKey {
+  key: string;
+  label: string;
+  required: boolean;
+}
 
 @Component({
   selector: 'app-stock-create',
@@ -39,14 +45,27 @@ export class StockCreateComponent implements OnInit {
   form = this.fb.group({
     name: ['', Validators.required],
     unit_id: ['', Validators.required],
+    category_id: [null as string | null],
     description: [''],
     initial_quantity: [0, [Validators.required, Validators.min(0)]],
     min_quantity: [0, [Validators.required, Validators.min(0)]]
   });
 
+  specsForm: FormGroup = this.fb.group({});
+  specKeys: SpecKey[] = [];
+
+  categories: StockCategory[] = [];
   units: Unit[] = [];
 
   ngOnInit(): void {
+    this.loadDependencies();
+
+    this.form.get('category_id')?.valueChanges.subscribe((categoryId) => {
+      this.onCategoryChange(categoryId);
+    });
+  }
+
+  loadDependencies(): void {
     this.orgService.getUnits().subscribe({
       next: (units) => {
         this.units = units;
@@ -56,18 +75,55 @@ export class StockCreateComponent implements OnInit {
       },
       error: (err) => console.error('Erro ao carregar unidades:', err)
     });
+
+    this.stockService.getCategories().subscribe({
+      next: (cats) => (this.categories = cats),
+      error: (err) => console.error('Erro ao carregar categorias de estoque:', err)
+    });
+  }
+
+  onCategoryChange(categoryId: string | null): void {
+    this.specKeys = [];
+    this.specsForm = this.fb.group({});
+
+    if (!categoryId) return;
+    const cat = this.categories.find((c) => c.id === categoryId);
+    if (!cat || !cat.spec_schema) return;
+
+    const schema = cat.spec_schema;
+    const keys: SpecKey[] = [];
+
+    for (const [key, val] of Object.entries(schema)) {
+      let label = key;
+      let required = false;
+
+      if (typeof val === 'object' && val !== null) {
+        label = (val as any).label || key;
+        required = !!(val as any).required;
+      }
+
+      keys.push({ key, label, required });
+      this.specsForm.addControl(
+        key,
+        this.fb.control('', required ? [Validators.required] : [])
+      );
+    }
+
+    this.specKeys = keys;
   }
 
   onSubmit(): void {
-    if (this.form.invalid) return;
+    if (this.form.invalid || this.specsForm.invalid) return;
 
     const val = this.form.value;
     const payload = {
       name: val.name!,
       unit_id: val.unit_id!,
+      category_id: val.category_id || undefined,
       description: val.description || undefined,
       initial_quantity: Number(val.initial_quantity || 0),
-      min_quantity: Number(val.min_quantity || 0)
+      min_quantity: Number(val.min_quantity || 0),
+      technical_specs: this.specsForm.value
     };
 
     this.stockService.createItem(payload).subscribe({

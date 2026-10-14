@@ -89,7 +89,40 @@ Este documento sumariza o status atual do projeto, as funcionalidades recém-ent
     - **PostgreSQL 16 (`gestao-ti-db`)**: saudável e operacional na porta 5432.
     - **Backend FastAPI (`gestao-ti-api`)**: saudável e operacional com 4 workers Uvicorn na porta 8000.
     - **Nginx Proxy (`gestao-ti-proxy`)**: operacional na porta 80, servindo o frontend Angular e roteando chamadas de API (`/api/v1/`) e WebSockets (`/ws/`).
-    - Migrações Alembic executadas e sincronizadas até a revisão `053a053ab9f6`.
+    - Migrações Alembic executadas e sincronizadas até a revisão `c2a8f41e9b03`.
+
+11. **Perfil Solicitante ("Só Abrir Chamado") e Criador de Formulários com Pré-requisitos**
+    - **Perfil Solicitante e RBAC Especializado**:
+      - Novas permissões granulares no seed: `service_desk.tickets.create` e `service_desk.tickets.read`.
+      - Perfil nativo `Solicitante` restrito estritamente à abertura e acompanhamento dos próprios chamados.
+      - Sidebar e Dashboard adaptados: menus operacionais, ativos, estoque e segurança ficam invisíveis; a interface entrega experiência focada de autoatendimento ("Abrir Chamado" em destaque e lista dos seus chamados).
+    - **Criador de Formulários por Categoria (Form Builder)**:
+      - Colunas `form_schema` (JSONB) em `sd_ticket_category` e `custom_fields` (JSONB) em `sd_ticket`.
+      - Construtor visual em `/service-desk/categories` com suporte a tipos (`text`, `textarea`, `number`, `select`, `checkbox`, `date`), opções para selects, marcação de `Pré-requisito Obrigatório`, templates pré-definidos em 1 clique (Troca de Hardware, Acesso a Sistema, Incidente Crítico) e Live Preview em tempo real.
+    - **Validação Rigorosa de Pré-requisitos**:
+      - Validação no Frontend: formulário reativo dinâmico que bloqueia a submissão e alerta campos obrigatórios pendentes.
+      - Validação no Backend: barreira em `create_ticket` que rejeita a requisição (HTTP 400 `BusinessRuleException`) caso qualquer pré-requisito obrigatório esteja ausente, vazio ou preenchido com opção inválida.
+    - **Visualização de Pré-requisitos no Chamado**:
+      - Resumo dos pré-requisitos preenchidos exibido nos cards e em aba dedicada do chamado (`/service-desk/:id`).
+
+12. **Categorias de Estoque e Especificações Técnicas Dinâmicas**
+    - **Modelagem e Migração (`d4e9f71a82b4`)**:
+      - Tabela `stk_categories` com `name`, `description` e `spec_schema` (JSONB).
+      - Colunas `category_id` e `technical_specs` (JSONB) em `stk_items`.
+    - **Gestão no Frontend**:
+      - Interface de gestão de categorias de estoque (`/stock/categories`).
+      - Suporte a formulário dinâmico de especificações técnicas no cadastro/edição de itens de estoque.
+    - **Seed de Categorias Padrão**:
+      - Inclusão automática de categorias essenciais: Periféricos & Acessórios, Cabos & Conectores, Toners & Suprimentos, Componentes & Peças.
+
+13. **Linha do Tempo (Histórico) de Chamados e Resiliência de Autenticação**
+    - **Histórico e Timeline Unificada**:
+      - Novo endpoint `GET /api/v1/tickets/{id}/history` consolidando criação, alterações de status/responsável, notas internas, mensagens e consumo de materiais.
+      - Nova aba "Linha do Tempo" interativa com badges de eventos, autor identificado por funcionário/e-mail e datação relativa.
+      - Capacidade de encerramento do chamado pelo próprio solicitante.
+    - **Estabilidade de Login e Troca de Senha**:
+      - `AuthService` com persistência em cache (`USER_KEY`) e revalidação transparente em segundo plano, evitando deslogue indevido por recarregamento.
+      - Redirecionamento correto e feedback visual no fluxo de primeiro login (`must_change_password`).
 
 ---
 
@@ -99,7 +132,10 @@ Todas as Fases do roadmap foram concluídas integralmente:
 - MOD-01 a MOD-12 100% operacionais e integrados.
 - Fluxo de Termo de Responsabilidade e Assinatura Externa finalizado e validado.
 - Proteção de rotas ponta a ponta com RBAC e JWT interceptor tratando expiração 401.
-- Suíte automatizada de testes cobrindo unidade, integração, auditoria, anexos, notificações e E2E (92 backend + 32 frontend).
+- Perfil Solicitante restrito e Form Builder com pré-requisitos obrigatórios homologados.
+- Categorias de estoque com especificações técnicas dinâmicas integradas.
+- Histórico completo de auditoria e linha do tempo do Service Desk com encerramento pelo solicitante.
+- Suíte automatizada de testes cobrindo unidade, integração, auditoria, anexos, notificações e E2E (**98 backend + 36 frontend aprovados com 100% de sucesso**).
 - Sistema publicado, ativo e acessível via Docker Compose em `http://localhost`.
 
 

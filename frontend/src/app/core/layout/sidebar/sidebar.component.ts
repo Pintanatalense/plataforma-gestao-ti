@@ -196,6 +196,7 @@ export class SidebarComponent implements OnInit {
       title: 'Service Desk',
       items: [
         { icon: 'forum', label: 'Chamados', route: '/service-desk' },
+        { icon: 'add_circle', label: 'Abrir Chamado', route: '/service-desk/new' },
         { icon: 'category', label: 'Categorias de Chamados', route: '/service-desk/categories', permission: 'service_desk.tickets.manage' }
       ]
     },

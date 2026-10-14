@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import Boolean, ForeignKey, String, Text, Integer
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.timestamps import TimestampMixin
@@ -30,6 +31,7 @@ class TicketCategory(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     default_sector_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sectors.id"), nullable=True)
+    form_schema: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
 
 
 class Ticket(Base, TimestampMixin):
@@ -44,6 +46,9 @@ class Ticket(Base, TimestampMixin):
     
     # Enum-like strings: OPENED, IN_PROGRESS, PENDING, RESOLVED, CLOSED
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="OPENED")
+
+    # Respostas aos pré-requisitos/formulário dinâmico da categoria
+    custom_fields: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
     # Relacionamentos Externos
     requester_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("employees.id"), nullable=False)
@@ -61,6 +66,20 @@ class Ticket(Base, TimestampMixin):
     interactions: Mapped[list["TicketInteraction"]] = relationship("TicketInteraction", back_populates="ticket", cascade="all, delete-orphan", lazy="selectin")
     materials: Mapped[list["TicketMaterial"]] = relationship("TicketMaterial", back_populates="ticket", cascade="all, delete-orphan", lazy="selectin")
     assets = relationship("Asset", secondary="sd_ticket_assets")
+    requester: Mapped["Employee"] = relationship("Employee", foreign_keys=[requester_id], lazy="selectin")
+    assignee: Mapped["UserAccount | None"] = relationship("UserAccount", foreign_keys=[assignee_id], lazy="selectin")
+
+    @property
+    def requester_name(self) -> str | None:
+        return self.requester.name if self.requester else None
+
+    @property
+    def assignee_name(self) -> str | None:
+        if self.assignee:
+            if getattr(self.assignee, "employee", None):
+                return self.assignee.employee.name
+            return self.assignee.email
+        return None
 
 
 from sqlalchemy import Table, Column
@@ -96,3 +115,17 @@ class TicketInteraction(Base, TimestampMixin):
 
     # Relationships
     ticket: Mapped["Ticket"] = relationship("Ticket", back_populates="interactions")
+    author: Mapped["UserAccount"] = relationship("UserAccount", foreign_keys=[author_id], lazy="selectin")
+
+    @property
+    def author_email(self) -> str | None:
+        return self.author.email if self.author else None
+
+    @property
+    def author_name(self) -> str | None:
+        if self.author:
+            if getattr(self.author, "employee", None):
+                return self.author.employee.name
+            if self.author.email:
+                return self.author.email.split("@")[0].title()
+        return None

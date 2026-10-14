@@ -49,10 +49,12 @@ class ServiceDeskRepository:
     # ==========================================================================
 
     async def get_ticket(self, ticket_id: uuid.UUID) -> Ticket | None:
-        """Busca ticket e eager load nas interações."""
+        """Busca ticket e eager load nas interações, categoria e insumos."""
         stmt = (
             select(Ticket)
+            .options(selectinload(Ticket.category))
             .options(selectinload(Ticket.interactions))
+            .options(selectinload(Ticket.materials))
             .options(selectinload(Ticket.assets))
             .where(Ticket.id == ticket_id)
         )
@@ -68,7 +70,9 @@ class ServiceDeskRepository:
         """
         stmt = (
             select(Ticket)
+            .options(selectinload(Ticket.category))
             .options(selectinload(Ticket.interactions))
+            .options(selectinload(Ticket.materials))
             .options(selectinload(Ticket.assets))
             .order_by(Ticket.created_at.desc())
         )

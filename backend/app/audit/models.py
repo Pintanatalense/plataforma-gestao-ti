@@ -21,3 +21,15 @@ class AuditLog(Base, TimestampMixin):
     # Optional because system events might not have a user
     user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True, index=True)
     user = relationship("UserAccount", lazy="selectin")
+
+    @property
+    def user_email(self) -> str | None:
+        return self.user.email if self.user else None
+
+    @property
+    def user_name(self) -> str | None:
+        if self.user:
+            if getattr(self.user, "employee", None):
+                return self.user.employee.name
+            return self.user.email.split("@")[0].title()
+        return None

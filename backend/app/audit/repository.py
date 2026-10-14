@@ -22,7 +22,7 @@ class AuditRepository:
             user_id=user_id
         )
         self.session.add(log)
-        await self.session.commit()
+        await self.session.flush()
         await self.session.refresh(log)
         return log
 
