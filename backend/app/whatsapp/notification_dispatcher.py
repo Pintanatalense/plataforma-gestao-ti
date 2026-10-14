@@ -15,7 +15,7 @@ from sqlalchemy.orm import selectinload
 from app.organization.models import Employee
 from app.service_desk.models import Ticket
 from app.whatsapp.models import WhatsAppConfig
-from app.whatsapp.adapter import get_whatsapp_adapter
+from app.whatsapp.queue_service import WhatsAppQueueService
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,7 @@ logger = logging.getLogger(__name__)
 class WhatsAppNotificationDispatcher:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
+        self.queue_service = WhatsAppQueueService(session)
 
     async def notify_ticket_status_change(self, ticket_id: str, new_status: str, notes: str | None = None) -> bool:
         stmt = (
@@ -38,7 +39,6 @@ class WhatsAppNotificationDispatcher:
         if not config or not config.is_enabled:
             return False
 
-        adapter = get_whatsapp_adapter(config)
         status_labels = {
             "OPENED": "Aberto",
             "IN_PROGRESS": "Em Atendimento",
@@ -55,4 +55,13 @@ class WhatsAppNotificationDispatcher:
             f"Novo Status: *{label}*{obs_text}\n\n"
             f"Para interagir com este chamado, responda com [3] no menu."
         )
-        return await adapter.send_message(ticket.requester.phone, message)
+
+        # Enfileira na fila outbox segura (com proteção anti-ban e rate-limiting)
+        outbox_item = await self.queue_service.enqueue_message(
+            to_phone=ticket.requester.phone,
+            message=message,
+            priority=2,
+            ticket_id=ticket.id
+        )
+        return outbox_item is not None
+

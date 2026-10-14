@@ -18,11 +18,15 @@ import {
   AdminService,
   WhatsAppConfig,
   WhatsAppConfigUpdate,
+  WhatsAppTemplate,
+  WhatsAppOutboxItem,
+  WhatsAppOutboxStats,
   CsvAnalysisResponse,
   CsvImportResult,
   DbBackup,
   CsvExportRequest
 } from '../../core/services/admin.service';
+
 
 @Component({
   selector: 'app-admin',
@@ -55,16 +59,22 @@ export class AdminComponent implements OnInit {
   currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
 
   // --- WhatsApp State ---
+  waActiveSubTab: 'gateway' | 'antiban' | 'templates' | 'outbox' = 'gateway';
   loadingWaConfig = false;
   waConfig: WhatsAppConfig = {
-    id: '',
-    is_active: false,
     provider: 'EVOLUTION_API',
-    base_url: 'http://evolution-api:8080',
-    api_key_configured: false,
-    instance_name: 'gestao_chamados',
-    webhook_secret_configured: false,
-    updated_at: null
+    is_enabled: true,
+    api_url: 'http://evolution-api:8080',
+    instance_name: 'gestao_ti',
+    welcome_message: 'Olá! Bem-vindo ao atendimento de TI via WhatsApp.',
+    anti_ban_enabled: true,
+    min_delay_seconds: 4,
+    max_delay_seconds: 10,
+    simulate_typing: true,
+    typing_duration_seconds: 2,
+    max_messages_per_minute: 12,
+    cooldown_per_recipient_seconds: 15,
+    emergency_pause: false
   };
   waApiKeyInput = '';
   waWebhookSecretInput = '';
@@ -72,6 +82,44 @@ export class AdminComponent implements OnInit {
   testMessage = 'Olá! Esta é uma mensagem de teste da Plataforma de Gestão de TI.';
   testingSend = false;
   testFeedback: { success: boolean; message: string } | null = null;
+  togglingKillSwitch = false;
+
+  // --- WhatsApp Templates State ---
+  templates: WhatsAppTemplate[] = [];
+  loadingTemplates = false;
+  showTemplateModal = false;
+  editingTemplateId: string | null = null;
+  templateCategoryFilter = '';
+  templateForm = {
+    name: '',
+    code: '',
+    category: 'SERVICE_DESK',
+    content: '',
+    is_active: true
+  };
+  availableVariables = [
+    { tag: '{{solicitante}}', desc: 'Nome do colaborador' },
+    { tag: '{{protocolo}}', desc: 'ID do chamado (#12345678)' },
+    { tag: '{{titulo}}', desc: 'Título resumido' },
+    { tag: '{{status}}', desc: 'Status atual formatado' },
+    { tag: '{{prioridade}}', desc: 'Prioridade (Baixa a Crítica)' },
+    { tag: '{{atendente}}', desc: 'Técnico responsável' },
+    { tag: '{{setor}}', desc: 'Setor de atendimento' },
+    { tag: '{{unidade}}', desc: 'Unidade da empresa' },
+    { tag: '{{empresa}}', desc: 'Nome da organização' },
+    { tag: '{{observacao}}', desc: 'Notas técnicas ou solução' },
+    { tag: '{{data}}', desc: 'Data do evento (DD/MM/AAAA)' },
+    { tag: '{{hora}}', desc: 'Hora atual (HH:MM)' }
+  ];
+  savingTemplate = false;
+
+  // --- WhatsApp Outbox State ---
+  outboxItems: WhatsAppOutboxItem[] = [];
+  outboxStats: WhatsAppOutboxStats | null = null;
+  loadingOutbox = false;
+  outboxStatusFilter = '';
+  processingOutbox = false;
+
 
   // --- CSV Import State ---
   importStep = 1;
@@ -98,6 +146,9 @@ export class AdminComponent implements OnInit {
 
   ngOnInit(): void {
     this.loadWaConfig();
+    this.loadTemplates();
+    this.loadOutboxStats();
+    this.loadOutbox();
     this.loadBackups();
   }
 
@@ -122,10 +173,19 @@ export class AdminComponent implements OnInit {
   saveWaConfig(): void {
     this.loadingWaConfig = true;
     const updateData: WhatsAppConfigUpdate = {
-      is_active: this.waConfig.is_active,
+      is_enabled: this.waConfig.is_enabled,
       provider: this.waConfig.provider,
-      base_url: this.waConfig.base_url || '',
-      instance_name: this.waConfig.instance_name || ''
+      api_url: this.waConfig.api_url || '',
+      instance_name: this.waConfig.instance_name || '',
+      welcome_message: this.waConfig.welcome_message || '',
+      anti_ban_enabled: this.waConfig.anti_ban_enabled,
+      min_delay_seconds: this.waConfig.min_delay_seconds,
+      max_delay_seconds: this.waConfig.max_delay_seconds,
+      simulate_typing: this.waConfig.simulate_typing,
+      typing_duration_seconds: this.waConfig.typing_duration_seconds,
+      max_messages_per_minute: this.waConfig.max_messages_per_minute,
+      cooldown_per_recipient_seconds: this.waConfig.cooldown_per_recipient_seconds,
+      emergency_pause: this.waConfig.emergency_pause
     };
 
     if (this.waApiKeyInput) {
@@ -141,13 +201,35 @@ export class AdminComponent implements OnInit {
         this.waApiKeyInput = '';
         this.waWebhookSecretInput = '';
         this.loadingWaConfig = false;
-        this.snackBar.open('Configurações do WhatsApp salvas com sucesso!', 'Fechar', { duration: 3500 });
+        this.snackBar.open('Configurações e parâmetros Anti-Ban salvos com sucesso!', 'Fechar', { duration: 3500 });
+        this.loadOutboxStats();
         this.cdr.markForCheck();
       },
       error: (err) => {
         this.loadingWaConfig = false;
         const msg = err.error?.detail || 'Erro ao salvar configurações do WhatsApp';
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  toggleEmergencyPause(): void {
+    this.togglingKillSwitch = true;
+    this.adminService.toggleEmergencyPause().subscribe({
+      next: (res) => {
+        this.waConfig.emergency_pause = res.emergency_pause;
+        this.togglingKillSwitch = false;
+        const msg = res.emergency_pause
+          ? 'KILL SWITCH ATIVADO: Todos os disparos da fila foram suspensos preventivamente.'
+          : 'Pausa emergencial desativada: Disparos da fila liberados com proteção anti-ban.';
+        this.snackBar.open(msg, 'OK', { duration: 4500 });
+        this.loadOutboxStats();
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.togglingKillSwitch = false;
+        this.snackBar.open('Erro ao alternar o Kill Switch.', 'Fechar', { duration: 3000 });
         this.cdr.markForCheck();
       }
     });
@@ -161,7 +243,7 @@ export class AdminComponent implements OnInit {
     this.adminService.testSendWhatsApp(this.testPhone, this.testMessage).subscribe({
       next: (res) => {
         this.testingSend = false;
-        this.testFeedback = { success: true, message: `Mensagem enviada com sucesso: ${res.detail}` };
+        this.testFeedback = { success: true, message: `Mensagem enviada com sucesso para ${res.to_phone}!` };
         this.snackBar.open('Mensagem de teste disparada!', 'OK', { duration: 3500 });
         this.cdr.markForCheck();
       },
@@ -169,10 +251,203 @@ export class AdminComponent implements OnInit {
         this.testingSend = false;
         const detail = err.error?.detail || err.message || 'Falha ao conectar com o gateway do WhatsApp';
         this.testFeedback = { success: false, message: `Erro no envio: ${detail}` };
+        this.snackBar.open(`Falha: ${detail}`, 'Fechar', { duration: 4500 });
         this.cdr.markForCheck();
       }
     });
   }
+
+  // --- Templates Methods ---
+  loadTemplates(): void {
+    this.loadingTemplates = true;
+    this.adminService.getWhatsAppTemplates(this.templateCategoryFilter || undefined).subscribe({
+      next: (list) => {
+        this.templates = list;
+        this.loadingTemplates = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.loadingTemplates = false;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  openCreateTemplate(): void {
+    this.editingTemplateId = null;
+    this.templateForm = {
+      name: '',
+      code: '',
+      category: 'SERVICE_DESK',
+      content: '',
+      is_active: true
+    };
+    this.showTemplateModal = true;
+  }
+
+  openEditTemplate(tpl: WhatsAppTemplate): void {
+    this.editingTemplateId = tpl.id;
+    this.templateForm = {
+      name: tpl.name,
+      code: tpl.code,
+      category: tpl.category,
+      content: tpl.content,
+      is_active: tpl.is_active
+    };
+    this.showTemplateModal = true;
+  }
+
+  closeTemplateModal(): void {
+    this.showTemplateModal = false;
+    this.editingTemplateId = null;
+  }
+
+  insertVariable(varTag: string): void {
+    this.templateForm.content = (this.templateForm.content || '') + ' ' + varTag + ' ';
+  }
+
+  saveTemplate(): void {
+    if (!this.templateForm.name || !this.templateForm.code || !this.templateForm.content) {
+      this.snackBar.open('Preencha nome, código e conteúdo do template.', 'OK', { duration: 3000 });
+      return;
+    }
+
+    this.savingTemplate = true;
+    if (this.editingTemplateId) {
+      this.adminService.updateWhatsAppTemplate(this.editingTemplateId, this.templateForm).subscribe({
+        next: () => {
+          this.savingTemplate = false;
+          this.showTemplateModal = false;
+          this.snackBar.open('Template atualizado com sucesso!', 'OK', { duration: 3000 });
+          this.loadTemplates();
+        },
+        error: (err) => {
+          this.savingTemplate = false;
+          this.snackBar.open(err.error?.detail || 'Erro ao atualizar template.', 'Fechar', { duration: 3500 });
+          this.cdr.markForCheck();
+        }
+      });
+    } else {
+      this.adminService.createWhatsAppTemplate(this.templateForm).subscribe({
+        next: () => {
+          this.savingTemplate = false;
+          this.showTemplateModal = false;
+          this.snackBar.open('Template cadastrado com sucesso!', 'OK', { duration: 3000 });
+          this.loadTemplates();
+        },
+        error: (err) => {
+          this.savingTemplate = false;
+          this.snackBar.open(err.error?.detail || 'Erro ao criar template.', 'Fechar', { duration: 3500 });
+          this.cdr.markForCheck();
+        }
+      });
+    }
+  }
+
+  deleteTemplate(id: string): void {
+    if (!confirm('Deseja realmente excluir este template de resposta rápida?')) return;
+    this.adminService.deleteWhatsAppTemplate(id).subscribe({
+      next: () => {
+        this.snackBar.open('Template excluído!', 'OK', { duration: 3000 });
+        this.loadTemplates();
+      },
+      error: (err) => {
+        this.snackBar.open(err.error?.detail || 'Erro ao excluir template.', 'Fechar', { duration: 3000 });
+      }
+    });
+  }
+
+  getSimulatedTemplatePreview(content: string): string {
+    if (!content) return 'Selecione ou digite um conteúdo para visualizar.';
+    let sample = content;
+    const samples: Record<string, string> = {
+      '{{solicitante}}': 'Carlos Mendes',
+      '{{protocolo}}': '#TKT-8492',
+      '{{titulo}}': 'Acesso VPN Oscilando',
+      '{{status}}': 'Em Atendimento',
+      '{{prioridade}}': 'Alta',
+      '{{atendente}}': 'Equipe de TI',
+      '{{setor}}': 'Infraestrutura',
+      '{{unidade}}': 'Matriz Rio',
+      '{{empresa}}': 'TechSolutions',
+      '{{observacao}}': 'Verificamos as rotas de firewall e o acesso foi normalizado.',
+      '{{data}}': '14/10/2026',
+      '{{hora}}': '17:30'
+    };
+    for (const [k, v] of Object.entries(samples)) {
+      sample = sample.split(k).join(v);
+    }
+    return sample;
+  }
+
+  // --- Outbox Queue Methods ---
+  loadOutbox(): void {
+    this.loadingOutbox = true;
+    this.adminService.getWhatsAppOutbox(this.outboxStatusFilter || undefined).subscribe({
+      next: (items) => {
+        this.outboxItems = items;
+        this.loadingOutbox = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.loadingOutbox = false;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  loadOutboxStats(): void {
+    this.adminService.getWhatsAppOutboxStats().subscribe({
+      next: (stats) => {
+        this.outboxStats = stats;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  processOutboxNow(): void {
+    this.processingOutbox = true;
+    this.adminService.processWhatsAppOutbox(15).subscribe({
+      next: (res) => {
+        this.processingOutbox = false;
+        this.snackBar.open(res.message, 'OK', { duration: 4000 });
+        this.loadOutbox();
+        this.loadOutboxStats();
+      },
+      error: (err) => {
+        this.processingOutbox = false;
+        this.snackBar.open(err.error?.detail || 'Erro ao processar fila.', 'Fechar', { duration: 3500 });
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  cancelOutboxItem(id: string): void {
+    this.adminService.cancelWhatsAppOutboxItem(id).subscribe({
+      next: () => {
+        this.snackBar.open('Envio cancelado.', 'OK', { duration: 2500 });
+        this.loadOutbox();
+        this.loadOutboxStats();
+      },
+      error: () => {
+        this.snackBar.open('Não foi possível cancelar este item.', 'Fechar', { duration: 3000 });
+      }
+    });
+  }
+
+  retryOutboxItem(id: string): void {
+    this.adminService.retryWhatsAppOutboxItem(id).subscribe({
+      next: () => {
+        this.snackBar.open('Item reagendado na fila!', 'OK', { duration: 2500 });
+        this.loadOutbox();
+        this.loadOutboxStats();
+      },
+      error: () => {
+        this.snackBar.open('Não foi possível reagendar este item.', 'Fechar', { duration: 3000 });
+      }
+    });
+  }
+
 
   // ==========================================
   // CSV IMPORT WIZARD METHODS

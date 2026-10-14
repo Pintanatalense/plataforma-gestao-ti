@@ -263,3 +263,149 @@ async def test_whatsapp_admin_configuration(client: AsyncClient, db_session: Asy
         "message": "Teste com servidor externo offline"
     }, headers=admin_headers)
     assert r_test_offline.status_code == 502
+
+
+async def test_whatsapp_antiban_and_emergency_pause(client: AsyncClient, db_session: AsyncSession):
+    """Testa parâmetros de segurança anti-ban e o botão kill switch de emergência."""
+    fixtures = await setup_whatsapp_fixtures(db_session)
+    admin_headers = fixtures["admin_headers"]
+
+    # 1. Configura parâmetros anti-ban avançados
+    r_patch = await client.patch("/api/v1/integrations/whatsapp/config", json={
+        "anti_ban_enabled": True,
+        "min_delay_seconds": 3,
+        "max_delay_seconds": 7,
+        "simulate_typing": True,
+        "typing_duration_seconds": 2,
+        "max_messages_per_minute": 10,
+        "cooldown_per_recipient_seconds": 15
+    }, headers=admin_headers)
+    assert r_patch.status_code == 200
+    data = r_patch.json()
+    assert data["anti_ban_enabled"] is True
+    assert data["min_delay_seconds"] == 3
+    assert data["max_delay_seconds"] == 7
+    assert data["max_messages_per_minute"] == 10
+
+    # 2. Ativa Kill Switch (Emergency Pause)
+    r_pause = await client.post("/api/v1/integrations/whatsapp/emergency-pause", headers=admin_headers)
+    assert r_pause.status_code == 200
+    assert r_pause.json()["emergency_pause"] is True
+
+    # 3. Tenta processar a fila com Kill Switch ativo -> deve abortar
+    r_proc = await client.post("/api/v1/integrations/whatsapp/outbox/process", headers=admin_headers)
+    assert r_proc.status_code == 200
+    assert r_proc.json()["status"] == "paused"
+
+    # 4. Desativa Kill Switch
+    r_unpause = await client.post("/api/v1/integrations/whatsapp/emergency-pause", headers=admin_headers)
+    assert r_unpause.status_code == 200
+    assert r_unpause.json()["emergency_pause"] is False
+
+
+async def test_whatsapp_templates_crud_and_preview(client: AsyncClient, db_session: AsyncSession):
+    """Testa criação, listagem, preview interpolado e exclusão de templates pré-definidos."""
+    fixtures = await setup_whatsapp_fixtures(db_session)
+    admin_headers = fixtures["admin_headers"]
+
+    # 1. Cria template pré-definido
+    r_create = await client.post("/api/v1/integrations/whatsapp/templates", json={
+        "code": "TEST_TPL",
+        "name": "Template de Teste Automatizado",
+        "category": "SERVICE_DESK",
+        "content": "Olá {{solicitante}}! Seu chamado #{{protocolo}} está com status {{status}}. Obs: {{observacao}}"
+    }, headers=admin_headers)
+    assert r_create.status_code == 201
+    tpl_id = r_create.json()["id"]
+
+    # 2. Listagem de templates
+    r_list = await client.get("/api/v1/integrations/whatsapp/templates?category=SERVICE_DESK")
+    assert r_list.status_code == 200
+    assert any(t["code"] == "TEST_TPL" for t in r_list.json())
+
+    # 3. Cria chamado para testar interpolação
+    t = Ticket(
+        title="Teclado quebrado",
+        description="Falta tecla espaço",
+        priority="LOW",
+        status="IN_PROGRESS",
+        requester_id=fixtures["emp_linked"].id,
+        origin_unit_id=fixtures["emp_linked"].unit_id,
+        origin_sector_id=fixtures["emp_linked"].sector_id,
+        responsible_sector_id=fixtures["emp_linked"].sector_id,
+    )
+    db_session.add(t)
+    await db_session.commit()
+
+    # 4. Pré-visualização com dados do chamado
+    r_prev = await client.post(f"/api/v1/integrations/whatsapp/templates/{tpl_id}/preview", json={
+        "ticket_id": str(t.id),
+        "observacao": "Peça de reposição solicitada."
+    })
+    assert r_prev.status_code == 200
+    rendered = r_prev.json()["rendered_message"]
+    assert "Carlos Mendes" in rendered
+    assert str(t.id)[:8] in rendered
+    assert "Em Atendimento" in rendered
+    assert "Peça de reposição solicitada." in rendered
+
+    # 5. Exclusão do template
+    r_del = await client.delete(f"/api/v1/integrations/whatsapp/templates/{tpl_id}", headers=admin_headers)
+    assert r_del.status_code == 204
+
+
+async def test_whatsapp_send_ticket_message_and_outbox(client: AsyncClient, db_session: AsyncSession):
+    """Testa envio de mensagem a partir do chamado para a fila com Anti-Ban e registro no chat."""
+    fixtures = await setup_whatsapp_fixtures(db_session)
+    admin_headers = fixtures["admin_headers"]
+    phone = fixtures["emp_linked"].phone
+
+    # Cria template
+    r_create = await client.post("/api/v1/integrations/whatsapp/templates", json={
+        "code": "TICKET_NOTIFY",
+        "name": "Notificação Rápida",
+        "category": "SERVICE_DESK",
+        "content": "Prezado {{solicitante}}, seu chamado #{{protocolo}} foi atualizado: {{observacao}}"
+    }, headers=admin_headers)
+    tpl_id = r_create.json()["id"]
+
+    # Cria chamado com o solicitante vinculado
+    t = Ticket(
+        title="Problema no Áudio",
+        description="Microfone mudo",
+        priority="MEDIUM",
+        status="IN_PROGRESS",
+        requester_id=fixtures["emp_linked"].id,
+        origin_unit_id=fixtures["emp_linked"].unit_id,
+        origin_sector_id=fixtures["emp_linked"].sector_id,
+        responsible_sector_id=fixtures["emp_linked"].sector_id,
+    )
+    db_session.add(t)
+    await db_session.commit()
+
+    # Envia WhatsApp pelo endpoint do chamado
+    r_send = await client.post(f"/api/v1/integrations/whatsapp/tickets/{t.id}/send", json={
+        "template_id": tpl_id,
+        "observacao": "Testamos a saída e o problema é o conector P3.",
+        "priority": 1
+    }, headers=admin_headers)
+    assert r_send.status_code == 200
+    assert r_send.json()["status"] == "queued"
+    outbox_id = r_send.json()["outbox_id"]
+
+    # Valida presença do registro na fila outbox
+    r_outbox = await client.get("/api/v1/integrations/whatsapp/outbox", headers=admin_headers)
+    assert r_outbox.status_code == 200
+    assert any(item["id"] == outbox_id for item in r_outbox.json())
+
+    # Valida métricas do Outbox Stats
+    r_stats = await client.get("/api/v1/integrations/whatsapp/outbox/stats", headers=admin_headers)
+    assert r_stats.status_code == 200
+    assert r_stats.json()["anti_ban_enabled"] is True
+
+    # Valida que interação pública foi gravada no chamado
+    stmt_inter = select(TicketInteraction).where(TicketInteraction.ticket_id == t.id)
+    interactions = (await db_session.execute(stmt_inter)).scalars().all()
+    assert len(interactions) >= 1
+    assert any("[WhatsApp Enviado]" in inter.message for inter in interactions)
+

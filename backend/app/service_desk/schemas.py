@@ -117,7 +117,9 @@ class TicketResponse(TicketBase):
     status: str
     requester_id: uuid.UUID
     requester_name: str | None = None
+    requester_phone: str | None = None
     assignee_id: uuid.UUID | None
+
     assignee_name: str | None = None
     origin_unit_id: uuid.UUID
     origin_sector_id: uuid.UUID

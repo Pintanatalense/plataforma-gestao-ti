@@ -74,7 +74,12 @@ class Ticket(Base, TimestampMixin):
         return self.requester.name if self.requester else None
 
     @property
+    def requester_phone(self) -> str | None:
+        return self.requester.phone if self.requester else None
+
+    @property
     def assignee_name(self) -> str | None:
+
         if self.assignee:
             if getattr(self.assignee, "employee", None):
                 return self.assignee.employee.name

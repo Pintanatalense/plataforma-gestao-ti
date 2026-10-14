@@ -24,6 +24,10 @@ class WhatsAppProviderAdapter(ABC):
         """Envia mensagem de texto para o número especificado."""
         pass
 
+    async def send_presence(self, to_phone: str, presence: str = "composing", delay_ms: int = 2000) -> bool:
+        """Envia sinal de presença (ex: 'composing' para 'digitando...') para humanizar a interação."""
+        return True
+
     async def send_menu(self, to_phone: str, title: str, options: list[str]) -> bool:
         """Envia menu de opções numeradas."""
         lines = [title, ""]
@@ -36,6 +40,7 @@ class MockWhatsAppAdapter(WhatsAppProviderAdapter):
     """Adapter de simulação em memória para desenvolvimento e suíte de testes."""
     def __init__(self) -> None:
         self.sent_messages: list[dict[str, Any]] = []
+        self.presence_events: list[dict[str, Any]] = []
 
     async def send_message(self, to_phone: str, text: str) -> bool:
         self.sent_messages.append({
@@ -45,8 +50,18 @@ class MockWhatsAppAdapter(WhatsAppProviderAdapter):
         logger.info("[MockWhatsApp] Mensagem para %s: %s", to_phone, text)
         return True
 
+    async def send_presence(self, to_phone: str, presence: str = "composing", delay_ms: int = 2000) -> bool:
+        self.presence_events.append({
+            "to_phone": to_phone,
+            "presence": presence,
+            "delay_ms": delay_ms
+        })
+        logger.info("[MockWhatsApp] Presença '%s' simulada para %s (%dms)", presence, to_phone, delay_ms)
+        return True
+
     def clear(self) -> None:
         self.sent_messages.clear()
+        self.presence_events.clear()
 
 
 class EvolutionApiAdapter(WhatsAppProviderAdapter):
@@ -78,6 +93,26 @@ class EvolutionApiAdapter(WhatsAppProviderAdapter):
             logger.exception("[EvolutionAPI] Erro de rede ou comunicação: %s", exc)
             return False
 
+    async def send_presence(self, to_phone: str, presence: str = "composing", delay_ms: int = 2000) -> bool:
+        clean_phone = "".join(ch for ch in to_phone if ch.isdigit())
+        endpoint = f"{self.api_url}/chat/sendPresence/{self.instance_name}"
+        headers = {
+            "apikey": self.api_key,
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "number": clean_phone,
+            "presence": presence,
+            "delay": delay_ms
+        }
+        try:
+            async with httpx.AsyncClient(timeout=6.0) as client:
+                resp = await client.post(endpoint, json=payload, headers=headers)
+                return resp.status_code in (200, 201)
+        except Exception as exc:
+            logger.debug("[EvolutionAPI] Erro ao enviar presença (ignorado): %s", exc)
+            return False
+
 
 class MetaCloudApiAdapter(WhatsAppProviderAdapter):
     """Adapter para WhatsApp Business Cloud API Oficial (Meta)."""
@@ -106,6 +141,11 @@ class MetaCloudApiAdapter(WhatsAppProviderAdapter):
         except Exception as exc:
             logger.exception("[MetaCloudAPI] Erro de envio: %s", exc)
             return False
+
+    async def send_presence(self, to_phone: str, presence: str = "composing", delay_ms: int = 2000) -> bool:
+        # Meta Cloud API não possui endpoint separado para presença em contas padrão
+        return True
+
 
 
 # Singleton do Mock para testes unitários

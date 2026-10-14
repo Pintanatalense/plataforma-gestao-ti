@@ -78,6 +78,17 @@
         </mat-menu>
       </ng-container>
 
+      <!-- WhatsApp Quick Send for Technician -->
+      <button
+        mat-flat-button
+        class="action-btn wa-header-btn"
+        (click)="openWhatsAppModal()"
+        *ngIf="isTechnician"
+        matTooltip="Enviar WhatsApp com Templates e Proteção Anti-Ban"
+      >
+        <mat-icon>chat</mat-icon> WhatsApp
+      </button>
+
       <!-- Finalize action for Requester -->
       <ng-container *ngIf="!isTechnician && isRequester() && ticket.status !== 'CLOSED'">
         <button
@@ -89,6 +100,109 @@
           <mat-icon>task_alt</mat-icon> Finalizar Chamado
         </button>
       </ng-container>
+    </div>
+  </div>
+
+  <!-- WhatsApp Quick Send Modal -->
+  <div class="modal-overlay" *ngIf="showWhatsAppModal">
+    <div class="modal-card wa-modal-card mat-elevation-z8">
+      <div class="modal-header wa-header">
+        <div class="header-title-box">
+          <mat-icon class="wa-icon">chat</mat-icon>
+          <div>
+            <h3>Enviar WhatsApp para Solicitante</h3>
+            <span class="subtext">Comunicação direta com fila segura e proteção anti-bloqueio</span>
+          </div>
+        </div>
+        <button mat-icon-button (click)="closeWhatsAppModal()" class="close-btn">
+          <mat-icon>close</mat-icon>
+        </button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Destinatário Info -->
+        <div class="wa-recipient-banner" [class.no-phone]="!ticket.requester_phone">
+          <div class="recipient-info">
+            <span class="label">Destinatário:</span>
+            <span class="name">{{ ticket.requester_name || 'Solicitante' }}</span>
+            <span class="phone-chip" *ngIf="ticket.requester_phone">
+              <mat-icon>call</mat-icon> {{ ticket.requester_phone }}
+            </span>
+          </div>
+          <div class="no-phone-warning" *ngIf="!ticket.requester_phone">
+            <mat-icon>warning</mat-icon>
+            <span>Este solicitante não possui telefone cadastrado no perfil de colaborador. Cadastre um número antes do disparo.</span>
+          </div>
+        </div>
+
+        <!-- Seletor de Templates -->
+        <div class="form-row">
+          <mat-form-field appearance="outline" class="w-100" subscriptSizing="dynamic">
+            <mat-label>Template / Resposta Rápida</mat-label>
+            <mat-select [(ngModel)]="selectedWaTemplateId" (selectionChange)="onWaTemplateChange()">
+              <mat-option value="">-- Mensagem Manual Personalizada --</mat-option>
+              <mat-option *ngFor="let tpl of waTemplates" [value]="tpl.id">
+                {{ tpl.name }} ({{ tpl.code }})
+              </mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+
+        <!-- Campo Observação (se template selecionado) -->
+        <div class="form-row" *ngIf="selectedWaTemplateId">
+          <mat-form-field appearance="outline" class="w-100" subscriptSizing="dynamic">
+            <mat-label>Observação / Complemento Adicional (opcional)</mat-label>
+            <input
+              matInput
+              [(ngModel)]="waObservacao"
+              (ngModelChange)="onWaObservacaoChange()"
+              placeholder="Ex: Favor reiniciar o roteador ou agendado para às 14h..."
+            />
+          </mat-form-field>
+        </div>
+
+        <!-- Mensagem Final a ser enviada -->
+        <div class="form-row message-field-row">
+          <mat-form-field appearance="outline" class="w-100" subscriptSizing="dynamic">
+            <mat-label>Texto da Mensagem</mat-label>
+            <textarea
+              matInput
+              rows="6"
+              [(ngModel)]="waCustomMessage"
+              placeholder="Digite a mensagem ou selecione um template acima..."
+              [disabled]="loadingWaPreview"
+            ></textarea>
+          </mat-form-field>
+          <div class="spinner-overlay" *ngIf="loadingWaPreview">
+            <mat-spinner diameter="24"></mat-spinner>
+          </div>
+        </div>
+
+        <!-- Badge de Proteção Anti-Ban -->
+        <div class="antiban-shield-box">
+          <mat-icon class="shield-icon">verified_user</mat-icon>
+          <div class="shield-text">
+            <strong>Proteção Anti-Ban Robusta:</strong>
+            <span> Disparo com fila Outbox, atraso randômico humanizado, presença "digitando..." e cooldown por contato ativo.</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button mat-button (click)="closeWhatsAppModal()" [disabled]="sendingWhatsApp">
+          Cancelar
+        </button>
+        <button
+          mat-flat-button
+          class="wa-submit-btn"
+          (click)="sendWhatsAppToRequester()"
+          [disabled]="sendingWhatsApp || !ticket.requester_phone || !waCustomMessage.trim()"
+        >
+          <mat-spinner diameter="18" *ngIf="sendingWhatsApp"></mat-spinner>
+          <mat-icon *ngIf="!sendingWhatsApp">send</mat-icon>
+          <span>{{ sendingWhatsApp ? 'Enfileirando...' : 'Enviar WhatsApp' }}</span>
+        </button>
+      </div>
     </div>
   </div>
 

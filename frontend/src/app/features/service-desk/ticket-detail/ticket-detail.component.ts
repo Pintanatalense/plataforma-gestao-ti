@@ -1,7 +1,7 @@
 import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
-import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormsModule, FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
@@ -30,6 +30,7 @@ import {
 import { AuthService } from '../../../core/auth/auth.service';
 import { StockItem, StockService } from '../../../core/services/stock.service';
 import { Employee, OrganizationService } from '../../../core/services/organization.service';
+import { AdminService, WhatsAppTemplate } from '../../../core/services/admin.service';
 import { AttachmentsComponent } from '../../../shared/components/attachments/attachments.component';
 
 @Component({
@@ -37,6 +38,7 @@ import { AttachmentsComponent } from '../../../shared/components/attachments/att
   standalone: true,
   imports: [
     CommonModule,
+    FormsModule,
     ReactiveFormsModule,
     RouterModule,
     MatButtonModule,
@@ -63,10 +65,12 @@ export class TicketDetailComponent implements OnInit {
   private ticketService = inject(TicketService);
   private stockService = inject(StockService);
   private orgService = inject(OrganizationService);
+  private adminService = inject(AdminService);
   public authService = inject(AuthService);
   private fb = inject(FormBuilder);
   private snackBar = inject(MatSnackBar);
   private cdr = inject(ChangeDetectorRef);
+
 
   ticket: Ticket | null = null;
   history: TicketHistoryItem[] = [];
@@ -88,6 +92,15 @@ export class TicketDetailComponent implements OnInit {
 
   selectedAssetForAction: TicketAssetBrief | null = null;
   assetActionType: 'reserve' | 'deliver' | 'return' | 'inspect' | null = null;
+
+  // WhatsApp Quick Send & Anti-Ban
+  waTemplates: WhatsAppTemplate[] = [];
+  selectedWaTemplateId: string = '';
+  waCustomMessage: string = '';
+  waObservacao: string = '';
+  showWhatsAppModal: boolean = false;
+  sendingWhatsApp: boolean = false;
+  loadingWaPreview: boolean = false;
 
   constructor() {
     this.messageForm = this.fb.group({
@@ -473,6 +486,126 @@ export class TicketDetailComponent implements OnInit {
       case 'ticket.asset_inspected': return 'type-close';
       default: return 'type-default';
     }
+  }
+
+  // --- WhatsApp Quick Send & Anti-Ban Methods ---
+  openWhatsAppModal() {
+    this.showWhatsAppModal = true;
+    this.waObservacao = '';
+    this.waCustomMessage = '';
+    this.selectedWaTemplateId = '';
+    if (this.waTemplates.length === 0) {
+      this.loadWaTemplates();
+    } else {
+      this.suggestTemplateForStatus();
+    }
+  }
+
+  closeWhatsAppModal() {
+    this.showWhatsAppModal = false;
+    this.selectedWaTemplateId = '';
+    this.waCustomMessage = '';
+    this.waObservacao = '';
+    this.sendingWhatsApp = false;
+    this.loadingWaPreview = false;
+  }
+
+  loadWaTemplates() {
+    this.adminService.getWhatsAppTemplates(undefined, true).subscribe({
+      next: (tpls) => {
+        this.waTemplates = tpls;
+        if (this.ticket && tpls.length > 0) {
+          this.suggestTemplateForStatus();
+        }
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        console.error('Erro ao carregar templates WhatsApp:', err);
+      }
+    });
+  }
+
+  suggestTemplateForStatus() {
+    if (!this.ticket || this.waTemplates.length === 0) return;
+    let matchCode = '';
+    if (this.ticket.status === 'OPENED') matchCode = 'TICKET_OPENED';
+    else if (this.ticket.status === 'IN_PROGRESS') matchCode = 'TICKET_IN_PROGRESS';
+    else if (this.ticket.status === 'PENDING') matchCode = 'AWAITING_USER';
+    else if (this.ticket.status === 'RESOLVED') matchCode = 'TICKET_RESOLVED';
+
+    const found = this.waTemplates.find(t => t.code === matchCode);
+    if (found) {
+      this.selectedWaTemplateId = found.id;
+      this.onWaTemplateChange();
+    }
+  }
+
+  onWaTemplateChange() {
+    if (!this.selectedWaTemplateId) {
+      return;
+    }
+    const tpl = this.waTemplates.find(t => t.id === this.selectedWaTemplateId);
+    if (!tpl || !this.ticket) return;
+
+    this.loadingWaPreview = true;
+    this.adminService.previewWhatsAppTemplate(tpl.id, {
+      ticket_id: this.ticket.id,
+      observacao: this.waObservacao || undefined
+    }).subscribe({
+      next: (res) => {
+        this.waCustomMessage = res.rendered_message;
+        this.loadingWaPreview = false;
+        this.cdr.markForCheck();
+      },
+      error: () => {
+        this.waCustomMessage = tpl.content
+          .replace(/\{\{solicitante\}\}/g, this.ticket?.requester_name || 'Solicitante')
+          .replace(/\{\{protocolo\}\}/g, this.ticket?.id ? this.ticket.id.slice(0, 8) : '')
+          .replace(/\{\{titulo\}\}/g, this.ticket?.title || '')
+          .replace(/\{\{status\}\}/g, this.getStatusLabel(this.ticket?.status || ''))
+          .replace(/\{\{observacao\}\}/g, this.waObservacao || '');
+        this.loadingWaPreview = false;
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  onWaObservacaoChange() {
+    if (this.selectedWaTemplateId) {
+      this.onWaTemplateChange();
+    }
+  }
+
+  sendWhatsAppToRequester() {
+    if (!this.ticket) return;
+    if (!this.ticket.requester_phone) {
+      this.snackBar.open('Este solicitante não possui telefone cadastrado.', 'Fechar', { duration: 4000 });
+      return;
+    }
+    if (!this.waCustomMessage.trim()) {
+      this.snackBar.open('Por favor, informe a mensagem a ser enviada.', 'Fechar', { duration: 3000 });
+      return;
+    }
+
+    this.sendingWhatsApp = true;
+    this.adminService.sendTicketWhatsApp(this.ticket.id, {
+      template_id: this.selectedWaTemplateId || undefined,
+      custom_message: this.waCustomMessage.trim(),
+      observacao: this.waObservacao.trim() || undefined
+    }).subscribe({
+      next: () => {
+        this.snackBar.open('✅ Mensagem enviada para a fila segura do WhatsApp com sucesso!', 'Fechar', { duration: 4000 });
+        this.closeWhatsAppModal();
+        this.loadTicket(this.ticket!.id);
+      },
+      error: (err) => {
+        console.error('Erro ao enviar WhatsApp:', err);
+        const msg = err?.error?.detail || 'Erro ao enfileirar mensagem de WhatsApp.';
+        this.snackBar.open(msg, 'Fechar', { duration: 5000 });
+        this.sendingWhatsApp = false;
+        this.cdr.markForCheck();
+      }
+    });
   }
 
   private scrollToBottom() {

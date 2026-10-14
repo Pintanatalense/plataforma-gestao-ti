@@ -12,29 +12,50 @@
   </div>
 
   <mat-tab-group animationDuration="200ms" class="admin-tabs" [(selectedIndex)]="activeTabIndex">
-    <!-- ABA 1: WHATSAPP BOT -->
+    <!-- ABA 1: WHATSAPP BOT & ANTI-BAN SUITE -->
     <mat-tab>
       <ng-template mat-tab-label>
         <mat-icon class="tab-icon">chat</mat-icon>
-        Bot do WhatsApp
+        WhatsApp & Anti-Ban
       </ng-template>
 
       <div class="tab-content">
-        <div class="two-column-grid">
+        <!-- Sub-navegação interna de WhatsApp -->
+        <div class="wa-subnav">
+          <button type="button" class="wa-subnav-btn" [class.active]="waActiveSubTab === 'gateway'" (click)="waActiveSubTab = 'gateway'">
+            <mat-icon>router</mat-icon> Conexão & Gateway
+          </button>
+          <button type="button" class="wa-subnav-btn" [class.active]="waActiveSubTab === 'antiban'" (click)="waActiveSubTab = 'antiban'">
+            <mat-icon>security</mat-icon> 🛡️ Escudo Anti-Ban & Taxas
+            <span class="badge-subnav" *ngIf="waConfig.emergency_pause">KILL SWITCH ATIVO</span>
+          </button>
+          <button type="button" class="wa-subnav-btn" [class.active]="waActiveSubTab === 'templates'" (click)="waActiveSubTab = 'templates'; loadTemplates()">
+            <mat-icon>quickreply</mat-icon> Templates & Respostas Rápidas
+          </button>
+          <button type="button" class="wa-subnav-btn" [class.active]="waActiveSubTab === 'outbox'" (click)="waActiveSubTab = 'outbox'; loadOutbox(); loadOutboxStats()">
+            <mat-icon>mark_email_unread</mat-icon> Fila de Envios (Outbox)
+            <span class="badge-subnav counter" *ngIf="outboxStats?.pending_count">{{ outboxStats?.pending_count }}</span>
+          </button>
+        </div>
+
+        <!-- ================================================================= -->
+        <!-- SUB-ABA 1: CONEXÃO & GATEWAY -->
+        <!-- ================================================================= -->
+        <div *ngIf="waActiveSubTab === 'gateway'" class="two-column-grid">
           <!-- Configuração Geral -->
           <mat-card class="admin-card">
             <mat-card-header>
               <mat-icon mat-card-avatar color="primary">settings_cell</mat-icon>
-              <mat-card-title>Configurações da Integração</mat-card-title>
-              <mat-card-subtitle>Parametrização do canal de atendimento via WhatsApp</mat-card-subtitle>
+              <mat-card-title>Configurações da Instância</mat-card-title>
+              <mat-card-subtitle>Parametrização do gateway e canal de atendimento</mat-card-subtitle>
             </mat-card-header>
             <mat-card-content>
-              <div class="status-toggle-box" [class.active]="waConfig.is_active">
+              <div class="status-toggle-box" [class.active]="waConfig.is_enabled">
                 <div class="toggle-info">
-                  <strong>Status do Bot</strong>
-                  <span>{{ waConfig.is_active ? 'Ativo e processando mensagens' : 'Inativo (mensagens recebidas serão ignoradas)' }}</span>
+                  <strong>Status da Integração</strong>
+                  <span>{{ waConfig.is_enabled ? 'Ativo e processando mensagens' : 'Inativo (mensagens recebidas serão ignoradas)' }}</span>
                 </div>
-                <mat-slide-toggle [(ngModel)]="waConfig.is_active" color="primary"></mat-slide-toggle>
+                <mat-slide-toggle [(ngModel)]="waConfig.is_enabled" color="primary"></mat-slide-toggle>
               </div>
 
               <div class="form-grid">
@@ -43,13 +64,13 @@
                   <mat-select [(ngModel)]="waConfig.provider">
                     <mat-option value="EVOLUTION_API">Evolution API (Recomendado - Código Aberto / Auto-hospedado)</mat-option>
                     <mat-option value="MOCK">Mock Simulado (Ambiente de Testes / Desenvolvimento)</mat-option>
-                    <mat-option value="META_CLOUD">Meta Cloud API (Oficial WhatsApp Business)</mat-option>
+                    <mat-option value="META_CLOUD_API">Meta Cloud API (Oficial WhatsApp Business)</mat-option>
                   </mat-select>
                 </mat-form-field>
 
                 <mat-form-field appearance="outline" class="full-width">
                   <mat-label>URL Base da API</mat-label>
-                  <input matInput [(ngModel)]="waConfig.base_url" placeholder="Ex: http://evolution-api:8080 ou https://wa.empresa.com.br">
+                  <input matInput [(ngModel)]="waConfig.api_url" placeholder="Ex: http://evolution-api:8080 ou https://wa.empresa.com.br">
                   <mat-hint>Endereço onde a instância do gateway está hospedada</mat-hint>
                 </mat-form-field>
 
@@ -61,13 +82,18 @@
 
                 <mat-form-field appearance="outline" class="full-width">
                   <mat-label>Chave de API / Token (API Key)</mat-label>
-                  <input matInput type="password" [(ngModel)]="waApiKeyInput" [placeholder]="waConfig.api_key_configured ? '•••••••• (Configurada - digite para alterar)' : 'Digite a chave de API'">
-                  <mat-hint>{{ waConfig.api_key_configured ? 'Chave cadastrada com segurança' : 'Nenhuma chave informada' }}</mat-hint>
+                  <input matInput type="password" [(ngModel)]="waApiKeyInput" placeholder="Digite para atualizar a chave de API">
+                  <mat-hint>Chave de autorização HTTP para comunicação com o provedor</mat-hint>
                 </mat-form-field>
 
                 <mat-form-field appearance="outline" class="full-width">
                   <mat-label>Segredo do Webhook (Opcional)</mat-label>
-                  <input matInput type="password" [(ngModel)]="waWebhookSecretInput" [placeholder]="waConfig.webhook_secret_configured ? '•••••••• (Configurado)' : 'Token para validação de assinatura'">
+                  <input matInput type="password" [(ngModel)]="waWebhookSecretInput" placeholder="Token para validação de assinatura">
+                </mat-form-field>
+
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>Mensagem de Boas-Vindas (Menu Inicial)</mat-label>
+                  <textarea matInput rows="3" [(ngModel)]="waConfig.welcome_message"></textarea>
                 </mat-form-field>
               </div>
 
@@ -106,8 +132,8 @@
             <mat-card class="admin-card">
               <mat-card-header>
                 <mat-icon mat-card-avatar>send</mat-icon>
-                <mat-card-title>Testar Envio de Mensagem</mat-card-title>
-                <mat-card-subtitle>Verifique a conectividade com o gateway</mat-card-subtitle>
+                <mat-card-title>Testar Conectividade</mat-card-title>
+                <mat-card-subtitle>Dispare uma mensagem direta para validar</mat-card-subtitle>
               </mat-card-header>
               <mat-card-content>
                 <div class="form-grid">
@@ -139,8 +165,367 @@
             </mat-card>
           </div>
         </div>
+
+        <!-- ================================================================= -->
+        <!-- SUB-ABA 2: ESCUDO ANTI-BAN & SEGURANÇA -->
+        <!-- ================================================================= -->
+        <div *ngIf="waActiveSubTab === 'antiban'" class="antiban-container">
+          <!-- KILL SWITCH / PAUSA DE EMERGÊNCIA -->
+          <div class="killswitch-banner" [class.engaged]="waConfig.emergency_pause">
+            <div class="killswitch-info">
+              <div class="ks-icon">
+                <mat-icon>{{ waConfig.emergency_pause ? 'lock' : 'verified_user' }}</mat-icon>
+              </div>
+              <div>
+                <h3 class="ks-title">
+                  {{ waConfig.emergency_pause ? 'KILL SWITCH ATIVADO: Todos os disparos estão bloqueados' : 'Escudo Anti-Ban Ativo & Fila Segura Operando' }}
+                </h3>
+                <p class="ks-desc">
+                  {{ waConfig.emergency_pause
+                    ? 'Nenhuma mensagem está sendo transmitida. Os itens recebidos ou enfileirados permanecerão guardados com segurança até a liberação manual.'
+                    : 'Disparos automáticos e interações passam obrigatoriamente pela fila com atrasos humanizados, digitação simulada e cooldown por contato.' }}
+                </p>
+              </div>
+            </div>
+            <button mat-flat-button [color]="waConfig.emergency_pause ? 'primary' : 'warn'" [disabled]="togglingKillSwitch" (click)="toggleEmergencyPause()" class="killswitch-action">
+              <mat-icon>{{ waConfig.emergency_pause ? 'play_arrow' : 'pause_circle' }}</mat-icon>
+              {{ waConfig.emergency_pause ? 'Desativar Kill Switch (Retomar)' : 'Ativar Kill Switch de Emergência' }}
+            </button>
+          </div>
+
+          <div class="two-column-grid">
+            <!-- Parâmetros de Jitter e Delays -->
+            <mat-card class="admin-card">
+              <mat-card-header>
+                <mat-icon mat-card-avatar color="primary">hourglass_empty</mat-icon>
+                <mat-card-title>Humanização de Intervalos (Jitter)</mat-card-title>
+                <mat-card-subtitle>Impede padrões mecânicos que acionam os algoritmos anti-spam</mat-card-subtitle>
+              </mat-card-header>
+              <mat-card-content>
+                <div class="status-toggle-box" [class.active]="waConfig.anti_ban_enabled">
+                  <div class="toggle-info">
+                    <strong>Proteção Anti-Ban Ativa</strong>
+                    <span>Aplica intervalos dinâmicos variáveis entre mensagens de destinatários diferentes</span>
+                  </div>
+                  <mat-slide-toggle [(ngModel)]="waConfig.anti_ban_enabled" color="primary"></mat-slide-toggle>
+                </div>
+
+                <div class="form-grid">
+                  <div class="two-inputs-row">
+                    <mat-form-field appearance="outline" class="half-width">
+                      <mat-label>Delay Mínimo (segundos)</mat-label>
+                      <input matInput type="number" min="2" max="60" [(ngModel)]="waConfig.min_delay_seconds">
+                      <mat-hint>Pausa mínima antes do envio</mat-hint>
+                    </mat-form-field>
+
+                    <mat-form-field appearance="outline" class="half-width">
+                      <mat-label>Delay Máximo (segundos)</mat-label>
+                      <input matInput type="number" min="3" max="120" [(ngModel)]="waConfig.max_delay_seconds">
+                      <mat-hint>Teto para o jitter aleatório</mat-hint>
+                    </mat-form-field>
+                  </div>
+
+                  <div class="info-callout">
+                    <mat-icon>info</mat-icon>
+                    <span>Intervalo atual calculado aleatoriamente: <strong>Entre {{ waConfig.min_delay_seconds }}s e {{ waConfig.max_delay_seconds }}s</strong> por mensagem enviada.</span>
+                  </div>
+
+                  <div class="status-toggle-box" [class.active]="waConfig.simulate_typing">
+                    <div class="toggle-info">
+                      <strong>Simular Digitação ("composing...")</strong>
+                      <span>Transmite presença 'digitando...' ao WhatsApp antes de descarregar a mensagem</span>
+                    </div>
+                    <mat-slide-toggle [(ngModel)]="waConfig.simulate_typing" color="primary"></mat-slide-toggle>
+                  </div>
+
+                  <mat-form-field appearance="outline" class="full-width" *ngIf="waConfig.simulate_typing">
+                    <mat-label>Duração da Digitação Simulada (segundos)</mat-label>
+                    <input matInput type="number" min="1" max="10" [(ngModel)]="waConfig.typing_duration_seconds">
+                    <mat-hint>Tempo que o status 'digitando...' permanece visível no chat</mat-hint>
+                  </mat-form-field>
+                </div>
+
+                <div class="action-row">
+                  <button mat-flat-button color="primary" [disabled]="loadingWaConfig" (click)="saveWaConfig()">
+                    <mat-icon>save</mat-icon> Salvar Parâmetros
+                  </button>
+                </div>
+              </mat-card-content>
+            </mat-card>
+
+            <!-- Limites de Taxa e Cooldown por Contato -->
+            <mat-card class="admin-card">
+              <mat-card-header>
+                <mat-icon mat-card-avatar color="accent">speed</mat-icon>
+                <mat-card-title>Limites de Taxa & Proteção Individual</mat-card-title>
+                <mat-card-subtitle>Evita rajadas em massa e sobrecarga de um mesmo colaborador</mat-card-subtitle>
+              </mat-card-header>
+              <mat-card-content>
+                <div class="form-grid">
+                  <mat-form-field appearance="outline" class="full-width">
+                    <mat-label>Limite Máximo de Mensagens por Minuto</mat-label>
+                    <input matInput type="number" min="3" max="60" [(ngModel)]="waConfig.max_messages_per_minute">
+                    <mat-hint>Recomendado: 10 a 15 msgs/min para chips aquecidos; 5 a 8 para chips novos</mat-hint>
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline" class="full-width">
+                    <mat-label>Cooldown por Contato (segundos)</mat-label>
+                    <input matInput type="number" min="5" max="300" [(ngModel)]="waConfig.cooldown_per_recipient_seconds">
+                    <mat-hint>Tempo mínimo que o mesmo número deve aguardar antes de receber outra mensagem</mat-hint>
+                  </mat-form-field>
+                </div>
+
+                <div class="safety-guide">
+                  <h4 class="guide-title"><mat-icon>tips_and_updates</mat-icon> Boas Práticas Anti-Ban no Dia a Dia</h4>
+                  <ul class="guide-list">
+                    <li><strong>Cooldown por Contato:</strong> Se 3 chamados do mesmo solicitante forem atualizados juntos, o sistema entrega o primeiro e espaça os seguintes em {{ waConfig.cooldown_per_recipient_seconds }}s para não parecer spam.</li>
+                    <li><strong>Aquecimento (Warm-up):</strong> Em números novos de suporte, mantenha o limite abaixo de 10 mensagens por minuto nas primeiras semanas.</li>
+                    <li><strong>Bloqueio de Emergência:</strong> Caso suspeite de instabilidade ou rajadas anômalas, ative o Kill Switch imediatamente no topo desta tela.</li>
+                  </ul>
+                </div>
+
+                <div class="action-row">
+                  <button mat-flat-button color="primary" [disabled]="loadingWaConfig" (click)="saveWaConfig()">
+                    <mat-icon>save</mat-icon> Salvar Limites de Taxa
+                  </button>
+                </div>
+              </mat-card-content>
+            </mat-card>
+          </div>
+        </div>
+
+        <!-- ================================================================= -->
+        <!-- SUB-ABA 3: TEMPLATES & RESPOSTAS RÁPIDAS -->
+        <!-- ================================================================= -->
+        <div *ngIf="waActiveSubTab === 'templates'" class="templates-container">
+          <div class="templates-header">
+            <div>
+              <h2 class="sub-title">Modelos Pré-definidos & Respostas Rápidas</h2>
+              <p class="sub-desc">Padronize mensagens operacionais para envio rápido direto pelo chamado ou atendimento automático.</p>
+            </div>
+            <div class="header-actions">
+              <mat-form-field appearance="outline" class="filter-field">
+                <mat-label>Filtrar por Categoria</mat-label>
+                <mat-select [(ngModel)]="templateCategoryFilter" (selectionChange)="loadTemplates()">
+                  <mat-option value="">Todas as Categorias</mat-option>
+                  <mat-option value="SERVICE_DESK">Service Desk</mat-option>
+                  <mat-option value="ATENDIMENTO">Atendimento</mat-option>
+                  <mat-option value="MANUTENCAO">Manutenção & Alertas</mat-option>
+                  <mat-option value="SISTEMA">Sistema</mat-option>
+                </mat-select>
+              </mat-form-field>
+
+              <button mat-flat-button color="primary" (click)="openCreateTemplate()">
+                <mat-icon>add</mat-icon> Novo Template
+              </button>
+            </div>
+          </div>
+
+          <!-- Grid de Templates -->
+          <div class="templates-grid" *ngIf="!loadingTemplates && templates.length > 0">
+            <mat-card class="template-card" *ngFor="let tpl of templates">
+              <mat-card-header>
+                <span class="category-badge" [attr.data-cat]="tpl.category">{{ tpl.category }}</span>
+                <span class="status-indicator" [class.active]="tpl.is_active">{{ tpl.is_active ? 'Ativo' : 'Inativo' }}</span>
+              </mat-card-header>
+              <mat-card-content>
+                <h3 class="tpl-name">{{ tpl.name }}</h3>
+                <span class="tpl-code"><code>{{ tpl.code }}</code></span>
+                <p class="tpl-preview">{{ tpl.content }}</p>
+              </mat-card-content>
+              <mat-card-actions class="tpl-actions">
+                <button mat-button color="primary" (click)="openEditTemplate(tpl)">
+                  <mat-icon>edit</mat-icon> Editar
+                </button>
+                <button mat-button color="warn" (click)="deleteTemplate(tpl.id)">
+                  <mat-icon>delete</mat-icon> Excluir
+                </button>
+              </mat-card-actions>
+            </mat-card>
+          </div>
+
+          <div class="empty-state" *ngIf="!loadingTemplates && templates.length === 0">
+            <mat-icon class="empty-icon">chat_bubble_outline</mat-icon>
+            <h3>Nenhum template encontrado</h3>
+            <p>Cadastre respostas rápidas para agilizar o atendimento dos seus técnicos.</p>
+            <button mat-stroked-button color="primary" (click)="openCreateTemplate()">Cadastrar Primeiro Template</button>
+          </div>
+
+          <!-- MODAL / DIALOG DE CRIAÇÃO E EDIÇÃO DE TEMPLATE -->
+          <div class="modal-backdrop" *ngIf="showTemplateModal">
+            <div class="modal-card">
+              <div class="modal-header">
+                <h3>{{ editingTemplateId ? 'Editar Template de WhatsApp' : 'Novo Template de Mensagem' }}</h3>
+                <button mat-icon-button (click)="closeTemplateModal()"><mat-icon>close</mat-icon></button>
+              </div>
+              <div class="modal-body">
+                <div class="modal-two-columns">
+                  <!-- Formulário -->
+                  <div class="form-column">
+                    <mat-form-field appearance="outline" class="full-width">
+                      <mat-label>Nome do Template</mat-label>
+                      <input matInput [(ngModel)]="templateForm.name" placeholder="Ex: Equipamento Pronto para Retirada">
+                    </mat-form-field>
+
+                    <div class="two-inputs-row">
+                      <mat-form-field appearance="outline" class="half-width">
+                        <mat-label>Código Único (Identificador)</mat-label>
+                        <input matInput [(ngModel)]="templateForm.code" [disabled]="!!editingTemplateId" placeholder="Ex: ASSET_READY">
+                      </mat-form-field>
+
+                      <mat-form-field appearance="outline" class="half-width">
+                        <mat-label>Categoria</mat-label>
+                        <mat-select [(ngModel)]="templateForm.category">
+                          <mat-option value="SERVICE_DESK">Service Desk</mat-option>
+                          <mat-option value="ATENDIMENTO">Atendimento</mat-option>
+                          <mat-option value="MANUTENCAO">Manutenção & Infra</mat-option>
+                          <mat-option value="SISTEMA">Sistema</mat-option>
+                        </mat-select>
+                      </mat-form-field>
+                    </div>
+
+                    <!-- Inserção de variáveis -->
+                    <div class="variables-selector">
+                      <span class="var-title">Inserir Variável Dinâmica:</span>
+                      <div class="chips-list">
+                        <button type="button" class="var-chip" *ngFor="let v of availableVariables" (click)="insertVariable(v.tag)" [matTooltip]="v.desc">
+                          + {{ v.tag }}
+                        </button>
+                      </div>
+                    </div>
+
+                    <mat-form-field appearance="outline" class="full-width">
+                      <mat-label>Conteúdo da Mensagem</mat-label>
+                      <textarea matInput rows="6" [(ngModel)]="templateForm.content" [placeholder]="'Digite a mensagem utilizando as tags {{solicitante}}, {{protocolo}}, etc.'"></textarea>
+                    </mat-form-field>
+
+                    <mat-checkbox [(ngModel)]="templateForm.is_active" color="primary">Template Ativo para Atendentes</mat-checkbox>
+                  </div>
+
+                  <!-- Live Preview WhatsApp Chat Simulator -->
+                  <div class="preview-column">
+                    <span class="preview-title">Pré-visualização (Simulador WhatsApp):</span>
+                    <div class="wa-mock-chat">
+                      <div class="wa-mock-header">
+                        <div class="mock-avatar">TI</div>
+                        <div class="mock-contact">
+                          <strong>Suporte de TI</strong>
+                          <span>online</span>
+                        </div>
+                      </div>
+                      <div class="wa-mock-bubble">
+                        <p class="mock-text">{{ getSimulatedTemplatePreview(templateForm.content) }}</p>
+                        <span class="mock-time">17:30 <mat-icon class="check-all">done_all</mat-icon></span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+              <div class="modal-footer">
+                <button mat-button (click)="closeTemplateModal()">Cancelar</button>
+                <button mat-flat-button color="primary" [disabled]="savingTemplate" (click)="saveTemplate()">
+                  <mat-icon>save</mat-icon> Salvar Template
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- ================================================================= -->
+        <!-- SUB-ABA 4: FILA DE ENVIOS (OUTBOX MONITOR) -->
+        <!-- ================================================================= -->
+        <div *ngIf="waActiveSubTab === 'outbox'" class="outbox-container">
+          <!-- Métricas Rápidas -->
+          <div class="stats-row" *ngIf="outboxStats">
+            <div class="stat-card">
+              <span class="stat-val pending">{{ outboxStats.pending_count }}</span>
+              <span class="stat-lbl">Pendentes na Fila</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-val sent">{{ outboxStats.sent_today_count }}</span>
+              <span class="stat-lbl">Enviadas Hoje</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-val rate">{{ outboxStats.sent_last_minute }} / {{ outboxStats.max_messages_per_minute }}</span>
+              <span class="stat-lbl">Taxa no Último Minuto (Máx)</span>
+            </div>
+            <div class="stat-card">
+              <span class="stat-val failed">{{ outboxStats.failed_count }}</span>
+              <span class="stat-lbl">Falhas de Envio</span>
+            </div>
+          </div>
+
+          <!-- Barra de Ações da Fila -->
+          <div class="outbox-actions-bar">
+            <div class="filters">
+              <button mat-stroked-button [class.active-filter]="outboxStatusFilter === ''" (click)="outboxStatusFilter = ''; loadOutbox()">Todas</button>
+              <button mat-stroked-button [class.active-filter]="outboxStatusFilter === 'PENDING'" (click)="outboxStatusFilter = 'PENDING'; loadOutbox()">Pendentes</button>
+              <button mat-stroked-button [class.active-filter]="outboxStatusFilter === 'SENT'" (click)="outboxStatusFilter = 'SENT'; loadOutbox()">Enviadas</button>
+              <button mat-stroked-button [class.active-filter]="outboxStatusFilter === 'FAILED'" (click)="outboxStatusFilter = 'FAILED'; loadOutbox()">Falhas</button>
+            </div>
+            <div class="right-buttons">
+              <button mat-button (click)="loadOutbox(); loadOutboxStats()">
+                <mat-icon>refresh</mat-icon> Atualizar
+              </button>
+              <button mat-flat-button color="primary" [disabled]="processingOutbox || waConfig.emergency_pause" (click)="processOutboxNow()">
+                <mat-icon>play_arrow</mat-icon> Processar Fila Agora
+              </button>
+            </div>
+          </div>
+
+          <!-- Tabela da Fila -->
+          <mat-card class="admin-card">
+            <mat-card-content>
+              <div class="table-responsive">
+                <table class="outbox-table">
+                  <thead>
+                    <tr>
+                      <th>Destino</th>
+                      <th>Mensagem</th>
+                      <th>Prioridade</th>
+                      <th>Status</th>
+                      <th>Tentativas</th>
+                      <th>Data / Agendamento</th>
+                      <th>Ações</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr *ngFor="let item of outboxItems">
+                      <td class="cell-phone"><strong>{{ item.to_phone }}</strong></td>
+                      <td class="cell-msg" [matTooltip]="item.message">{{ item.message }}</td>
+                      <td>
+                        <span class="priority-badge" [attr.data-p]="item.priority">
+                          {{ item.priority === 1 ? 'Alta' : item.priority === 2 ? 'Normal' : 'Baixa' }}
+                        </span>
+                      </td>
+                      <td>
+                        <span class="outbox-status-badge" [attr.data-st]="item.status">
+                          {{ item.status }}
+                        </span>
+                      </td>
+                      <td>{{ item.attempts }} / {{ item.max_attempts }}</td>
+                      <td class="cell-date">{{ item.scheduled_for ? (item.scheduled_for | date:'dd/MM/yyyy HH:mm:ss') : (item.created_at | date:'dd/MM/yyyy HH:mm:ss') }}</td>
+                      <td class="cell-actions">
+                        <button mat-icon-button color="warn" *ngIf="item.status === 'PENDING'" (click)="cancelOutboxItem(item.id)" matTooltip="Cancelar envio">
+                          <mat-icon>cancel</mat-icon>
+                        </button>
+                        <button mat-icon-button color="primary" *ngIf="item.status === 'FAILED'" (click)="retryOutboxItem(item.id)" matTooltip="Reenviar agora">
+                          <mat-icon>replay</mat-icon>
+                        </button>
+                      </td>
+                    </tr>
+                    <tr *ngIf="outboxItems.length === 0 && !loadingOutbox">
+                      <td colspan="7" class="empty-table">Nenhuma mensagem registrada nesta listagem.</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </mat-card-content>
+          </mat-card>
+        </div>
       </div>
     </mat-tab>
+
 
     <!-- ABA 2: IMPORTAÇÃO DE DADOS CSV -->
     <mat-tab>

@@ -69,7 +69,9 @@ export interface Ticket {
   priority: string;
   requester_id: string;
   requester_name?: string;
+  requester_phone?: string;
   assignee_id?: string;
+
   assignee_name?: string;
   category_id?: string;
   category?: TicketCategory;

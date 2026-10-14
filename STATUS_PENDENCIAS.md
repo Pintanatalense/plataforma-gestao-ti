@@ -149,6 +149,25 @@ Este documento sumariza o status atual do projeto, as funcionalidades recém-ent
       - Hub administrativo centralizado com 5 abas integradas: *Bot do WhatsApp* (com painel de teste de disparo e status toggle), *Importação CSV* (Wizard progressivo de 3 passos), *Exportação CSV* (com filtros de data e delimitador), *Backups do Banco* (com download e exclusão) e *Perfis & Matriz RBAC* (com cards explicativos e atalhos operacionais).
       - Rota protegida `/admin` e link destacado na barra lateral de navegação (`SidebarComponent`).
 
+15. **Módulo WhatsApp Avançado: Escudo Anti-Ban, Fila Outbox, Templates e Disparo Rápido em Chamados**
+    - **Proteção Anti-Ban Robusta**:
+      - Mecanismos avançados para prevenir bloqueios de números empresariais: atrasos humanizados com *jitter* randômico (`min_delay_seconds` a `max_delay_seconds`), controle de cadência por minuto (`max_messages_per_minute`) e *cooldown* por destinatário (`cooldown_per_recipient_seconds`) para não sobrecarregar o mesmo colaborador.
+      - Emulação de presença humana através do evento `"composing"` (digitando...) na Evolution API e Meta Cloud API antes do envio do texto.
+      - *Kill Switch* emergencial (`emergency_pause`) com acionamento com 1 clique para cessar instantaneamente qualquer disparo em massa sem perder registros na fila.
+    - **Fila Persistente Outbox (`wa_outbox`)**:
+      - Desacoplamento integral de todos os envios com persistência transacional (`PENDING`, `SENDING`, `SENT`, `FAILED`, `CANCELLED`).
+      - Suporte a tentativas automáticas com tolerância a falhas temporárias de rede, histórico de erros (`last_error`) e reprocessamento sob demanda.
+    - **Templates e Respostas Rápidas Operacionais (`wa_templates`)**:
+      - Cadastro e gestão de templates dinâmicos categorizados por módulo (`SERVICE_DESK`, `NOTIFICATIONS`, `GENERAL`).
+      - Suporte completo a tags contextuais: `{{solicitante}}`, `{{protocolo}}`, `{{titulo}}`, `{{status}}`, `{{atendente}}`, `{{unidade}}`, `{{observacao}}`, `{{empresa}}`.
+      - 7 templates pré-definidos essenciais para o fluxo de TI empresarial inseridos no seed do sistema (`TICKET_OPENED`, `TICKET_IN_PROGRESS`, `AWAITING_USER`, `REMOTE_ACCESS`, `ASSET_READY`, `TICKET_RESOLVED`, `MAINTENANCE_ALERT`).
+    - **Painel Administrativo com Sub-Visões WhatsApp (`/admin`)**:
+      - Sub-navegação com 4 visões integradas: *Conexão & Gateway*, *Escudo Anti-Ban*, *Templates & Simulador* (com mock chat estilo WhatsApp interativo em tempo real) e *Monitor da Fila Outbox* (com estatísticas ao vivo, cancelamento e reprocessamento).
+    - **Disparo Rápido Integrado ao Chamado (`ticket-detail`)**:
+      - Botão WhatsApp de acesso rápido na barra de ações do chamado exclusivo para a equipe de atendimento.
+      - Modal com identificação do colaborador, validação de telefone cadastrado, seleção de templates com interpolação instantânea, campo livre de observações adicionais e badge informativo de proteção anti-ban ativa.
+      - Registro automático de cada disparo como mensagem de atendimento no chat e linha do tempo do chamado, mantendo auditoria e transparência com o solicitante.
+
 ---
 
 ## 🎯 Status do MVP
@@ -161,8 +180,9 @@ Todas as Fases do roadmap foram concluídas integralmente:
 - Categorias de estoque com especificações técnicas dinâmicas integradas.
 - Histórico completo de auditoria e linha do tempo do Service Desk com encerramento pelo solicitante.
 - Módulos avançados do Plano de Evolução: RBAC Tripartite, CSV Import/Export, DB Backups, WhatsApp Bot e Painel Admin entregues.
-- Suíte automatizada de testes cobrindo unidade, integração, auditoria, anexos, notificações e E2E (**110 backend + 39 frontend aprovados com 100% de sucesso**).
-- Sistema publicado, ativo e acessível via Docker Compose em `http://localhost`.
+- Módulo WhatsApp Anti-Ban, Fila Outbox, Templates e Disparo Rápido em Chamados 100% implementado e validado.
+- Suíte automatizada de testes cobrindo unidade, integração, auditoria, anexos, notificações, WhatsApp e E2E (**113 backend aprovados + 1 xfailed esperado, 39 frontend aprovados com 100% de sucesso**).
+- Build de produção compilando limpo e otimizado via Angular 18+ e FastAPI/PostgreSQL.
 
 
 

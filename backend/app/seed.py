@@ -254,8 +254,72 @@ async def seed() -> None:
         await session.flush()
         print("Categorias de estoque sincronizadas.")
 
-        # 7. Usuário administrador: criado no primeiro acesso (tela de setup).
+        # 7. Criar Templates Padrão do WhatsApp
+        from app.whatsapp.models import WhatsAppTemplate
+        whatsapp_templates_data = [
+            {
+                "code": "TICKET_OPENED",
+                "name": "Abertura de Chamado Confirmada",
+                "category": "SERVICE_DESK",
+                "content": "👋 Olá, {{solicitante}}! Seu chamado *#{{protocolo}}* (_{{titulo}}_) foi aberto com sucesso na TI *{{empresa}}*.\nNossa equipe já foi notificada e iniciará o atendimento em breve.\n\nPara acompanhar, responda [2] no menu.",
+                "is_active": True,
+            },
+            {
+                "code": "TICKET_IN_PROGRESS",
+                "name": "Chamado em Atendimento",
+                "category": "SERVICE_DESK",
+                "content": "🛠️ Olá, {{solicitante}}! O seu chamado *#{{protocolo}}* está agora *Em Atendimento* com o técnico *{{atendente}}*.\nEm caso de dúvidas, você pode responder diretamente por este canal.",
+                "is_active": True,
+            },
+            {
+                "code": "AWAITING_USER",
+                "name": "Aguardando Informações do Solicitante",
+                "category": "SERVICE_DESK",
+                "content": "❓ Olá, {{solicitante}}! Precisamos de informações adicionais para dar continuidade ao seu chamado *#{{protocolo}}*:\n\n_{{observacao}}_\n\nPor favor, responda esta mensagem informando o que foi solicitado.",
+                "is_active": True,
+            },
+            {
+                "code": "REMOTE_ACCESS",
+                "name": "Acesso Remoto Solicitado",
+                "category": "SERVICE_DESK",
+                "content": "💻 Olá, {{solicitante}}! Para solucionar seu chamado *#{{protocolo}}*, o técnico *{{atendente}}* precisa realizar um acesso remoto.\nPor favor, abra o software de suporte (AnyDesk ou TeamViewer) e nos envie o código de conexão aqui pelo WhatsApp.",
+                "is_active": True,
+            },
+            {
+                "code": "ASSET_READY",
+                "name": "Equipamento Pronto para Retirada",
+                "category": "ATENDIMENTO",
+                "content": "📦 Olá, {{solicitante}}! Seu equipamento referente ao chamado *#{{protocolo}}* foi configurado com sucesso e já está disponível para retirada na sala da TI da unidade *{{unidade}}*.",
+                "is_active": True,
+            },
+            {
+                "code": "TICKET_RESOLVED",
+                "name": "Chamado Concluído / Resolvido",
+                "category": "SERVICE_DESK",
+                "content": "✅ Olá, {{solicitante}}! Seu chamado *#{{protocolo}}* (_{{titulo}}_) foi resolvido pelo técnico *{{atendente}}*.\n\n*Solução aplicada:*\n_{{observacao}}_\n\nSe ainda precisar de suporte sobre este caso, basta responder aqui em até 48 horas.",
+                "is_active": True,
+            },
+            {
+                "code": "MAINTENANCE_ALERT",
+                "name": "Aviso de Manutenção de Infraestrutura",
+                "category": "MANUTENCAO",
+                "content": "⚠️ *Aviso de Manutenção Programada de TI*\nInformamos que realizaremos uma intervenção preventiva na infraestrutura da unidade *{{unidade}}*.\nHorário: {{hora}} de {{data}}.\nPoderá haver instabilidade temporária. Agradecemos a compreensão de todos.",
+                "is_active": True,
+            },
+        ]
+
+        for wt_data in whatsapp_templates_data:
+            stmt_wt = select(WhatsAppTemplate).where(WhatsAppTemplate.code == wt_data["code"])
+            res_wt = await session.execute(stmt_wt)
+            if not res_wt.scalar_one_or_none():
+                tpl = WhatsAppTemplate(**wt_data)
+                session.add(tpl)
+        await session.flush()
+        print("Templates de WhatsApp sincronizados.")
+
+        # 8. Usuário administrador: criado no primeiro acesso (tela de setup).
         print("Primeiro administrador: acesse o sistema para concluir a configuração inicial.")
+
 
         await session.commit()
         print("Seed finalizado com sucesso!")
