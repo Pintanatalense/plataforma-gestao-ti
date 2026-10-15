@@ -58,6 +58,25 @@
                 <mat-slide-toggle [(ngModel)]="waConfig.is_enabled" color="primary"></mat-slide-toggle>
               </div>
 
+              <!-- Live Connection State Banner -->
+              <div class="connection-state-bar" *ngIf="waConfig.is_enabled">
+                <div class="state-indicator" [ngClass]="waIntegrationStatus?.status?.toLowerCase() || 'not_configured'">
+                  <mat-icon>{{ waIntegrationStatus?.status === 'CONNECTED' ? 'check_circle' : (waIntegrationStatus?.status === 'FAILED' ? 'error' : 'sync_problem') }}</mat-icon>
+                  <div>
+                    <strong>Estado da Conexão: {{ waIntegrationStatus?.status || 'Aguardando Verificação' }}</strong>
+                    <span>{{ waIntegrationStatus?.message || 'Clique em verificar para testar a comunicação com o gateway.' }}</span>
+                  </div>
+                </div>
+                <div class="state-actions">
+                  <button mat-stroked-button (click)="loadWaStatus()" [disabled]="loadingWaStatus" matTooltip="Atualizar estado da conexão">
+                    <mat-icon>refresh</mat-icon> Verificar
+                  </button>
+                  <button mat-flat-button color="accent" *ngIf="waConfig.provider === 'EVOLUTION_API'" (click)="openQrModal()">
+                    <mat-icon>qr_code_scanner</mat-icon> Conectar WhatsApp (QR Code)
+                  </button>
+                </div>
+              </div>
+
               <div class="form-grid">
                 <mat-form-field appearance="outline" class="full-width">
                   <mat-label>Provedor da Integração</mat-label>
@@ -986,5 +1005,316 @@ gzip -d &lt; backup_YYYYMMDD_HHMMSS.sql.gz | docker exec -i gestao-ti-db psql -U
         </mat-card>
       </div>
     </mat-tab>
+
+    <!-- ABA 6: GESTÃO DE AMBIENTES & LIMPEZA SEGURA (MOD-01) -->
+    <mat-tab>
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">domain</mat-icon>
+        Ambientes & Dados
+      </ng-template>
+
+      <div class="tab-content">
+        <div class="two-column-grid">
+          <!-- Card de Status do Ambiente -->
+          <mat-card class="admin-card">
+            <mat-card-header>
+              <mat-icon mat-card-avatar color="primary">settings_suggest</mat-icon>
+              <mat-card-title>Status do Ambiente & Dados</mat-card-title>
+              <mat-card-subtitle>Diagnóstico operacional e classificação da base de dados</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content>
+              <div class="status-toggle-box" [class.active]="demoStatus?.system_mode === 'DEMO'">
+                <div class="toggle-info">
+                  <strong>Modo do Sistema: {{ demoStatus?.system_mode === 'DEMO' ? 'AMBIENTE DEMONSTRATIVO' : 'PRODUÇÃO / EMPRESARIAL' }}</strong>
+                  <span>{{ demoStatus?.system_mode === 'DEMO' ? 'O sistema está operando com dados fictícios para fins de apresentação e testes.' : 'O sistema está operando em base limpa, pronto para utilização empresarial real.' }}</span>
+                </div>
+                <span class="badge-status" [style.background]="demoStatus?.system_mode === 'DEMO' ? '#fef3c7' : '#dcfce7'" [style.color]="demoStatus?.system_mode === 'DEMO' ? '#92400e' : '#166534'">
+                  {{ demoStatus?.system_mode }}
+                </span>
+              </div>
+
+              <div class="demo-metrics-grid" *ngIf="demoStatus" style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; margin: 16px 0;">
+                <div class="metric-box" style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                  <span class="label" style="display: block; font-size: 11px; color: #64748b; font-weight: 600;">Total de Registros Demo</span>
+                  <span class="value" style="font-size: 20px; font-weight: 700; color: #1e293b;">{{ demoStatus.total_demo_records }}</span>
+                </div>
+                <div class="metric-box" *ngFor="let item of demoStatus.entities | keyvalue" style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                  <span class="label" style="display: block; font-size: 11px; color: #64748b; font-weight: 600;">{{ item.key }}</span>
+                  <span class="value" style="font-size: 16px; font-weight: 700; color: #3b82f6;">{{ item.value }}</span>
+                </div>
+              </div>
+
+              <!-- Status do Backup Recente -->
+              <div class="backup-guard-box" [class.ready]="demoStatus?.latest_backup?.is_usable" style="display: flex; gap: 12px; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; background: #fafafa; margin-top: 12px;">
+                <mat-icon [style.color]="demoStatus?.latest_backup?.is_usable ? '#16a34a' : '#d97706'">{{ demoStatus?.latest_backup?.is_usable ? 'verified_user' : 'warning' }}</mat-icon>
+                <div>
+                  <strong style="display: block; font-size: 13px;">Garantia de Recuperação (Backup Recente):</strong>
+                  <span *ngIf="demoStatus?.latest_backup?.is_usable" style="font-size: 12px; color: #166534;">
+                    Backup utilizável detectado: {{ demoStatus?.latest_backup?.filename }} ({{ demoStatus?.latest_backup?.created_at | date:'dd/MM/yyyy HH:mm' }})
+                  </span>
+                  <span *ngIf="!demoStatus?.latest_backup?.is_usable" style="font-size: 12px; color: #b91c1c;">
+                    Nenhum backup recente foi detectado. Antes de limpar ou alterar o ambiente, gere um backup na aba "Backup e Restauração".
+                  </span>
+                </div>
+              </div>
+
+              <div class="action-row" style="margin-top: 20px;">
+                <button mat-stroked-button (click)="loadDemoStatus()" [disabled]="loadingDemoStatus">
+                  <mat-icon>refresh</mat-icon> Atualizar Diagnóstico
+                </button>
+              </div>
+            </mat-card-content>
+          </mat-card>
+
+          <!-- Ações de Preparação e Transição -->
+          <mat-card class="admin-card">
+            <mat-card-header>
+              <mat-icon mat-card-avatar color="warn">cleaning_services</mat-icon>
+              <mat-card-title>Operações de Implantação</mat-card-title>
+              <mat-card-subtitle>Limpeza controlada para produção ou recarga demonstrativa</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content>
+              <div class="action-block">
+                <h4 style="margin: 0 0 8px 0; color: #1e293b;">1. Preparar Sistema para Nova Empresa (Limpar Demonstração)</h4>
+                <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">
+                  Remove registros fictícios preservando rigorosamente: contas de administradores,
+                  configurações do sistema, integrações, arquivos reais e logs de auditoria.
+                </p>
+                <button mat-flat-button color="warn" (click)="openCleanPreview()" [disabled]="loadingCleanPreview || !demoStatus?.latest_backup?.is_usable">
+                  <mat-icon>delete_sweep</mat-icon> Limpar dados de demonstração
+                </button>
+                <span *ngIf="!demoStatus?.latest_backup?.is_usable" style="display: block; font-size: 11px; color: #b91c1c; margin-top: 6px;">
+                  * Operação bloqueada: Requer backup recente verificado por segurança.
+                </span>
+              </div>
+
+              <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;">
+
+              <div class="action-block">
+                <h4 style="margin: 0 0 8px 0; color: #1e293b;">2. Recarregar Ambiente Demonstrativo</h4>
+                <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">
+                  Popula o sistema de forma limpa e idempotente com dados fictícios e relacionamentos
+                  consistentes para apresentações comerciais e treinamentos.
+                </p>
+                <button mat-stroked-button color="primary" (click)="executeSeedDemo()" [disabled]="seedingDemo">
+                  <mat-icon>science</mat-icon> Recarregar Dados Demonstrativos
+                </button>
+              </div>
+            </mat-card-content>
+          </mat-card>
+        </div>
+      </div>
+    </mat-tab>
+
+    <!-- ABA 7: SERVIDOR DE E-MAIL (SMTP) (MOD-11) -->
+    <mat-tab>
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">email</mat-icon>
+        Servidor de E-mail (SMTP)
+      </ng-template>
+
+      <div class="tab-content">
+        <div class="two-column-grid">
+          <!-- Configuração do Servidor SMTP -->
+          <mat-card class="admin-card">
+            <mat-card-header>
+              <mat-icon mat-card-avatar color="primary">mail_lock</mat-icon>
+              <mat-card-title>Parâmetros do Servidor SMTP</mat-card-title>
+              <mat-card-subtitle>Envio de notificações de chamados e alertas transacionais</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content>
+              <div class="status-toggle-box" [class.active]="smtpConfig.is_enabled">
+                <div class="toggle-info">
+                  <strong>Notificações por E-mail</strong>
+                  <span>{{ smtpConfig.is_enabled ? 'Disparos automáticos ativados' : 'Disparos automáticos desativados' }}</span>
+                </div>
+                <mat-slide-toggle [(ngModel)]="smtpConfig.is_enabled" color="primary"></mat-slide-toggle>
+              </div>
+
+              <div class="form-grid">
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>Servidor SMTP (Host)</mat-label>
+                  <input matInput [(ngModel)]="smtpConfig.host" placeholder="Ex: smtp.gmail.com ou smtp.office365.com">
+                </mat-form-field>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                  <mat-form-field appearance="outline">
+                    <mat-label>Porta</mat-label>
+                    <input matInput type="number" [(ngModel)]="smtpConfig.port" placeholder="587">
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline">
+                    <mat-label>Segurança da Conexão</mat-label>
+                    <mat-select [(ngModel)]="smtpConfig.security">
+                      <mat-option value="STARTTLS">STARTTLS (Porta 587 comum)</mat-option>
+                      <mat-option value="SSL_TLS">SSL / TLS (Porta 465)</mat-option>
+                      <mat-option value="NONE">Sem Criptografia (Porta 25)</mat-option>
+                    </mat-select>
+                  </mat-form-field>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                  <mat-form-field appearance="outline">
+                    <mat-label>Usuário / E-mail de Autenticação</mat-label>
+                    <input matInput [(ngModel)]="smtpConfig.username" placeholder="usuario@empresa.com.br">
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline">
+                    <mat-label>Senha / App Password</mat-label>
+                    <input matInput type="password" [(ngModel)]="smtpPasswordInput" placeholder="Digite para alterar a senha">
+                  </mat-form-field>
+                </div>
+
+                <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px;">
+                  <mat-form-field appearance="outline">
+                    <mat-label>E-mail do Remetente (From)</mat-label>
+                    <input matInput [(ngModel)]="smtpConfig.from_email" placeholder="suporte@empresa.com.br">
+                  </mat-form-field>
+
+                  <mat-form-field appearance="outline">
+                    <mat-label>Nome de Exibição do Remetente</mat-label>
+                    <input matInput [(ngModel)]="smtpConfig.from_name" placeholder="Service Desk - Gestão de TI">
+                  </mat-form-field>
+                </div>
+
+                <mat-form-field appearance="outline" class="full-width">
+                  <mat-label>URL Base da Plataforma (para links nos e-mails)</mat-label>
+                  <input matInput [(ngModel)]="smtpConfig.app_base_url" placeholder="http://localhost ou https://chamados.empresa.com.br">
+                </mat-form-field>
+              </div>
+
+              <div class="action-row">
+                <button mat-flat-button color="primary" [disabled]="savingSmtpConfig" (click)="saveSmtpConfig()">
+                  <mat-icon>save</mat-icon> Salvar Parâmetros SMTP
+                </button>
+              </div>
+            </mat-card-content>
+          </mat-card>
+
+          <!-- Teste de Envio & Validação -->
+          <mat-card class="admin-card">
+            <mat-card-header>
+              <mat-icon mat-card-avatar color="accent">send_and_archive</mat-icon>
+              <mat-card-title>Validação de Conectividade</mat-card-title>
+              <mat-card-subtitle>Teste a entrega e autenticação antes de ativar em produção</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content>
+              <p style="font-size: 13px; color: #475569;">Envie um e-mail de teste para verificar se o host, a porta, o certificado TLS e as credenciais estão aceitando conexões:</p>
+              
+              <mat-form-field appearance="outline" class="full-width">
+                <mat-label>E-mail de Destino para Teste</mat-label>
+                <input matInput [(ngModel)]="testSmtpEmail" placeholder="seu.email@empresa.com.br">
+              </mat-form-field>
+
+              <button mat-flat-button color="accent" [disabled]="testingSmtp || !testSmtpEmail" (click)="runSmtpTest()">
+                <mat-icon>send</mat-icon> {{ testingSmtp ? 'Enviando teste...' : 'Enviar E-mail de Teste' }}
+              </button>
+
+              <div *ngIf="smtpTestFeedback" [style.background]="smtpTestFeedback.success ? '#dcfce7' : '#fee2e2'" [style.color]="smtpTestFeedback.success ? '#166534' : '#991b1b'" style="margin-top: 16px; padding: 12px; border-radius: 6px; display: flex; align-items: center; gap: 8px; font-size: 13px;">
+                <mat-icon>{{ smtpTestFeedback.success ? 'check_circle' : 'error' }}</mat-icon>
+                <span>{{ smtpTestFeedback.message }}</span>
+              </div>
+
+              <div style="margin-top: 24px; padding: 12px; border-radius: 6px; background: #eff6ff; border: 1px solid #bfdbfe; display: flex; gap: 10px;">
+                <mat-icon style="color: #2563eb;">policy</mat-icon>
+                <div style="font-size: 12px; color: #1e40af;">
+                  <strong style="display: block; margin-bottom: 2px;">Garantia de Privacidade DEC-012:</strong>
+                  <span>O sistema assegura que notas e comentários marcados como <em>"Internos"</em> JAMAIS são enviados ao solicitante por e-mail. Apenas respostas públicas notificam clientes finais.</span>
+                </div>
+              </div>
+            </mat-card-content>
+          </mat-card>
+        </div>
+      </div>
+    </mat-tab>
   </mat-tab-group>
+
+  <!-- MODAL: CONFIRMAÇÃO DE LIMPEZA DE DEMONSTRAÇÃO (MOD-01) -->
+  <div class="modal-backdrop" *ngIf="showCleanConfirmModal" (click)="closeCleanModal()">
+    <div class="modal-box danger-modal" (click)="$event.stopPropagation()" style="background: white; border-radius: 8px; max-width: 600px; width: 90%; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+      <div style="display: flex; align-items: center; gap: 12px; margin-bottom: 16px;">
+        <mat-icon style="color: #dc2626; font-size: 32px; width: 32px; height: 32px;">warning</mat-icon>
+        <div>
+          <h2 style="margin: 0; font-size: 18px; color: #111827;">Limpar Dados de Demonstração</h2>
+          <span style="font-size: 13px; color: #6b7280;">Preparação de base limpa para nova implantação empresarial</span>
+        </div>
+      </div>
+
+      <div *ngIf="cleanPreview" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 14px; margin-bottom: 16px;">
+        <strong style="color: #991b1b; display: block; margin-bottom: 6px;">Resumo dos dados que serão removidos:</strong>
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; font-size: 13px; color: #7f1d1d;">
+          <div *ngFor="let item of cleanPreview.records_to_delete | keyvalue">
+            • {{ item.key }}: <strong>{{ item.value }}</strong>
+          </div>
+        </div>
+        <div style="margin-top: 10px; font-size: 12px; color: #991b1b; font-weight: bold;">
+          Total de itens fictícios a remover: {{ cleanPreview.total_to_delete }}
+        </div>
+      </div>
+
+      <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 12px; margin-bottom: 16px; font-size: 12px; color: #166534;">
+        <strong>Registros e configurações estritamente preservados:</strong>
+        <div style="margin-top: 4px;">
+          • Usuários administradores ({{ cleanPreview?.preserved_items?.admin_users }})<br>
+          • Configurações do sistema e integrações<br>
+          • Registros de auditoria ({{ cleanPreview?.preserved_items?.audit_logs }})<br>
+          • Arquivos e backups salvos ({{ cleanPreview?.preserved_items?.backups }})
+        </div>
+      </div>
+
+      <p style="font-size: 13px; color: #374151; margin-bottom: 8px;">
+        Para confirmar a execução da limpeza segura, digite exatamente a frase abaixo:
+        <br><strong style="color: #dc2626; user-select: all;">LIMPAR DADOS DE DEMONSTRACAO</strong>
+      </p>
+
+      <mat-form-field appearance="outline" class="full-width" style="margin-bottom: 16px;">
+        <mat-label>Frase de Confirmação</mat-label>
+        <input matInput [(ngModel)]="cleanConfirmationPhrase" placeholder="LIMPAR DADOS DE DEMONSTRACAO">
+      </mat-form-field>
+
+      <div style="display: flex; justify-content: flex-end; gap: 12px;">
+        <button mat-button (click)="closeCleanModal()">Cancelar</button>
+        <button mat-flat-button color="warn" [disabled]="cleaningDemo || cleanConfirmationPhrase.trim() !== 'LIMPAR DADOS DE DEMONSTRACAO'" (click)="executeCleanDemo()">
+          <mat-icon>delete_forever</mat-icon> {{ cleaningDemo ? 'Limpando...' : 'Confirmar e Limpar Base' }}
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MODAL: CONEXÃO WHATSAPP / QR CODE (EVOLUTION API) -->
+  <div class="modal-backdrop" *ngIf="showQrModal" (click)="closeQrModal()">
+    <div class="modal-box" (click)="$event.stopPropagation()" style="background: white; border-radius: 8px; max-width: 480px; width: 90%; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.2); text-align: center;">
+      <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px;">
+        <h3 style="margin: 0; font-size: 18px; color: #111827;">Conectar WhatsApp (Evolution API)</h3>
+        <button mat-icon-button (click)="closeQrModal()"><mat-icon>close</mat-icon></button>
+      </div>
+
+      <div *ngIf="loadingQr" style="padding: 40px 0;">
+        <mat-icon style="animation: spin 1s infinite linear; font-size: 36px; width: 36px; height: 36px; color: #3b82f6;">sync</mat-icon>
+        <p style="margin-top: 12px; color: #6b7280; font-size: 13px;">Carregando QR Code da instância...</p>
+      </div>
+
+      <div *ngIf="!loadingQr && qrData">
+        <div *ngIf="qrData.qrcode" style="margin: 16px auto;">
+          <img [src]="qrData.qrcode" alt="QR Code WhatsApp" style="max-width: 260px; width: 100%; border: 1px solid #e5e7eb; border-radius: 8px; padding: 8px;">
+          <p style="font-size: 13px; color: #4b5563; margin-top: 12px;">Abra o WhatsApp no seu smartphone &gt; Dispositivos Conectados &gt; Conectar Dispositivo e aponte para o QR Code acima.</p>
+        </div>
+        <div *ngIf="qrData.pairingCode" style="margin: 12px 0; background: #f3f4f6; padding: 12px; border-radius: 6px;">
+          <span style="font-size: 12px; color: #4b5563; display: block;">Código de Pareamento:</span>
+          <strong style="font-size: 20px; letter-spacing: 2px; color: #111827;">{{ qrData.pairingCode }}</strong>
+        </div>
+        <div *ngIf="!qrData.qrcode && !qrData.pairingCode" style="padding: 20px; color: #6b7280;">
+          <mat-icon style="font-size: 40px; width: 40px; height: 40px; color: #10b981;">check_circle</mat-icon>
+          <p style="margin-top: 8px; font-weight: 600; color: #111827;">Instância já conectada ou pronta!</p>
+          <span style="font-size: 12px;">{{ qrData.message || 'Nenhum QR code pendente.' }}</span>
+        </div>
+      </div>
+
+      <div style="margin-top: 20px; display: flex; justify-content: center; gap: 12px;">
+        <button mat-stroked-button (click)="openQrModal()"><mat-icon>refresh</mat-icon> Atualizar QR</button>
+        <button mat-flat-button color="primary" (click)="closeQrModal()">Concluir</button>
+      </div>
+    </div>
+  </div>
 </div>
+

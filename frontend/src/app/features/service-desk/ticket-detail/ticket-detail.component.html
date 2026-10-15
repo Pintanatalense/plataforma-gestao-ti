@@ -329,6 +329,22 @@
             </div>
           </div>
         </div>
+
+        <!-- Evidências e Anexos Vinculados ao Chamado -->
+        <div class="ticket-attachments-bar" *ngIf="attachments.length > 0">
+          <div class="bar-header">
+            <mat-icon>attach_file</mat-icon>
+            <strong>Anexos do Chamado ({{ attachments.length }}):</strong>
+          </div>
+          <div class="attachment-chips-row">
+            <div class="attachment-pill" *ngFor="let att of attachments" (click)="downloadAttachment(att)" [matTooltip]="'Clique para visualizar ou baixar ' + att.filename">
+              <mat-icon class="pill-icon">insert_drive_file</mat-icon>
+              <span class="pill-name">{{ att.filename }}</span>
+              <span class="pill-size">({{ attachmentsService.formatBytes(att.size_bytes) }})</span>
+              <mat-icon class="pill-download">download</mat-icon>
+            </div>
+          </div>
+        </div>
         
         <!-- Chat Area -->
         <div id="chat-container" class="chat-history">
@@ -394,9 +410,16 @@
                   </span>
                 </mat-checkbox>
               </div>
-              <button mat-flat-button color="primary" type="submit" [disabled]="messageForm.invalid">
-                <mat-icon>send</mat-icon> Enviar
-              </button>
+              <div class="action-buttons-right">
+                <input type="file" #chatFileInput style="display: none" (change)="onChatFileSelected($event)">
+                <button mat-stroked-button type="button" class="chat-attach-btn" (click)="chatFileInput.click()" [disabled]="isUploadingChatFile" matTooltip="Anexar arquivo ou imagem ao chamado">
+                  <mat-icon>{{ isUploadingChatFile ? 'hourglass_top' : 'attach_file' }}</mat-icon>
+                  <span>{{ isUploadingChatFile ? 'Enviando...' : 'Anexar Arquivo' }}</span>
+                </button>
+                <button mat-flat-button color="primary" type="submit" [disabled]="messageForm.invalid">
+                  <mat-icon>send</mat-icon> Enviar
+                </button>
+              </div>
             </div>
           </form>
         </div>
@@ -485,9 +508,13 @@
     </mat-tab>
 
     <!-- TAB 4: Attachments -->
-    <mat-tab label="Anexos">
+    <mat-tab>
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">attach_file</mat-icon>
+        <span>Anexos ({{ attachments.length }})</span>
+      </ng-template>
       <div class="tab-body p-4">
-        <app-attachments [entityType]="'TICKET'" [entityId]="ticket.id"></app-attachments>
+        <app-attachments [entityType]="'TICKET'" [entityId]="ticket.id" (attachmentsChange)="onTicketAttachmentsChanged($event)"></app-attachments>
       </div>
     </mat-tab>
 

@@ -18,6 +18,7 @@ from app.core.exceptions import (
     NotFoundException,
     StateTransitionException,
 )
+from app.organization.models import Employee
 from app.service_desk.models import Ticket, TicketCategory, TicketInteraction, TicketMaterial
 from app.service_desk.repository import ServiceDeskRepository
 from app.service_desk.schemas import (
@@ -78,37 +79,70 @@ class ServiceDeskService:
     async def get_ticket_for_user(
         self,
         ticket_id: uuid.UUID,
-        user_employee_id: uuid.UUID | None,
+        user_employee_id: uuid.UUID | None = None,
         is_technician: bool = False,
-        can_read_all: bool = False
+        can_read_all: bool = False,
+        user_id: uuid.UUID | None = None,
+        sector_id: uuid.UUID | None = None
     ) -> Ticket:
         """
-        Busca um ticket e garante as regras de visualização:
-        - Técnicos (is_technician=True) ou Gestores (can_read_all=True) veem tudo.
+        Busca um ticket e garante as regras de menor privilégio e escopo:
+        - Gestores ou Administradores (can_read_all=True) veem qualquer chamado.
+        - Atendentes (is_technician=True) veem chamados do seu setor responsável, atribuídos a si ou abertos por si.
         - Solicitantes comuns só veem seus próprios chamados.
         """
         ticket = await self.repo.get_ticket(ticket_id)
         if not ticket:
             raise NotFoundException("Chamado", ticket_id)
 
-        if not (is_technician or can_read_all):
-            if not user_employee_id or ticket.requester_id != user_employee_id:
-                raise ForbiddenException("Você não tem acesso a este chamado.")
+        if can_read_all:
+            return ticket
+
+        if is_technician:
+            if sector_id is None and user_employee_id is not None:
+                emp = await self.session.get(Employee, user_employee_id)
+                if emp:
+                    sector_id = emp.sector_id
+
+            if (
+                can_read_all
+                or (sector_id is not None and ticket.responsible_sector_id == sector_id)
+                or (user_id is not None and ticket.assignee_id == user_id)
+                or (user_employee_id is not None and ticket.requester_id == user_employee_id)
+            ):
+                return ticket
+            raise ForbiddenException("Você não tem acesso a chamados de outros setores.")
+
+        if not user_employee_id or ticket.requester_id != user_employee_id:
+            raise ForbiddenException("Você não tem acesso a este chamado.")
 
         return ticket
 
     async def list_tickets_for_user(
         self,
         user_employee_id: uuid.UUID | None,
+        user_id: uuid.UUID | None = None,
+        sector_id: uuid.UUID | None = None,
         is_technician: bool = False,
         can_read_all: bool = False
     ) -> Sequence[Ticket]:
-        if is_technician or can_read_all:
+        # 1. Gestores / Administradores com can_read_all veem todos os chamados
+        if can_read_all:
             return await self.repo.list_tickets()
-        else:
-            if not user_employee_id:
-                return []
-            return await self.repo.list_tickets(requester_id=user_employee_id)
+
+        # 2. Atendentes veem chamados destinados ao seu setor, atribuídos a si ou abertos por si
+        if is_technician:
+            return await self.repo.list_tickets(
+                requester_id=user_employee_id,
+                sector_id=sector_id,
+                assignee_id=user_id,
+                is_attendant_scope=True,
+            )
+
+        # 3. Solicitantes veem apenas os próprios chamados
+        if not user_employee_id:
+            return []
+        return await self.repo.list_tickets(requester_id=user_employee_id)
 
     async def create_ticket(
         self, 
@@ -155,6 +189,24 @@ class ServiceDeskService:
         if not responsible_sector_id:
             raise BusinessRuleException("Setor responsável não definido. Informe-o manualmente ou selecione uma categoria com roteamento automático.")
 
+        # Verificar se o sistema está em modo DEMO ou se o solicitante é demo
+        is_demo_ticket = False
+        try:
+            from app.core.settings_model import SystemSetting
+            from app.organization.models import Employee
+            from sqlalchemy import select
+            stmt_mode = select(SystemSetting).where(SystemSetting.key == "system_mode")
+            s_mode = (await self.session.execute(stmt_mode)).scalar_one_or_none()
+            if s_mode and s_mode.value == "DEMO":
+                is_demo_ticket = True
+            else:
+                emp_stmt = select(Employee.is_demo).where(Employee.id == requester_id)
+                emp_demo = (await self.session.execute(emp_stmt)).scalar_one_or_none()
+                if emp_demo:
+                    is_demo_ticket = True
+        except Exception:
+            pass
+
         ticket = Ticket(
             title=schema.title,
             description=schema.description,
@@ -165,7 +217,8 @@ class ServiceDeskService:
             origin_unit_id=origin_unit_id,
             origin_sector_id=origin_sector_id,
             responsible_sector_id=responsible_sector_id,
-            status="OPENED"
+            status="OPENED",
+            is_demo=is_demo_ticket
         )
         
         if schema.asset_ids:
@@ -195,18 +248,25 @@ class ServiceDeskService:
         schema: TicketUpdate, 
         is_technician: bool,
         user_employee_id: uuid.UUID | None = None,
-        user_id: uuid.UUID | None = None
+        user_id: uuid.UUID | None = None,
+        sector_id: uuid.UUID | None = None,
+        can_read_all: bool = False
     ) -> Ticket:
         ticket = await self.repo.get_ticket(ticket_id)
         if not ticket:
             raise NotFoundException("Chamado", ticket_id)
 
         is_requester = (user_employee_id is not None and ticket.requester_id == user_employee_id)
+        is_sector_attendant = is_technician and (
+            can_read_all
+            or (sector_id is not None and ticket.responsible_sector_id == sector_id)
+            or (user_id is not None and ticket.assignee_id == user_id)
+        )
 
         # Regras de autorização para alteração do chamado
-        if not is_technician:
+        if not is_sector_attendant:
             if not is_requester:
-                raise ForbiddenException("Apenas técnicos ou o próprio solicitante podem gerenciar este chamado.")
+                raise ForbiddenException("Apenas o atendente responsável pelo setor ou o solicitante podem gerenciar este chamado.")
             
             # Solicitante só tem permissão para finalizar/encerrar seu próprio chamado (RESOLVED ou CLOSED)
             if (
@@ -312,10 +372,16 @@ class ServiceDeskService:
         user_employee_id: uuid.UUID | None,
         is_technician: bool = False,
         can_read_all: bool = False,
-        can_internal_notes: bool = False
+        can_internal_notes: bool = False,
+        sector_id: uuid.UUID | None = None
     ) -> TicketInteraction:
         ticket = await self.get_ticket_for_user(
-            ticket_id, user_employee_id, is_technician=is_technician, can_read_all=can_read_all
+            ticket_id=ticket_id,
+            user_employee_id=user_employee_id,
+            is_technician=is_technician,
+            can_read_all=can_read_all,
+            user_id=author_id,
+            sector_id=sector_id,
         )
 
         if ticket.status == "CLOSED":
@@ -343,6 +409,23 @@ class ServiceDeskService:
             user_id=author_id
         )
 
+        # Disparo seguro de notificação por e-mail (respeitando DEC-012)
+        try:
+            from app.identity.models import UserAccount
+            from app.notifications.email_service import EmailService
+            from sqlalchemy import select
+            stmt_author = select(UserAccount).where(UserAccount.id == author_id)
+            author = (await self.session.execute(stmt_author)).scalar_one_or_none()
+            if author:
+                email_svc = EmailService(self.session)
+                await email_svc.notify_ticket_interaction(
+                    ticket=ticket,
+                    interaction=created_interaction,
+                    author=author
+                )
+        except Exception:
+            logger.exception("Falha ao processar notificações por e-mail do chamado %s", ticket.id)
+
         return created_interaction
 
     # ==========================================================================
@@ -355,12 +438,21 @@ class ServiceDeskService:
         schema: TicketMaterialCreate,
         author_id: uuid.UUID,
         user_employee_id: uuid.UUID | None,
-        is_technician: bool
+        is_technician: bool,
+        can_read_all: bool = False,
+        sector_id: uuid.UUID | None = None
     ) -> TicketMaterial:
         if not is_technician:
             raise ForbiddenException("Apenas técnicos podem gerenciar materiais e estoque.")
 
-        ticket = await self.get_ticket_for_user(ticket_id, user_employee_id, is_technician)
+        ticket = await self.get_ticket_for_user(
+            ticket_id=ticket_id,
+            user_employee_id=user_employee_id,
+            is_technician=is_technician,
+            can_read_all=can_read_all,
+            user_id=author_id,
+            sector_id=sector_id,
+        )
 
         if ticket.status == "CLOSED":
             raise BusinessRuleException("Não é possível adicionar materiais a um chamado fechado.")
@@ -597,10 +689,17 @@ class ServiceDeskService:
         user_employee_id: uuid.UUID | None,
         is_technician: bool = False,
         can_read_all: bool = False,
-        can_see_internal: bool = False
+        can_see_internal: bool = False,
+        user_id: uuid.UUID | None = None,
+        sector_id: uuid.UUID | None = None
     ) -> list[dict]:
         ticket = await self.get_ticket_for_user(
-            ticket_id, user_employee_id, is_technician=is_technician, can_read_all=can_read_all
+            ticket_id=ticket_id,
+            user_employee_id=user_employee_id,
+            is_technician=is_technician,
+            can_read_all=can_read_all,
+            user_id=user_id,
+            sector_id=sector_id,
         )
 
         from app.audit.models import AuditLog

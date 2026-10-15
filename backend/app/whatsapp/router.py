@@ -98,6 +98,68 @@ async def get_whatsapp_config(
     return WhatsAppConfigResponse.model_validate(config)
 
 
+@router.get(
+    "/status",
+    summary="Obtém o estado detalhado da integração (NOT_CONFIGURED, CONNECTED, DISCONNECTED, FAILED)",
+    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
+)
+async def get_whatsapp_integration_status(
+    session: Annotated[AsyncSession, Depends(get_db)]
+):
+    service = WhatsAppConversationService(session)
+    config = await service.get_config()
+    if not config or not config.is_enabled:
+        return {
+            "status": "NOT_CONFIGURED",
+            "provider": config.provider if config else "NONE",
+            "instance_name": config.instance_name if config else "",
+            "message": "Integração desativada ou não configurada"
+        }
+
+    adapter = get_whatsapp_adapter(config)
+    state_res = await adapter.check_connection_state()
+    state = state_res.get("state", "unknown")
+
+    if state in ("open", "connected"):
+        final_status = "CONNECTED"
+        msg = f"Conectado com sucesso ao WhatsApp via {config.provider}"
+    elif state in ("close", "connecting", "not_found"):
+        final_status = "DISCONNECTED"
+        msg = f"Instância aguardando conexão/pareamento via QR Code ({state})"
+    elif state in ("unreachable", "error"):
+        final_status = "FAILED"
+        msg = f"Falha de comunicação com o serviço: {state_res.get('error', state_res.get('message', 'Erro'))}"
+    else:
+        final_status = "CONFIGURED"
+        msg = f"Configurado (estado do provedor: {state})"
+
+    return {
+        "status": final_status,
+        "provider": config.provider,
+        "instance_name": config.instance_name,
+        "api_url": config.api_url,
+        "message": msg,
+        "details": state_res
+    }
+
+
+@router.get(
+    "/qrcode",
+    summary="Obtém o QR Code para pareamento com WhatsApp via Evolution API",
+    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
+)
+async def get_whatsapp_qrcode(
+    session: Annotated[AsyncSession, Depends(get_db)]
+):
+    service = WhatsAppConversationService(session)
+    config = await service.get_config()
+    if not config or not config.is_enabled:
+        raise HTTPException(status_code=400, detail="Integração do WhatsApp está desativada.")
+
+    adapter = get_whatsapp_adapter(config)
+    return await adapter.get_qr_code()
+
+
 @router.patch(
     "/config",
     response_model=WhatsAppConfigResponse,

@@ -1,4 +1,4 @@
-import { Component, OnInit, ViewChild, inject } from '@angular/core';
+import { Component, OnInit, ViewChild, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { FormsModule, ReactiveFormsModule, FormBuilder, FormGroup, Validators } from '@angular/forms';
@@ -47,6 +47,7 @@ export class AssetDetailComponent implements OnInit {
   private attachmentsService = inject(AttachmentsService);
   private snackBar = inject(MatSnackBar);
   private fb = inject(FormBuilder);
+  private cdr = inject(ChangeDetectorRef);
 
   @ViewChild('attachmentsComp') attachmentsComp?: AttachmentsComponent;
 
@@ -57,6 +58,9 @@ export class AssetDetailComponent implements OnInit {
   units: Unit[] = [];
   employees: Employee[] = [];
   attachments: Attachment[] = [];
+
+  isLoading = true;
+  errorMessage = '';
 
   isUploadingStatement = false;
   uploadProgress = 0;
@@ -70,28 +74,52 @@ export class AssetDetailComponent implements OnInit {
   });
 
   ngOnInit(): void {
-    const assetId = this.route.snapshot.paramMap.get('id');
-    if (assetId) {
-      this.loadAsset(assetId);
-      this.loadMovements(assetId);
-      this.loadAttachments(assetId);
+    const initialId = this.route.snapshot.paramMap.get('id');
+    if (initialId) {
+      this.loadAsset(initialId);
+      this.loadMovements(initialId);
+      this.loadAttachments(initialId);
     }
+
+    this.route.paramMap.subscribe((params) => {
+      const assetId = params.get('id');
+      if (assetId && assetId !== this.asset?.id) {
+        this.loadAsset(assetId);
+        this.loadMovements(assetId);
+        this.loadAttachments(assetId);
+      }
+    });
+
     this.loadDependencies();
   }
 
   loadAsset(id: string): void {
+    this.isLoading = true;
+    this.errorMessage = '';
+    this.cdr.markForCheck();
+
     this.assetService.getAsset(id).subscribe({
       next: (asset) => {
         this.asset = asset;
         this.specEntries = asset.technical_specs ? Object.entries(asset.technical_specs) : [];
+        this.isLoading = false;
+        this.cdr.detectChanges();
       },
-      error: (err) => console.error('Erro ao carregar ativo:', err)
+      error: (err) => {
+        console.error('Erro ao carregar ativo:', err);
+        this.errorMessage = 'Não foi possível carregar os detalhes do ativo. Verifique se o equipamento existe ou tente novamente.';
+        this.isLoading = false;
+        this.cdr.detectChanges();
+      }
     });
   }
 
   loadMovements(id: string): void {
     this.assetService.getMovementsByAsset(id).subscribe({
-      next: (movs) => (this.movements = movs),
+      next: (movs) => {
+        this.movements = movs || [];
+        this.cdr.markForCheck();
+      },
       error: (err) => console.error('Erro ao carregar movimentações:', err)
     });
   }
@@ -100,13 +128,17 @@ export class AssetDetailComponent implements OnInit {
     const assetId = id || this.asset?.id;
     if (!assetId) return;
     this.attachmentsService.getAttachments('ASSET', assetId).subscribe({
-      next: (atts) => (this.attachments = atts),
+      next: (atts) => {
+        this.attachments = atts || [];
+        this.cdr.markForCheck();
+      },
       error: (err) => console.error('Erro ao carregar anexos do ativo:', err)
     });
   }
 
   onAttachmentsChanged(atts: Attachment[]): void {
-    this.attachments = atts;
+    this.attachments = atts || [];
+    this.cdr.markForCheck();
   }
 
   get hasSignedStatement(): boolean {
@@ -134,11 +166,13 @@ export class AssetDetailComponent implements OnInit {
 
     this.isUploadingStatement = true;
     this.uploadProgress = 0;
+    this.cdr.markForCheck();
 
     this.attachmentsService.uploadFile(file, 'ASSET', this.asset.id).subscribe({
       next: (httpEvent: any) => {
         if (httpEvent.type === HttpEventType.UploadProgress) {
           this.uploadProgress = Math.round((100 * httpEvent.loaded) / (httpEvent.total || file.size));
+          this.cdr.markForCheck();
         } else if (httpEvent instanceof HttpResponse) {
           this.isUploadingStatement = false;
           this.snackBar.open('Termo assinado anexado com sucesso ao ativo!', 'OK', { duration: 3500 });
@@ -146,11 +180,13 @@ export class AssetDetailComponent implements OnInit {
           if (this.attachmentsComp) {
             this.attachmentsComp.loadAttachments();
           }
+          this.cdr.detectChanges();
         }
       },
       error: (err) => {
         this.isUploadingStatement = false;
         this.snackBar.open(err.error?.detail || err.error?.error?.message || 'Erro ao anexar termo assinado', 'Fechar', { duration: 4000 });
+        this.cdr.detectChanges();
       }
     });
 
@@ -163,26 +199,149 @@ export class AssetDetailComponent implements OnInit {
 
   loadDependencies(): void {
     this.orgService.getUnits().subscribe({
-      next: (units) => (this.units = units),
-      error: (err) => console.error('Erro ao carregar unidades:', err)
+      next: (units) => {
+        this.units = units || [];
+        this.cdr.markForCheck();
+      },
+      error: () => {}
     });
 
     this.orgService.getEmployees().subscribe({
-      next: (emps) => (this.employees = emps),
-      error: (err) => console.error('Erro ao carregar colaboradores:', err)
+      next: (emps) => {
+        this.employees = emps || [];
+        this.cdr.markForCheck();
+      },
+      error: () => {}
     });
+  }
+
+  get displayedUnitName(): string {
+    if (this.asset?.unit?.name) {
+      const code = this.asset.unit.code ? ` (${this.asset.unit.code})` : '';
+      return `${this.asset.unit.name}${code}`;
+    }
+    if (!this.asset?.unit_id) return 'Não definida';
+    const found = this.units?.find((u) => u.id === this.asset?.unit_id);
+    return found ? `${found.name} (${found.code})` : 'Unidade Cadastrada';
+  }
+
+  get displayedEmployeeName(): string {
+    if (this.asset?.employee?.name) {
+      const reg = this.asset.employee.registration_number ? ` (Matrícula: ${this.asset.employee.registration_number})` : '';
+      const pos = this.asset.employee.position ? ` — ${this.asset.employee.position}` : '';
+      return `${this.asset.employee.name}${reg}${pos}`;
+    }
+    if (this.asset?.employee_id) {
+      const found = this.employees?.find((e) => e.id === this.asset?.employee_id);
+      return found ? `${found.name} (${found.registration})` : 'Colaborador Vinculado';
+    }
+    return 'Nenhum (Disponível em Estoque)';
   }
 
   getUnitName(unitId?: string): string {
     if (!unitId) return 'N/A';
-    const found = this.units.find((u) => u.id === unitId);
+    const found = this.units?.find((u) => u.id === unitId);
     return found ? found.name : 'N/A';
   }
 
   getEmployeeName(employeeId?: string | null): string {
     if (!employeeId) return 'Nenhum (Em Estoque)';
-    const found = this.employees.find((e) => e.id === employeeId);
+    const found = this.employees?.find((e) => e.id === employeeId);
     return found ? `${found.name} (${found.registration})` : 'Colaborador';
+  }
+
+  getSpecLabel(key: string): string {
+    const schema = this.asset?.category?.spec_schema;
+    if (schema && schema[key]?.label) {
+      return schema[key].label;
+    }
+    const map: Record<string, string> = {
+      cpu: 'Processador (CPU)',
+      ram: 'Memória RAM',
+      storage: 'Armazenamento / Disco',
+      os: 'Sistema Operacional',
+      tela: 'Tamanho da Tela',
+      imei: 'IMEI / Registro',
+      tipo: 'Tecnologia / Tipo',
+      conexao: 'Interfaces de Conexão',
+      resolucao: 'Resolução Máxima',
+      velocidade: 'Velocidade de Impressão',
+      cor: 'Cor / Acabamento',
+      voltagem: 'Tensão / Voltagem',
+      potencia: 'Potência / Consumo'
+    };
+    return map[key.toLowerCase()] || key.replace(/_/g, ' ').toUpperCase();
+  }
+
+  getSpecIcon(key: string): string {
+    const k = key.toLowerCase();
+    if (k.includes('cpu') || k.includes('proc')) return 'memory';
+    if (k.includes('ram') || k.includes('mem')) return 'speed';
+    if (k.includes('storage') || k.includes('armazenamento') || k.includes('ssd') || k.includes('hd')) return 'dns';
+    if (k.includes('os') || k.includes('sistema')) return 'terminal';
+    if (k.includes('tela') || k.includes('screen') || k.includes('display')) return 'laptop';
+    if (k.includes('imei') || k.includes('serial')) return 'fingerprint';
+    if (k.includes('conex') || k.includes('porta') || k.includes('usb')) return 'cable';
+    if (k.includes('tipo') || k.includes('print')) return 'print';
+    if (k.includes('resol')) return 'aspect_ratio';
+    if (k.includes('vel')) return 'speed';
+    return 'settings_input_component';
+  }
+
+  get isWarrantyActive(): boolean {
+    if (!this.asset?.warranty_expires) return false;
+    try {
+      const exp = new Date(this.asset.warranty_expires);
+      if (isNaN(exp.getTime())) return false;
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      return exp >= today;
+    } catch {
+      return false;
+    }
+  }
+
+  get warrantyDaysRemaining(): number | null {
+    if (!this.asset?.warranty_expires) return null;
+    try {
+      const exp = new Date(this.asset.warranty_expires).getTime();
+      if (isNaN(exp)) return null;
+      const today = new Date().setHours(0, 0, 0, 0);
+      const diffDays = Math.ceil((exp - today) / (1000 * 60 * 60 * 24));
+      return diffDays;
+    } catch {
+      return null;
+    }
+  }
+
+  getStatusBadgeClass(status?: string): string {
+    switch (status) {
+      case 'IN_STOCK':
+        return 'status-in_stock';
+      case 'IN_USE':
+        return 'status-in_use';
+      case 'MAINTENANCE':
+        return 'status-maintenance';
+      case 'DECOMMISSIONED':
+        return 'status-decommissioned';
+      default:
+        return 'status-default';
+    }
+  }
+
+  getStatusLabel(status?: string): string {
+    switch (status) {
+      case 'IN_STOCK':
+        return 'Em Estoque';
+      case 'IN_USE':
+        return 'Em Uso';
+      case 'MAINTENANCE':
+        return 'Em Manutenção';
+      case 'DECOMMISSIONED':
+        return 'Baixado / Desativado';
+      default:
+        return status || 'Desconhecido';
+    }
   }
 
   printResponsibilityStatement(): void {

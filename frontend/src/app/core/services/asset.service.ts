@@ -25,6 +25,20 @@ export interface AssetMovement {
   created_at: string;
 }
 
+export interface AssetUnitSimple {
+  id: string;
+  name: string;
+  code: string;
+  type?: string;
+}
+
+export interface AssetEmployeeSimple {
+  id: string;
+  name: string;
+  registration_number: string;
+  position?: string | null;
+}
+
 export interface Asset {
   id: string;
   tag: string;
@@ -38,6 +52,8 @@ export interface Asset {
   notes?: string | null;
   unit_id: string;
   employee_id?: string | null;
+  unit?: AssetUnitSimple | null;
+  employee?: AssetEmployeeSimple | null;
 }
 
 @Injectable({

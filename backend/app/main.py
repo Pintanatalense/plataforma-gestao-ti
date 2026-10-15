@@ -161,6 +161,12 @@ def _mount_routers(app: FastAPI) -> None:
     from app.whatsapp.router import router as whatsapp_router
     app.include_router(whatsapp_router, prefix=prefix)
 
+    from app.core.demo_router import router as demo_router
+    app.include_router(demo_router, prefix=prefix)
+
+    from app.notifications.email_router import router as email_router
+    app.include_router(email_router, prefix=prefix)
+
 
 # Instância da aplicação
 app = create_app()

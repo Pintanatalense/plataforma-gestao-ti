@@ -103,13 +103,12 @@ class BackupService:
             raise BusinessRuleException(f"Não foi possível gerar o backup: {exc}")
 
     async def _execute_database_dump(self) -> tuple[bool, bytes]:
-        """Tenta executar pg_dump; em ambientes sem pg_dump ou SQLite em teste, gera dump SQL direto."""
+        """Executa pg_dump real ou dump SQLite (em ambiente de teste), evitando backups vazios."""
         db_url = settings.DATABASE_URL
         parsed = urlparse(db_url.replace("postgresql+asyncpg://", "postgresql://").replace("sqlite+aiosqlite://", "sqlite://"))
 
-        # Cenário 1: PostgreSQL com binário pg_dump disponível
-        pg_dump_bin = shutil.which("pg_dump")
-        if pg_dump_bin and parsed.scheme == "postgresql":
+        # Cenário 1: PostgreSQL
+        if "postgresql" in parsed.scheme:
             host = parsed.hostname or "localhost"
             port = str(parsed.port or 5432)
             user = parsed.username or "postgres"
@@ -119,28 +118,183 @@ class BackupService:
             env = os.environ.copy()
             env["PGPASSWORD"] = password
 
-            cmd = [pg_dump_bin, "-h", host, "-p", port, "-U", user, "-d", dbname, "--clean", "--if-exists"]
-            proc = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env=env
-            )
-            stdout, stderr = await proc.communicate()
-            if proc.returncode == 0 and stdout:
-                return True, stdout
-            logger.warning("pg_dump retornou erro ou não estava acessível: %s", stderr.decode(errors="ignore"))
+            # 1.a) Tenta usar o binário nativo pg_dump instalado no container ou host
+            pg_dump_bin = shutil.which("pg_dump")
+            if pg_dump_bin:
+                cmd = [pg_dump_bin, "-h", host, "-p", port, "-U", user, "-d", dbname, "--clean", "--if-exists"]
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env
+                )
+                stdout, stderr = await proc.communicate()
+                if proc.returncode == 0 and stdout:
+                    return True, stdout
+                logger.warning("pg_dump local retornou código %d: %s", proc.returncode, stderr.decode(errors="ignore"))
 
-        # Cenário 2: Fallback controlado para testes ou ambiente isolado (Script SQL informativo e estrutural)
-        dump_header = f"""-- DUMP DE BANCO DE DADOS - PLATAFORMA DE GESTÃO DE TI
--- Gerado em: {datetime.now(timezone.utc).isoformat()}
--- Database Engine: {parsed.scheme}
--- App Version: {settings.APP_VERSION}
-BEGIN;
-SELECT 'BACKUP_CONSISTENCY_CHECK_OK';
-COMMIT;
-"""
-        return True, dump_header.encode("utf-8")
+            # 1.b) Fallback para docker exec se pg_dump não estiver no PATH local mas o container gestao-ti-db estiver acessível
+            docker_bin = shutil.which("docker")
+            if docker_bin:
+                cmd = [docker_bin, "exec", "gestao-ti-db", "pg_dump", "-U", user, "-d", dbname, "--clean", "--if-exists"]
+                try:
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    stdout, stderr = await proc.communicate()
+                    if proc.returncode == 0 and stdout:
+                        return True, stdout
+                    logger.warning("docker exec pg_dump falhou: %s", stderr.decode(errors="ignore"))
+                except Exception as exc:
+                    logger.debug("docker exec indisponível: %s", exc)
+
+            raise RuntimeError("Utilitário pg_dump não encontrado e container gestao-ti-db inacessível.")
+
+        # Cenário 2: SQLite (Ambiente isolado de testes automatizados)
+        if "sqlite" in parsed.scheme:
+            sqlite_path = parsed.path.lstrip("/")
+            dump_lines = [
+                f"-- DUMP SQLITE - PLATAFORMA DE GESTÃO DE TI",
+                f"-- Gerado em: {datetime.now(timezone.utc).isoformat()}",
+                "PRAGMA foreign_keys=OFF;",
+                "BEGIN TRANSACTION;",
+            ]
+            if os.path.exists(sqlite_path):
+                import sqlite3
+                con = sqlite3.connect(sqlite_path)
+                for line in con.iterdump():
+                    dump_lines.append(line)
+                con.close()
+            dump_lines.append("COMMIT;")
+            return True, "\n".join(dump_lines).encode("utf-8")
+
+        raise RuntimeError(f"Engine de banco de dados não suportado para dump: {parsed.scheme}")
+
+    async def validate_backup_integrity(self, backup_id: uuid.UUID) -> dict:
+        """Verifica se o arquivo existe fisicamente e se seu hash SHA-256 confere com o registrado."""
+        backup = await self.get_backup(backup_id)
+        target_file = self.storage_dir / backup.filename
+
+        if not target_file.exists():
+            return {
+                "backup_id": str(backup.id),
+                "filename": backup.filename,
+                "exists": False,
+                "is_valid": False,
+                "error": "Arquivo físico não encontrado no disco."
+            }
+
+        with open(target_file, "rb") as f:
+            content = f.read()
+
+        current_hash = hashlib.sha256(content).hexdigest()
+        is_valid = (current_hash == backup.checksum_sha256)
+
+        return {
+            "backup_id": str(backup.id),
+            "filename": backup.filename,
+            "exists": True,
+            "is_valid": is_valid,
+            "expected_sha256": backup.checksum_sha256,
+            "calculated_sha256": current_hash,
+            "size_bytes": len(content)
+        }
+
+    async def restore_backup(self, backup_id: uuid.UUID) -> dict:
+        """Restaura o banco de dados a partir do arquivo de backup compactado."""
+        integrity = await self.validate_backup_integrity(backup_id)
+        if not integrity["is_valid"]:
+            raise BusinessRuleException(f"Falha de integridade no backup: {integrity.get('error', 'Hash SHA-256 divergente')}")
+
+        backup = await self.get_backup(backup_id)
+        target_file = self.storage_dir / backup.filename
+
+        with open(target_file, "rb") as f:
+            compressed_bytes = f.read()
+
+        raw_sql = gzip.decompress(compressed_bytes)
+
+        db_url = settings.DATABASE_URL
+        parsed = urlparse(db_url.replace("postgresql+asyncpg://", "postgresql://").replace("sqlite+aiosqlite://", "sqlite://"))
+
+        if "postgresql" in parsed.scheme:
+            host = parsed.hostname or "localhost"
+            port = str(parsed.port or 5432)
+            user = parsed.username or "postgres"
+            password = parsed.password or "postgres"
+            dbname = parsed.path.lstrip("/") or "gestao_ti"
+
+            env = os.environ.copy()
+            env["PGPASSWORD"] = password
+
+            psql_bin = shutil.which("psql")
+            if psql_bin:
+                cmd = [psql_bin, "-h", host, "-p", port, "-U", user, "-d", dbname]
+                proc = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdin=asyncio.subprocess.PIPE,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    env=env
+                )
+                stdout, stderr = await proc.communicate(input=raw_sql)
+                if proc.returncode != 0:
+                    raise BusinessRuleException(f"Erro ao restaurar banco com psql: {stderr.decode(errors='ignore')}")
+            else:
+                docker_bin = shutil.which("docker")
+                if docker_bin:
+                    cmd = [docker_bin, "exec", "-i", "gestao-ti-db", "psql", "-U", user, "-d", dbname]
+                    proc = await asyncio.create_subprocess_exec(
+                        *cmd,
+                        stdin=asyncio.subprocess.PIPE,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                    )
+                    stdout, stderr = await proc.communicate(input=raw_sql)
+                    if proc.returncode != 0:
+                        raise BusinessRuleException(f"Erro ao restaurar banco via docker exec: {stderr.decode(errors='ignore')}")
+                else:
+                    raise RuntimeError("Nem psql nativo nem docker foram encontrados para restauração.")
+
+        elif "sqlite" in parsed.scheme:
+            sqlite_path = parsed.path.lstrip("/")
+            import sqlite3
+            con = sqlite3.connect(sqlite_path)
+            con.executescript(raw_sql.decode("utf-8"))
+            con.close()
+
+        logger.info("Backup %s restaurado com sucesso.", backup.filename)
+        return {
+            "success": True,
+            "backup_id": str(backup.id),
+            "filename": backup.filename,
+            "restored_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    async def get_recent_valid_backup(self, max_age_hours: int = 24) -> tuple[bool, DatabaseBackup | None]:
+        """Verifica se existe ao menos um backup com status SUCCESS gerado nas últimas N horas."""
+        stmt = (
+            select(DatabaseBackup)
+            .where(DatabaseBackup.status == "SUCCESS")
+            .order_by(DatabaseBackup.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        latest = result.scalars().first()
+
+        if not latest:
+            return False, None
+
+        age = datetime.now(timezone.utc) - latest.created_at.replace(tzinfo=timezone.utc) if latest.created_at.tzinfo is None else datetime.now(timezone.utc) - latest.created_at
+        if age.total_seconds() > (max_age_hours * 3600):
+            return False, latest
+
+        integrity = await self.validate_backup_integrity(latest.id)
+        if not integrity["is_valid"]:
+            return False, latest
+
+        return True, latest
 
     async def _apply_retention_policy(self) -> None:
         """Mantém apenas a quantidade máxima estipulada em configurações (default 15)."""

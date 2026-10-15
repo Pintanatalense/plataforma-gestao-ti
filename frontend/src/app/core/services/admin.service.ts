@@ -270,4 +270,104 @@ export class AdminService {
       req
     );
   }
+
+  // --- WhatsApp Status & QR Code (Evolution API) ---
+  getWhatsAppIntegrationStatus(): Observable<WhatsAppIntegrationStatus> {
+    return this.http.get<WhatsAppIntegrationStatus>(`${this.waUrl}/status`);
+  }
+
+  getWhatsAppQrCode(): Observable<WhatsAppQrCodeResponse> {
+    return this.http.get<WhatsAppQrCodeResponse>(`${this.waUrl}/qrcode`);
+  }
+
+  // --- Gestão de Ambientes & Demonstração (MOD-01) ---
+  getDemoStatus(): Observable<DemoStatus> {
+    return this.http.get<DemoStatus>('/api/v1/system/demo/status');
+  }
+
+  previewDemoClean(): Observable<DemoCleanPreview> {
+    return this.http.get<DemoCleanPreview>('/api/v1/system/demo/preview-clean');
+  }
+
+  cleanDemoData(confirmationPhrase: string): Observable<{ status: string; message: string; summary: any }> {
+    return this.http.post<{ status: string; message: string; summary: any }>('/api/v1/system/demo/clean', {
+      confirmation_phrase: confirmationPhrase
+    });
+  }
+
+  seedDemoData(): Observable<{ status: string; message: string }> {
+    return this.http.post<{ status: string; message: string }>('/api/v1/system/demo/seed', {});
+  }
+
+  // --- Notificações por E-mail & Servidor SMTP (MOD-11) ---
+  getSmtpConfig(): Observable<SmtpConfig> {
+    return this.http.get<SmtpConfig>('/api/v1/notifications/email/config');
+  }
+
+  updateSmtpConfig(config: SmtpConfig): Observable<SmtpConfig> {
+    return this.http.put<SmtpConfig>('/api/v1/notifications/email/config', config);
+  }
+
+  testSmtpConnection(req: { target_email: string } & Partial<SmtpConfig>): Observable<{ success: boolean; message: string; target_email: string }> {
+    return this.http.post<{ success: boolean; message: string; target_email: string }>('/api/v1/notifications/email/test', req);
+  }
+}
+
+export interface DemoStatus {
+  system_mode: 'DEMO' | 'PRODUCTION';
+  is_demo_mode: boolean;
+  total_demo_records: number;
+  entities: Record<string, number>;
+  latest_backup: {
+    filename: string;
+    created_at: string;
+    is_usable: boolean;
+  } | null;
+}
+
+export interface DemoCleanPreview {
+  records_to_delete: Record<string, number>;
+  total_to_delete: number;
+  preserved_items: {
+    system_settings: string;
+    admin_users: number;
+    audit_logs: number;
+    backups: number;
+  };
+  backup_status: {
+    has_recent_backup: boolean;
+    backup_file: string | null;
+    created_at: string | null;
+    is_usable: boolean;
+  };
+  can_proceed: boolean;
+  blocking_reasons: string[];
+}
+
+export interface SmtpConfig {
+  is_enabled: boolean;
+  host: string;
+  port: number;
+  security: string;
+  username: string;
+  password?: string;
+  from_email: string;
+  from_name: string;
+  app_base_url: string;
+}
+
+export interface WhatsAppIntegrationStatus {
+  status: 'NOT_CONFIGURED' | 'CONNECTED' | 'DISCONNECTED' | 'FAILED' | 'CONFIGURED';
+  provider: string;
+  instance_name: string;
+  api_url: string;
+  message: string;
+  details?: any;
+}
+
+export interface WhatsAppQrCodeResponse {
+  qrcode: string | null;
+  pairingCode: string | null;
+  message?: string;
+  error?: string;
 }

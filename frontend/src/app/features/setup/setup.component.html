@@ -1,24 +1,45 @@
 <div class="setup-container mat-app-background">
   <mat-card class="setup-card">
     <mat-card-header>
-      <mat-card-title>Bem-vindo à Plataforma</mat-card-title>
-      <mat-card-subtitle>Crie o primeiro usuário administrador para começar</mat-card-subtitle>
+      <mat-card-title>Assistente de Instalação e Implantação</mat-card-title>
+      <mat-card-subtitle>Configure o primeiro administrador e o modo de operação inicial</mat-card-subtitle>
     </mat-card-header>
 
     <form [formGroup]="setupForm" (ngSubmit)="onSubmit()">
       <mat-card-content>
         <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Nome Completo</mat-label>
-          <input matInput formControlName="name" placeholder="Ex: João da Silva">
+          <mat-label>Modo de Inicialização do Sistema</mat-label>
+          <mat-select formControlName="setup_mode">
+            <mat-option value="CLEAN">Implantação Empresarial Limpa (Pronto para Produção)</mat-option>
+            <mat-option value="DEMO">Ambiente Demonstrativo (com Dados Fictícios de Exemplo)</mat-option>
+          </mat-select>
+          <mat-hint>Escolha 'CLEAN' para uma empresa real, ou 'DEMO' para testes e homologação</mat-hint>
+        </mat-form-field>
+
+        <div *ngIf="setupForm.get('setup_mode')?.value === 'CLEAN'" style="margin-top: 10px;">
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>Razão Social / Nome da Empresa Contratante</mat-label>
+            <input matInput formControlName="company_name" placeholder="Ex: Acme Tecnologia Ltda">
+          </mat-form-field>
+
+          <mat-form-field appearance="outline" class="full-width">
+            <mat-label>CNPJ da Empresa (Opcional)</mat-label>
+            <input matInput formControlName="company_cnpj" placeholder="Ex: 00.000.000/0001-00">
+          </mat-form-field>
+        </div>
+
+        <mat-form-field appearance="outline" class="full-width" style="margin-top: 10px;">
+          <mat-label>Nome Completo do Administrador</mat-label>
+          <input matInput formControlName="name" placeholder="Ex: Administrador do Sistema">
         </mat-form-field>
 
         <mat-form-field appearance="outline" class="full-width">
-          <mat-label>E-mail</mat-label>
-          <input matInput formControlName="email" type="email" placeholder="admin@empresa.com">
+          <mat-label>E-mail de Acesso</mat-label>
+          <input matInput formControlName="email" type="email" placeholder="admin@empresa.com.br">
         </mat-form-field>
 
         <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Senha</mat-label>
+          <mat-label>Senha Mestra</mat-label>
           <input matInput [type]="hidePassword ? 'password' : 'text'" formControlName="password">
           <button mat-icon-button matSuffix (click)="hidePassword = !hidePassword" type="button">
             <mat-icon>{{hidePassword ? 'visibility_off' : 'visibility'}}</mat-icon>
@@ -38,7 +59,7 @@
       <mat-card-actions>
         <button mat-flat-button color="primary" type="submit" [disabled]="setupForm.invalid || isLoading" class="full-width">
           <mat-spinner diameter="20" *ngIf="isLoading"></mat-spinner>
-          <span *ngIf="!isLoading">Criar Administrador</span>
+          <span *ngIf="!isLoading">Concluir Instalação</span>
         </button>
       </mat-card-actions>
     </form>

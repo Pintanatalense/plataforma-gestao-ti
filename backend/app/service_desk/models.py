@@ -60,6 +60,7 @@ class Ticket(Base, TimestampMixin):
     
     # Relacionamento Interno
     category_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sd_ticket_category.id"), nullable=True)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Relationships
     category: Mapped["TicketCategory | None"] = relationship("TicketCategory")

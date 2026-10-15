@@ -36,13 +36,20 @@ async def verify_entity_access(
         
         permissions = payload.get("permissions", [])
         is_technician = "service_desk.tickets.manage" in permissions
+        can_read_all = "service_desk.tickets.read_all" in permissions
         
         repo_ident = IdentityRepository(db)
         user = await repo_ident.get_user(current_user_id)
         emp_id = user.employee_id if user else None
         
         sd_service = ServiceDeskService(db)
-        await sd_service.get_ticket_for_user(entity_id, emp_id, is_technician)
+        await sd_service.get_ticket_for_user(
+            ticket_id=entity_id,
+            user_employee_id=emp_id,
+            is_technician=is_technician,
+            can_read_all=can_read_all,
+            user_id=current_user_id,
+        )
 
 
 @router.post("", response_model=AttachmentOut, status_code=status.HTTP_201_CREATED)

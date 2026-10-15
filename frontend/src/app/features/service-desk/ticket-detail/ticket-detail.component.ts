@@ -32,6 +32,8 @@ import { StockItem, StockService } from '../../../core/services/stock.service';
 import { Employee, OrganizationService } from '../../../core/services/organization.service';
 import { AdminService, WhatsAppTemplate } from '../../../core/services/admin.service';
 import { AttachmentsComponent } from '../../../shared/components/attachments/attachments.component';
+import { AttachmentsService, Attachment } from '../../../core/services/attachments.service';
+import { HttpResponse } from '@angular/common/http';
 
 @Component({
   selector: 'app-ticket-detail',
@@ -66,6 +68,7 @@ export class TicketDetailComponent implements OnInit {
   private stockService = inject(StockService);
   private orgService = inject(OrganizationService);
   private adminService = inject(AdminService);
+  public attachmentsService = inject(AttachmentsService);
   public authService = inject(AuthService);
   private fb = inject(FormBuilder);
   private snackBar = inject(MatSnackBar);
@@ -74,7 +77,9 @@ export class TicketDetailComponent implements OnInit {
 
   ticket: Ticket | null = null;
   history: TicketHistoryItem[] = [];
+  attachments: Attachment[] = [];
   isLoadingHistory = false;
+  isUploadingChatFile = false;
 
   messageForm: FormGroup;
   materialForm: FormGroup;
@@ -155,6 +160,7 @@ export class TicketDetailComponent implements OnInit {
       next: (data) => {
         this.ticket = data;
         this.loadHistory(id);
+        this.loadAttachments(id);
         this.cdr.markForCheck();
         this.scrollToBottom();
       },
@@ -163,6 +169,51 @@ export class TicketDetailComponent implements OnInit {
         this.snackBar.open('Erro ao carregar chamado.', 'Fechar', { duration: 3000 });
       }
     });
+  }
+
+  loadAttachments(ticketId: string): void {
+    this.attachmentsService.getAttachments('TICKET', ticketId).subscribe({
+      next: (atts) => {
+        this.attachments = atts || [];
+        this.cdr.markForCheck();
+      },
+      error: () => {}
+    });
+  }
+
+  onTicketAttachmentsChanged(atts: Attachment[]): void {
+    this.attachments = atts || [];
+    this.cdr.markForCheck();
+  }
+
+  onChatFileSelected(event: any): void {
+    const file: File = event.target.files?.[0];
+    if (!file || !this.ticket) return;
+
+    this.isUploadingChatFile = true;
+    this.cdr.markForCheck();
+
+    this.attachmentsService.uploadFile(file, 'TICKET', this.ticket.id).subscribe({
+      next: (res: any) => {
+        if (res instanceof HttpResponse) {
+          this.isUploadingChatFile = false;
+          this.snackBar.open(`Arquivo "${file.name}" anexado com sucesso ao chamado!`, 'OK', { duration: 3500 });
+          this.loadAttachments(this.ticket!.id);
+          this.cdr.detectChanges();
+        }
+      },
+      error: (err) => {
+        this.isUploadingChatFile = false;
+        this.snackBar.open(err?.error?.detail || 'Erro ao anexar arquivo ao chamado', 'Fechar', { duration: 4000 });
+        this.cdr.detectChanges();
+      }
+    });
+
+    event.target.value = null;
+  }
+
+  downloadAttachment(att: Attachment): void {
+    this.attachmentsService.downloadAttachment(att.id, att.filename);
   }
 
   loadHistory(id: string) {

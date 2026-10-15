@@ -62,8 +62,8 @@ class WhatsAppSession(Base, TimestampMixin):
     context_data: Mapped[dict] = mapped_column(JSONB, default=dict, nullable=False)
     last_interaction_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
-    employee = relationship("app.organization.models.Employee", lazy="selectin")
-    current_ticket = relationship("app.service_desk.models.Ticket", lazy="selectin")
+    employee = relationship("Employee", lazy="selectin")
+    current_ticket = relationship("Ticket", lazy="selectin")
 
 
 class WhatsAppTemplate(Base, TimestampMixin):

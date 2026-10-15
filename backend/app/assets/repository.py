@@ -30,7 +30,15 @@ class AssetRepository:
         return category
 
     async def get_asset(self, asset_id: uuid.UUID) -> Asset | None:
-        stmt = select(Asset).options(selectinload(Asset.category)).where(Asset.id == asset_id, Asset.is_active == True)
+        stmt = (
+            select(Asset)
+            .options(
+                selectinload(Asset.category),
+                selectinload(Asset.unit),
+                selectinload(Asset.employee),
+            )
+            .where(Asset.id == asset_id, Asset.is_active == True)
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -40,12 +48,28 @@ class AssetRepository:
         return result.scalar_one_or_none()
         
     async def get_asset_by_tag(self, tag: str) -> Asset | None:
-        stmt = select(Asset).options(selectinload(Asset.category)).where(Asset.tag == tag, Asset.is_active == True)
+        stmt = (
+            select(Asset)
+            .options(
+                selectinload(Asset.category),
+                selectinload(Asset.unit),
+                selectinload(Asset.employee),
+            )
+            .where(Asset.tag == tag, Asset.is_active == True)
+        )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def list_assets(self, unit_id: uuid.UUID | None = None, employee_id: uuid.UUID | None = None) -> Sequence[Asset]:
-        stmt = select(Asset).options(selectinload(Asset.category)).where(Asset.is_active == True)
+        stmt = (
+            select(Asset)
+            .options(
+                selectinload(Asset.category),
+                selectinload(Asset.unit),
+                selectinload(Asset.employee),
+            )
+            .where(Asset.is_active == True)
+        )
         if unit_id:
             stmt = stmt.where(Asset.unit_id == unit_id)
         if employee_id:

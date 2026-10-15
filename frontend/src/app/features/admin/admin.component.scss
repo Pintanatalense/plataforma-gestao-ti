@@ -1404,3 +1404,87 @@
   }
 }
 
+.connection-state-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  margin-bottom: 20px;
+
+  .state-indicator {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+
+    div {
+      display: flex;
+      flex-direction: column;
+
+      strong {
+        font-size: 13px;
+        color: #1e293b;
+      }
+
+      span {
+        font-size: 12px;
+        color: #64748b;
+      }
+    }
+
+    &.connected {
+      mat-icon { color: #16a34a; }
+      strong { color: #166534; }
+    }
+
+    &.disconnected {
+      mat-icon { color: #d97706; }
+      strong { color: #b45309; }
+    }
+
+    &.failed {
+      mat-icon { color: #dc2626; }
+      strong { color: #991b1b; }
+    }
+
+    &.not_configured {
+      mat-icon { color: #94a3b8; }
+      strong { color: #475569; }
+    }
+  }
+
+  .state-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+}
+
+.modal-backdrop {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(3px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  animation: fadeIn 0.15s ease-in-out;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+

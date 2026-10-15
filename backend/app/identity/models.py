@@ -16,8 +16,7 @@ from app.core.soft_delete import SoftDeleteMixin
 from app.core.timestamps import TimestampMixin
 from app.database import Base
 
-if TYPE_CHECKING:
-    from app.organization.models import Employee  # type: ignore
+from app.organization.models import Employee
 
 
 # Tabela associativa entre UserAccount e Role
@@ -50,6 +49,7 @@ class UserAccount(Base, TimestampMixin, SoftDeleteMixin):
     # Flags de acesso
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # Superadmin
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_login_ip: Mapped[str | None] = mapped_column(String(50), nullable=True)

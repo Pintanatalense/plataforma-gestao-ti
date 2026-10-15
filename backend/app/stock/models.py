@@ -1,6 +1,6 @@
 import uuid
 from typing import TYPE_CHECKING
-from sqlalchemy import String, Integer, ForeignKey, Text
+from sqlalchemy import Boolean, String, Integer, ForeignKey, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -29,12 +29,13 @@ class StockItem(Base, TimestampMixin):
     unit_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("units.id"), nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     min_quantity: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     category_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("stk_categories.id"), nullable=True)
     technical_specs: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
 
     category: Mapped["StockCategory | None"] = relationship("StockCategory", back_populates="items")
-    unit = relationship("app.organization.models.Unit", back_populates="stock_items")
+    unit = relationship("Unit", back_populates="stock_items")
     movements = relationship("StockMovement", back_populates="item", cascade="all, delete-orphan")
 
 
@@ -52,4 +53,4 @@ class StockMovement(Base, TimestampMixin):
     notes: Mapped[str | None] = mapped_column(String(500), nullable=True)
 
     item = relationship("StockItem", back_populates="movements")
-    author = relationship("app.identity.models.UserAccount")
+    author = relationship("UserAccount")

@@ -132,6 +132,9 @@ class SetupStatus(BaseModel):
 
 
 class InitialSetup(BaseModel):
-    """Criação do primeiro administrador — só aceita enquanto não houver usuários."""
+    """Criação do primeiro administrador — escolha entre base limpa empresarial ou demonstração."""
     email: EmailStr
     password: str = Field(..., min_length=8)
+    setup_mode: str = Field("CLEAN", description="CLEAN para base limpa empresarial, DEMO para dados fictícios")
+    company_name: str | None = Field(None, description="Nome da empresa contratante")
+    company_cnpj: str | None = Field(None, description="CNPJ da empresa contratante")

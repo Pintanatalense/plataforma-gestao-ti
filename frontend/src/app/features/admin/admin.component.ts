@@ -24,7 +24,12 @@ import {
   CsvAnalysisResponse,
   CsvImportResult,
   DbBackup,
-  CsvExportRequest
+  CsvExportRequest,
+  DemoStatus,
+  DemoCleanPreview,
+  SmtpConfig,
+  WhatsAppIntegrationStatus,
+  WhatsAppQrCodeResponse
 } from '../../core/services/admin.service';
 
 
@@ -144,12 +149,50 @@ export class AdminComponent implements OnInit {
   backups: DbBackup[] = [];
   generatingBackup = false;
 
+  // --- Gestão de Ambientes & Demonstração (MOD-01) ---
+  demoStatus: DemoStatus | null = null;
+  loadingDemoStatus = false;
+  cleanPreview: DemoCleanPreview | null = null;
+  loadingCleanPreview = false;
+  showCleanConfirmModal = false;
+  cleanConfirmationPhrase = '';
+  cleaningDemo = false;
+  seedingDemo = false;
+
+  // --- Notificações por E-mail / SMTP (MOD-11) ---
+  smtpConfig: SmtpConfig = {
+    is_enabled: false,
+    host: 'smtp.gmail.com',
+    port: 587,
+    security: 'STARTTLS',
+    username: '',
+    from_email: 'suporte@empresa.com.br',
+    from_name: 'Service Desk Central',
+    app_base_url: 'http://localhost'
+  };
+  smtpPasswordInput = '';
+  loadingSmtpConfig = false;
+  savingSmtpConfig = false;
+  testSmtpEmail = '';
+  testingSmtp = false;
+  smtpTestFeedback: { success: boolean; message: string } | null = null;
+
+  // --- WhatsApp Status & QR Code (Evolution API) ---
+  waIntegrationStatus: WhatsAppIntegrationStatus | null = null;
+  loadingWaStatus = false;
+  showQrModal = false;
+  qrData: WhatsAppQrCodeResponse | null = null;
+  loadingQr = false;
+
   ngOnInit(): void {
     this.loadWaConfig();
+    this.loadWaStatus();
     this.loadTemplates();
     this.loadOutboxStats();
     this.loadOutbox();
     this.loadBackups();
+    this.loadDemoStatus();
+    this.loadSmtpConfig();
   }
 
   // ==========================================
@@ -617,6 +660,195 @@ export class AdminComponent implements OnInit {
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
       }
     });
+  }
+
+  // ==========================================
+  // GESTÃO DE AMBIENTES & DEMONSTRAÇÃO (MOD-01)
+  // ==========================================
+  loadDemoStatus(): void {
+    this.loadingDemoStatus = true;
+    this.adminService.getDemoStatus().subscribe({
+      next: (res) => {
+        this.demoStatus = res;
+        this.loadingDemoStatus = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.loadingDemoStatus = false;
+      }
+    });
+  }
+
+  openCleanPreview(): void {
+    this.loadingCleanPreview = true;
+    this.cleanConfirmationPhrase = '';
+    this.adminService.previewDemoClean().subscribe({
+      next: (res) => {
+        this.cleanPreview = res;
+        this.loadingCleanPreview = false;
+        this.showCleanConfirmModal = true;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.loadingCleanPreview = false;
+        const msg = err.error?.detail || 'Erro ao carregar prévia de limpeza.';
+        this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+      }
+    });
+  }
+
+  closeCleanModal(): void {
+    this.showCleanConfirmModal = false;
+    this.cleanConfirmationPhrase = '';
+  }
+
+  executeCleanDemo(): void {
+    if (this.cleanConfirmationPhrase.trim() !== 'LIMPAR DADOS DE DEMONSTRACAO') {
+      this.snackBar.open('Frase de confirmação incorreta. Digite exatamente: LIMPAR DADOS DE DEMONSTRACAO', 'OK', { duration: 4000 });
+      return;
+    }
+
+    this.cleaningDemo = true;
+    this.adminService.cleanDemoData(this.cleanConfirmationPhrase.trim()).subscribe({
+      next: (res) => {
+        this.cleaningDemo = false;
+        this.showCleanConfirmModal = false;
+        this.snackBar.open(`Limpeza concluída! ${res.message}`, 'OK', { duration: 5000 });
+        this.loadDemoStatus();
+      },
+      error: (err) => {
+        this.cleaningDemo = false;
+        const msg = err.error?.detail || 'Falha ao executar limpeza de demonstração.';
+        this.snackBar.open(msg, 'Fechar', { duration: 6000 });
+      }
+    });
+  }
+
+  executeSeedDemo(): void {
+    if (!confirm('Deseja recarregar o conjunto modelo de dados demonstrativos?')) {
+      return;
+    }
+    this.seedingDemo = true;
+    this.adminService.seedDemoData().subscribe({
+      next: (res) => {
+        this.seedingDemo = false;
+        this.snackBar.open('Dados demonstrativos recarregados com sucesso!', 'OK', { duration: 4000 });
+        this.loadDemoStatus();
+      },
+      error: (err) => {
+        this.seedingDemo = false;
+        const msg = err.error?.detail || 'Erro ao recarregar dados demonstrativos.';
+        this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+      }
+    });
+  }
+
+  // ==========================================
+  // NOTIFICAÇÕES POR E-MAIL / SMTP (MOD-11)
+  // ==========================================
+  loadSmtpConfig(): void {
+    this.loadingSmtpConfig = true;
+    this.adminService.getSmtpConfig().subscribe({
+      next: (cfg) => {
+        this.smtpConfig = cfg;
+        this.smtpPasswordInput = cfg.password || '';
+        this.loadingSmtpConfig = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.loadingSmtpConfig = false;
+      }
+    });
+  }
+
+  saveSmtpConfig(): void {
+    this.savingSmtpConfig = true;
+    const payload: SmtpConfig = {
+      ...this.smtpConfig,
+      password: this.smtpPasswordInput ? this.smtpPasswordInput : undefined
+    };
+    this.adminService.updateSmtpConfig(payload).subscribe({
+      next: (cfg) => {
+        this.smtpConfig = cfg;
+        this.smtpPasswordInput = cfg.password || '********';
+        this.savingSmtpConfig = false;
+        this.snackBar.open('Configurações de SMTP salvas com sucesso!', 'OK', { duration: 3000 });
+      },
+      error: (err) => {
+        this.savingSmtpConfig = false;
+        const msg = err.error?.detail || 'Erro ao salvar configuração SMTP.';
+        this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+      }
+    });
+  }
+
+  runSmtpTest(): void {
+    if (!this.testSmtpEmail || !this.testSmtpEmail.includes('@')) {
+      this.snackBar.open('Informe um e-mail de destino válido para o teste.', 'OK', { duration: 3000 });
+      return;
+    }
+    this.testingSmtp = true;
+    this.smtpTestFeedback = null;
+    this.adminService.testSmtpConnection({
+      target_email: this.testSmtpEmail,
+      host: this.smtpConfig.host,
+      port: this.smtpConfig.port,
+      security: this.smtpConfig.security,
+      username: this.smtpConfig.username,
+      password: this.smtpPasswordInput && this.smtpPasswordInput !== '********' ? this.smtpPasswordInput : undefined,
+      from_email: this.smtpConfig.from_email,
+      from_name: this.smtpConfig.from_name
+    }).subscribe({
+      next: (res) => {
+        this.testingSmtp = false;
+        this.smtpTestFeedback = { success: true, message: `E-mail de teste enviado com sucesso para ${res.target_email}!` };
+      },
+      error: (err) => {
+        this.testingSmtp = false;
+        const msg = err.error?.detail || 'Falha na conexão SMTP.';
+        this.smtpTestFeedback = { success: false, message: msg };
+      }
+    });
+  }
+
+  // ==========================================
+  // WHATSAPP STATUS & QR CODE (EVOLUTION API)
+  // ==========================================
+  loadWaStatus(): void {
+    this.loadingWaStatus = true;
+    this.adminService.getWhatsAppIntegrationStatus().subscribe({
+      next: (status) => {
+        this.waIntegrationStatus = status;
+        this.loadingWaStatus = false;
+        this.cdr.detectChanges();
+      },
+      error: () => {
+        this.loadingWaStatus = false;
+      }
+    });
+  }
+
+  openQrModal(): void {
+    this.showQrModal = true;
+    this.loadingQr = true;
+    this.qrData = null;
+    this.adminService.getWhatsAppQrCode().subscribe({
+      next: (res) => {
+        this.qrData = res;
+        this.loadingQr = false;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.loadingQr = false;
+        const msg = err.error?.detail || 'Falha ao buscar QR Code da Evolution API.';
+        this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+      }
+    });
+  }
+
+  closeQrModal(): void {
+    this.showQrModal = false;
+    this.loadWaStatus();
   }
 
   // ==========================================

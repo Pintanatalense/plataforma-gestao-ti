@@ -203,6 +203,100 @@
   }
 }
 
+.attachments-card {
+  .attachments-upload-area {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px;
+    border: 2px dashed #cbd5e1;
+    border-radius: 12px;
+    background: #f8fafc;
+    flex-wrap: wrap;
+
+    .add-file-btn {
+      border-radius: 8px;
+      font-weight: 600;
+      border-color: #94a3b8;
+      color: #1e293b;
+      mat-icon {
+        margin-right: 6px;
+        color: #2563eb;
+      }
+    }
+
+    .upload-hint {
+      font-size: 12.5px;
+      color: #64748b;
+    }
+  }
+
+  .selected-files-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 14px;
+
+    .selected-file-chip {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 8px 12px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 10px;
+
+      .file-chip-icon {
+        color: #2563eb;
+        font-size: 20px;
+        width: 20px;
+        height: 20px;
+      }
+
+      .file-chip-info {
+        display: flex;
+        flex-direction: column;
+        flex: 1;
+        min-width: 0;
+
+        .file-chip-name {
+          font-size: 13px;
+          font-weight: 600;
+          color: #1e293b;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
+        }
+
+        .file-chip-size {
+          font-size: 11px;
+          color: #64748b;
+        }
+      }
+
+      .remove-chip-btn {
+        color: #94a3b8;
+        &:hover {
+          color: #ef4444;
+        }
+      }
+    }
+  }
+
+  .upload-progress-box {
+    margin-top: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+
+    span {
+      font-size: 12px;
+      color: #2563eb;
+      font-weight: 500;
+    }
+  }
+}
+
 .form-actions {
   display: flex;
   justify-content: flex-end;

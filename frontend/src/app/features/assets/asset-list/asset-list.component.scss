@@ -63,28 +63,63 @@
         color: #475569;
         font-size: 13px;
         background-color: #f8fafc;
+        white-space: nowrap;
       }
 
       td {
         color: #1e293b;
-        font-size: 14px;
+        font-size: 13.5px;
+      }
+
+      tr.clickable-row {
+        cursor: pointer;
+        transition: background-color 0.15s ease;
+
+        &:hover {
+          background-color: #f8fafc;
+        }
       }
 
       .tag-text {
-        font-family: monospace;
-        font-weight: 600;
+        font-family: ui-monospace, SFMono-Regular, monospace;
+        font-weight: 700;
         background: #f1f5f9;
         padding: 3px 8px;
         border-radius: 4px;
         color: #334155;
+        border: 1px solid #e2e8f0;
       }
 
       .name-text {
-        font-weight: 500;
+        font-weight: 600;
+        color: #0f172a;
       }
 
       .category-text {
         color: #64748b;
+      }
+
+      .unit-text, .employee-text {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+        color: #334155;
+
+        mat-icon {
+          font-size: 16px;
+          width: 16px;
+          height: 16px;
+          color: #94a3b8;
+        }
+
+        &.in-stock {
+          color: #059669;
+          font-weight: 500;
+          mat-icon {
+            color: #059669;
+          }
+        }
       }
 
       .status-badge {
@@ -130,19 +165,30 @@
         }
       }
 
-        .action-buttons {
-          display: flex;
-          justify-content: flex-end;
-          gap: 8px;
+      .action-buttons {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 4px;
 
-          .doc-btn {
-            color: #0284c7;
-          }
+        .doc-btn {
+          color: #0284c7;
+          &:hover { background: #f0f9ff; }
+        }
 
-          .view-btn {
-            color: #3b82f6;
+        .view-btn {
+          color: #2563eb;
+          &:hover { background: #eff6ff; }
+        }
+
+        .open-page-btn {
+          color: #64748b;
+          &:hover {
+            color: #0f172a;
+            background: #f1f5f9;
           }
         }
+      }
     }
 
     .empty-state {

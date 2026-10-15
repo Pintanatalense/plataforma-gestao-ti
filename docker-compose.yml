@@ -55,6 +55,7 @@ services:
       - "${API_PORT:-8000}:8000"
     volumes:
       - attachments_data:/data/attachments
+      - backups_data:/data/backups
       - ./backend:/app
     depends_on:
       postgres:
@@ -82,6 +83,32 @@ services:
     depends_on:
       - backend
 
+  # ---------------------------------------------------------------------------
+  # Evolution API v2 (Opcional — Iniciar com: docker compose --profile evolution up -d)
+  # ---------------------------------------------------------------------------
+  evolution-api:
+    image: atendai/evolution-api:v2.1.2
+    container_name: gestao-ti-evolution
+    profiles:
+      - evolution
+    restart: unless-stopped
+    ports:
+      - "${EVOLUTION_PORT:-8084}:8084"
+    environment:
+      SERVER_URL: ${EVOLUTION_SERVER_URL:-http://localhost:8084}
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-CHANGE-EVOLUTION-API-KEY-IN-PRODUCTION}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+      DATABASE_ENABLED: "true"
+      DATABASE_PROVIDER: "postgresql"
+      DATABASE_CONNECTION_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-gestao_ti}?schema=evolution"
+      LOG_LEVEL: "ERROR,WARN,INFO"
+      DEL_INSTANCE: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - evolution_instances:/evolution/instances
+
 # =============================================================================
 # Volumes persistentes
 # =============================================================================
@@ -89,4 +116,8 @@ volumes:
   postgres_data:
     driver: local
   attachments_data:
+    driver: local
+  backups_data:
+    driver: local
+  evolution_instances:
     driver: local

@@ -9,6 +9,7 @@ import { MatDividerModule } from '@angular/material/divider';
 import { MatBadgeModule } from '@angular/material/badge';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
+import { HttpClient } from '@angular/common/http';
 import { AuthService } from '../../auth/auth.service';
 import { Notification, NotificationsService } from '../../services/notifications.service';
 
@@ -33,7 +34,13 @@ import { Notification, NotificationsService } from '../../services/notifications
       </button>
       
       <span class="spacer"></span>
-      
+
+      <!-- Demo Mode Badge -->
+      <div *ngIf="isDemoMode" class="demo-badge" matTooltip="Ambiente de Demonstração ativo: dados fictícios carregados.">
+        <mat-icon>science</mat-icon>
+        <span>AMBIENTE DEMO</span>
+      </div>
+
       <!-- Notifications Menu -->
       <button mat-icon-button [matMenuTriggerFor]="notifMenu" class="notif-btn" matTooltip="Notificações">
         <mat-icon [matBadge]="unreadCount > 0 ? unreadCount : null" matBadgeColor="warn" matBadgeSize="small">
@@ -116,6 +123,29 @@ import { Notification, NotificationsService } from '../../services/notifications
 
       .spacer {
         flex: 1 1 auto;
+      }
+
+      .demo-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background-color: #fef3c7;
+        color: #92400e;
+        border: 1px solid #fde68a;
+        padding: 4px 12px;
+        border-radius: 16px;
+        font-size: 11px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        margin-right: 16px;
+        box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+
+        mat-icon {
+          font-size: 16px;
+          width: 16px;
+          height: 16px;
+          color: #d97706;
+        }
       }
 
       .notif-btn {
@@ -299,15 +329,29 @@ export class HeaderComponent implements OnInit {
 
   authService = inject(AuthService);
   private notificationsService = inject(NotificationsService);
+  private http = inject(HttpClient);
 
   notifications: Notification[] = [];
   unreadCount: number = 0;
+  isDemoMode: boolean = false;
 
   ngOnInit(): void {
     this.loadNotifications();
+    this.checkDemoStatus();
     this.notificationsService.newNotification$.subscribe((notif) => {
       this.notifications.unshift(notif);
       this.calculateUnread();
+    });
+  }
+
+  checkDemoStatus(): void {
+    this.http.get<{ is_demo_mode: boolean }>('/api/v1/system/demo/status').subscribe({
+      next: (res) => {
+        this.isDemoMode = !!res?.is_demo_mode;
+      },
+      error: () => {
+        this.isDemoMode = false;
+      }
     });
   }
 

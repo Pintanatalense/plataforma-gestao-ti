@@ -593,6 +593,8 @@
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-wrap: wrap;
+      gap: 10px;
       
       .internal-label {
         display: flex;
@@ -606,6 +608,116 @@
           font-size: 16px;
           width: 16px;
           height: 16px;
+        }
+      }
+
+      .action-buttons-right {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+
+        .chat-attach-btn {
+          border-color: #cbd5e1;
+          color: #334155;
+          font-size: 13px;
+          font-weight: 500;
+
+          mat-icon {
+            font-size: 18px;
+            width: 18px;
+            height: 18px;
+            color: #2563eb;
+            margin-right: 4px;
+          }
+
+          &:hover {
+            background: #f8fafc;
+            border-color: #94a3b8;
+          }
+        }
+      }
+    }
+  }
+}
+
+.ticket-attachments-bar {
+  background: #f0fdf4;
+  border: 1px solid #bbf7d0;
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+
+  .bar-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: #166534;
+
+    mat-icon {
+      font-size: 18px;
+      width: 18px;
+      height: 18px;
+    }
+  }
+
+  .attachment-chips-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+
+    .attachment-pill {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: #ffffff;
+      border: 1px solid #86efac;
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 12px;
+      color: #14532d;
+      cursor: pointer;
+      transition: all 0.15s ease;
+
+      .pill-icon {
+        font-size: 15px;
+        width: 15px;
+        height: 15px;
+        color: #16a34a;
+      }
+
+      .pill-name {
+        font-weight: 600;
+        max-width: 220px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .pill-size {
+        color: #4ade80;
+        font-size: 11px;
+      }
+
+      .pill-download {
+        font-size: 14px;
+        width: 14px;
+        height: 14px;
+        color: #15803d;
+        opacity: 0.7;
+      }
+
+      &:hover {
+        background: #dcfce7;
+        border-color: #4ade80;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.05);
+
+        .pill-download {
+          opacity: 1;
         }
       }
     }

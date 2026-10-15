@@ -191,13 +191,52 @@
         </mat-form-field>
       </div>
 
+      <!-- Anexos e Evidências -->
+      <div class="section-card attachments-card">
+        <div class="section-header">
+          <mat-icon color="primary">attach_file</mat-icon>
+          <div>
+            <h3>Anexos & Evidências (Opcional)</h3>
+            <p class="section-subtitle">Adicione capturas de tela, fotos do equipamento, notas de erro ou arquivos (PDF, PNG, JPG, TXT, etc.).</p>
+          </div>
+        </div>
+
+        <div class="attachments-upload-area">
+          <input type="file" #fileInput multiple (change)="onFilesSelected($event)" style="display: none">
+          <button mat-stroked-button type="button" class="add-file-btn" (click)="fileInput.click()" [disabled]="isSubmitting">
+            <mat-icon>cloud_upload</mat-icon>
+            Selecionar Arquivos para Anexar
+          </button>
+          <span class="upload-hint">Você pode anexar múltiplos arquivos de até 100MB</span>
+        </div>
+
+        <div class="selected-files-list" *ngIf="selectedFiles.length > 0">
+          <div class="selected-file-chip" *ngFor="let file of selectedFiles; let idx = index">
+            <mat-icon class="file-chip-icon">insert_drive_file</mat-icon>
+            <div class="file-chip-info">
+              <span class="file-chip-name">{{ file.name }}</span>
+              <span class="file-chip-size">{{ formatFileSize(file.size) }}</span>
+            </div>
+            <button mat-icon-button type="button" class="remove-chip-btn" (click)="removeSelectedFile(idx)" matTooltip="Remover arquivo" [disabled]="isSubmitting">
+              <mat-icon>close</mat-icon>
+            </button>
+          </div>
+        </div>
+
+        <div *ngIf="isSubmitting && uploadProgressText" class="upload-progress-box">
+          <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+          <span>{{ uploadProgressText }}</span>
+        </div>
+      </div>
+
       <!-- Ações -->
       <div class="form-actions">
-        <button mat-stroked-button type="button" routerLink="/service-desk" class="cancel-btn">
+        <button mat-stroked-button type="button" routerLink="/service-desk" class="cancel-btn" [disabled]="isSubmitting">
           Cancelar
         </button>
-        <button mat-flat-button color="primary" type="submit" class="submit-btn" [disabled]="ticketForm.invalid || (prerequisiteFields.length > 0 && customFieldsForm.invalid)">
-          <mat-icon>send</mat-icon> Abrir Chamado
+        <button mat-flat-button color="primary" type="submit" class="submit-btn" [disabled]="ticketForm.invalid || (prerequisiteFields.length > 0 && customFieldsForm.invalid) || isSubmitting">
+          <mat-icon *ngIf="!isSubmitting">send</mat-icon>
+          <span>{{ isSubmitting ? 'Abrindo Chamado...' : 'Abrir Chamado' }}</span>
         </button>
       </div>
 

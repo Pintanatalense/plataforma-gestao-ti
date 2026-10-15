@@ -48,6 +48,12 @@ db-shell:
 seed:
 	docker-compose exec backend python -m app.seed
 
+seed-demo:
+	docker-compose exec backend python -m app.seed_demo --no-reset
+
+seed-reset:
+	docker-compose exec backend python -m app.seed_demo --reset
+
 # --- Testes ---
 test:
 	cd backend && python -m pytest -v --tb=short

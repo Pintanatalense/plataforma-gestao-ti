@@ -62,11 +62,17 @@ class ServiceDeskRepository:
         return result.scalar_one_or_none()
 
     async def list_tickets(
-        self, requester_id: uuid.UUID | None = None
+        self,
+        requester_id: uuid.UUID | None = None,
+        sector_id: uuid.UUID | None = None,
+        assignee_id: uuid.UUID | None = None,
+        is_attendant_scope: bool = False,
     ) -> Sequence[Ticket]:
         """
-        Lista tickets.
-        Se requester_id for fornecido, filtra apenas os tickets abertos por ele.
+        Lista tickets com suporte a menor privilégio e escopo setorial:
+        - is_attendant_scope=True: visualiza chamados do seu setor responsável, atribuídos a si ou abertos por si.
+        - requester_id apenas: visualiza exclusivamente os chamados que o próprio solicitante abriu.
+        - Sem filtros: visualização irrestrita de todos os chamados (Gestão / Administrador).
         """
         stmt = (
             select(Ticket)
@@ -77,7 +83,18 @@ class ServiceDeskRepository:
             .order_by(Ticket.created_at.desc())
         )
         
-        if requester_id:
+        if is_attendant_scope:
+            from sqlalchemy import or_
+            conditions = []
+            if sector_id:
+                conditions.append(Ticket.responsible_sector_id == sector_id)
+            if assignee_id:
+                conditions.append(Ticket.assignee_id == assignee_id)
+            if requester_id:
+                conditions.append(Ticket.requester_id == requester_id)
+            if conditions:
+                stmt = stmt.where(or_(*conditions))
+        elif requester_id:
             stmt = stmt.where(Ticket.requester_id == requester_id)
             
         result = await self.session.execute(stmt)

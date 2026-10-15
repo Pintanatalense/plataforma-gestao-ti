@@ -11,16 +11,14 @@ import uuid
 from datetime import date
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, ForeignKey, String, Text
+from sqlalchemy import Boolean, Date, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.soft_delete import SoftDeleteMixin
 from app.core.timestamps import TimestampMixin
 from app.database import Base
-
-if TYPE_CHECKING:
-    pass  # type: ignore
+from app.organization.models import Employee, Unit
 
 
 class AssetStatus(enum.StrEnum):
@@ -60,6 +58,7 @@ class Asset(Base, TimestampMixin, SoftDeleteMixin):
     purchase_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     warranty_expires: Mapped[date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Localização / Responsável
     unit_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("units.id"), nullable=False)

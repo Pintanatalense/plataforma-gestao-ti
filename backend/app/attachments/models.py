@@ -1,5 +1,5 @@
 import uuid
-from sqlalchemy import String, Integer, ForeignKey
+from sqlalchemy import Boolean, String, Integer, ForeignKey
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.database import Base
@@ -18,6 +18,7 @@ class Attachment(Base, TimestampMixin, SoftDeleteMixin):
     content_type: Mapped[str] = mapped_column(String(100), nullable=False)
     size_bytes: Mapped[int] = mapped_column(Integer, nullable=False)
     file_path: Mapped[str] = mapped_column(String(500), nullable=False) # Caminho relativo onde o arquivo está salvo
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     # Polimorfismo / Vínculo com outras entidades
     entity_type: Mapped[str] = mapped_column(String(50), nullable=False, index=True) # Ex: TICKET, TICKET_INTERACTION, ASSET

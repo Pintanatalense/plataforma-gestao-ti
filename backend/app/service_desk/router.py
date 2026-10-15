@@ -132,6 +132,8 @@ async def list_tickets(
     service = ServiceDeskService(session)
     tickets = await service.list_tickets_for_user(
         user_employee_id=ctx["employee_id"],
+        user_id=ctx["user_id"],
+        sector_id=ctx["sector_id"],
         is_technician=ctx["is_technician"],
         can_read_all=ctx["can_read_all"]
     )
@@ -176,7 +178,9 @@ async def get_ticket(
         ticket_id=ticket_id,
         user_employee_id=ctx["employee_id"],
         is_technician=ctx["is_technician"],
-        can_read_all=ctx["can_read_all"]
+        can_read_all=ctx["can_read_all"],
+        user_id=ctx["user_id"],
+        sector_id=ctx["sector_id"],
     )
     
     resp = TicketResponse.model_validate(ticket)
@@ -232,7 +236,9 @@ async def update_ticket(
         schema=schema,
         is_technician=ctx["is_technician"],
         user_employee_id=ctx["employee_id"],
-        user_id=ctx["user_id"]
+        user_id=ctx["user_id"],
+        sector_id=ctx["sector_id"],
+        can_read_all=ctx["can_read_all"]
     )
     await session.commit()
     return ticket
@@ -254,7 +260,9 @@ async def get_ticket_history(
         user_employee_id=ctx["employee_id"],
         is_technician=ctx["is_technician"],
         can_read_all=ctx["can_read_all"],
-        can_see_internal=ctx["can_internal_notes"]
+        can_see_internal=ctx["can_internal_notes"],
+        user_id=ctx["user_id"],
+        sector_id=ctx["sector_id"],
     )
     return [TicketHistoryItem.model_validate(h) for h in history]
 
@@ -279,7 +287,8 @@ async def add_interaction(
         user_employee_id=ctx["employee_id"],
         is_technician=ctx["is_technician"],
         can_read_all=ctx["can_read_all"],
-        can_internal_notes=ctx["can_internal_notes"]
+        can_internal_notes=ctx["can_internal_notes"],
+        sector_id=ctx["sector_id"],
     )
     await session.commit()
     return interaction
@@ -308,7 +317,9 @@ async def add_material(
         schema=schema,
         author_id=ctx["user_id"],
         user_employee_id=ctx["employee_id"],
-        is_technician=ctx["is_technician"]
+        is_technician=ctx["is_technician"],
+        can_read_all=ctx["can_read_all"],
+        sector_id=ctx["sector_id"],
     )
     await session.commit()
     return material

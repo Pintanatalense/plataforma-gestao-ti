@@ -10,10 +10,14 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatDividerModule } from '@angular/material/divider';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { MatProgressBarModule } from '@angular/material/progress-bar';
+import { MatTooltipModule } from '@angular/material/tooltip';
+import { firstValueFrom } from 'rxjs';
 
 import { TicketService, TicketCategory, CategoryFormField } from '../ticket.service';
 import { Asset, AssetService } from '../../../core/services/asset.service';
 import { AuthService } from '../../../core/auth/auth.service';
+import { AttachmentsService } from '../../../core/services/attachments.service';
 
 @Component({
   selector: 'app-ticket-create',
@@ -29,7 +33,9 @@ import { AuthService } from '../../../core/auth/auth.service';
     MatCheckboxModule,
     MatDividerModule,
     MatChipsModule,
-    MatSnackBarModule
+    MatSnackBarModule,
+    MatProgressBarModule,
+    MatTooltipModule
   ],
   templateUrl: './ticket-create.component.html',
   styleUrls: ['./ticket-create.component.scss']
@@ -38,6 +44,7 @@ export class TicketCreateComponent implements OnInit {
   private fb = inject(FormBuilder);
   private ticketService = inject(TicketService);
   private assetService = inject(AssetService);
+  private attachmentsService = inject(AttachmentsService);
   private router = inject(Router);
   private snackBar = inject(MatSnackBar);
   public authService = inject(AuthService);
@@ -48,6 +55,10 @@ export class TicketCreateComponent implements OnInit {
   availableAssets: Asset[] = [];
   selectedCategory: TicketCategory | null = null;
   prerequisiteFields: CategoryFormField[] = [];
+
+  selectedFiles: File[] = [];
+  isSubmitting = false;
+  uploadProgressText = '';
 
   constructor() {
     this.ticketForm = this.fb.group({
@@ -91,7 +102,6 @@ export class TicketCreateComponent implements OnInit {
     this.selectedCategory = cat || null;
     this.prerequisiteFields = cat?.form_schema || [];
 
-    // Reconstrói dinamicamente os controles reativos para os pré-requisitos
     const group: Record<string, FormControl> = {};
     for (const field of this.prerequisiteFields) {
       const validators = [];
@@ -102,22 +112,38 @@ export class TicketCreateComponent implements OnInit {
           validators.push(Validators.required);
         }
       }
-
-      const initialValue = field.type === 'checkbox' ? false : '';
-      group[field.id] = new FormControl(initialValue, validators);
+      group[field.id] = new FormControl(
+        field.type === 'checkbox' ? false : '',
+        validators
+      );
     }
+    this.customFieldsForm = this.fb.group(group);
+  }
 
-    this.customFieldsForm = new FormGroup(group);
+  onFilesSelected(event: any): void {
+    const files: FileList = event.target.files;
+    if (files) {
+      for (let i = 0; i < files.length; i++) {
+        this.selectedFiles.push(files[i]);
+      }
+    }
+    event.target.value = null;
+  }
+
+  removeSelectedFile(index: number): void {
+    this.selectedFiles.splice(index, 1);
+  }
+
+  formatFileSize(bytes: number): string {
+    return this.attachmentsService.formatBytes(bytes);
   }
 
   onSubmit() {
     if (this.ticketForm.invalid) {
       this.ticketForm.markAllAsTouched();
-      this.snackBar.open('Por favor, preencha os dados básicos do chamado.', 'Fechar', { duration: 3000 });
       return;
     }
 
-    // Se a categoria tem pré-requisitos, validação estrita antes do envio
     if (this.prerequisiteFields.length > 0 && this.customFieldsForm.invalid) {
       this.customFieldsForm.markAllAsTouched();
       this.snackBar.open(
@@ -127,6 +153,9 @@ export class TicketCreateComponent implements OnInit {
       );
       return;
     }
+
+    this.isSubmitting = true;
+    this.uploadProgressText = '';
 
     const val = this.ticketForm.value;
     const customFieldsVal = this.customFieldsForm.value;
@@ -141,11 +170,28 @@ export class TicketCreateComponent implements OnInit {
     };
 
     this.ticketService.createTicket(payload).subscribe({
-      next: (ticket) => {
-        this.snackBar.open('Chamado aberto com sucesso!', 'Fechar', { duration: 3000 });
+      next: async (ticket) => {
+        if (this.selectedFiles.length > 0) {
+          this.uploadProgressText = `Enviando ${this.selectedFiles.length} anexo(s)...`;
+          for (let i = 0; i < this.selectedFiles.length; i++) {
+            const f = this.selectedFiles[i];
+            try {
+              await firstValueFrom(this.attachmentsService.uploadFile(f, 'TICKET', ticket.id));
+            } catch (err) {
+              console.error('Erro ao enviar anexo:', f.name, err);
+            }
+          }
+        }
+
+        this.isSubmitting = false;
+        const msg = this.selectedFiles.length > 0
+          ? `Chamado aberto com sucesso com ${this.selectedFiles.length} anexo(s) vinculado(s)!`
+          : 'Chamado aberto com sucesso!';
+        this.snackBar.open(msg, 'Fechar', { duration: 4000 });
         this.router.navigate(['/service-desk', ticket.id]);
       },
       error: (err) => {
+        this.isSubmitting = false;
         console.error(err);
         const msg =
           err?.error?.error?.message ||

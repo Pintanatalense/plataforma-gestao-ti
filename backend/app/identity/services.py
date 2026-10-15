@@ -111,6 +111,42 @@ class IdentityService:
         )
         user.roles = [admin_role]
         await self.repo.create_user(user)
+
+        if schema.setup_mode == "DEMO":
+            from app.core.demo_service import DemoManagementService
+            demo_svc = DemoManagementService(self.repo.session)
+            await demo_svc.seed_demo_data(admin_user_id=user.id)
+        else:
+            # Modo CLEAN: Configuração de implantação empresarial limpa
+            from app.organization.models import Company
+            from app.core.settings_model import SystemSetting
+            from sqlalchemy import select
+
+            stmt = select(Company)
+            comp = (await self.repo.session.execute(stmt)).scalar_one_or_none()
+            if not comp:
+                comp = Company(
+                    corporate_name=schema.company_name or "Empresa Contratante S.A.",
+                    trade_name=schema.company_name or "Matriz",
+                    cnpj=schema.company_cnpj or "00.000.000/0001-00",
+                    is_demo=False
+                )
+                self.repo.session.add(comp)
+            elif schema.company_name:
+                comp.corporate_name = schema.company_name
+                comp.trade_name = schema.company_name
+                if schema.company_cnpj:
+                    comp.cnpj = schema.company_cnpj
+
+            stmt_st = select(SystemSetting).where(SystemSetting.key == "system_mode")
+            setting = (await self.repo.session.execute(stmt_st)).scalar_one_or_none()
+            if not setting:
+                setting = SystemSetting(key="system_mode", value="PRODUCTION")
+                self.repo.session.add(setting)
+            else:
+                setting.value = "PRODUCTION"
+            await self.repo.session.commit()
+
         return self._issue_token(user)
 
     # ==========================================================================

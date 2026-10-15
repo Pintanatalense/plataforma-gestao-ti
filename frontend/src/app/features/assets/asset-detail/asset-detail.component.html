@@ -1,27 +1,40 @@
-<div class="page-container" *ngIf="asset">
+<div class="page-container" *ngIf="!isLoading && asset">
+  <!-- HEADER -->
   <div class="page-header">
     <div class="header-content">
-      <button mat-icon-button class="back-btn" routerLink="/assets">
+      <button mat-icon-button class="back-btn" routerLink="/assets" matTooltip="Voltar para a lista">
         <mat-icon>arrow_back</mat-icon>
       </button>
       <div class="title-group">
-        <h1>{{ asset.name }}</h1>
-        <span class="tag-badge">#{{ asset.tag }}</span>
+        <div class="title-row">
+          <h1>{{ asset.name }}</h1>
+          <span class="tag-badge">#{{ asset.tag }}</span>
+          <span class="category-pill" *ngIf="asset.category">
+            <mat-icon>devices</mat-icon>
+            {{ asset.category.name }}
+          </span>
+        </div>
+        <p class="subtitle">Detalhamento completo do equipamento, especificações técnicas e custódia</p>
       </div>
     </div>
+    
     <div class="header-status">
-      <button mat-stroked-button color="primary" class="print-btn" (click)="printResponsibilityStatement()" title="Imprimir Termo de Responsabilidade e Cautela">
+      <button mat-stroked-button class="print-btn" (click)="printResponsibilityStatement()" title="Imprimir Termo de Responsabilidade e Cautela">
         <mat-icon>print</mat-icon> Termo de Cautela
       </button>
       <span class="status-badge" [ngClass]="getStatusBadgeClass(asset.status)">
+<<<<<<< HEAD
+=======
+        <span class="status-dot"></span>
+>>>>>>> e7e3e62 (feat: profissionalizacao do sistema (demo, producao, backups reais, notificacoes e docs))
         {{ getStatusLabel(asset.status) }}
       </span>
     </div>
   </div>
 
   <mat-tab-group class="premium-tabs" animationDuration="0ms">
-    <!-- TAB: Overview -->
-    <mat-tab label="Visão Geral">
+    <!-- TAB: Visão Geral -->
+    <mat-tab label="Visão Geral & Ficha Técnica">
       <div class="tab-content">
 
         <!-- LIFECYCLE & STATE MACHINE ACTION CARD -->
@@ -125,55 +138,153 @@
         </div>
         
         <div class="cards-grid">
-          <!-- BASIC INFO CARD -->
+          <!-- CARD 1: INFORMAÇÕES DE CADASTRO -->
           <div class="glass-card">
             <div class="card-header">
-              <mat-icon>info</mat-icon>
-              <h3>Informações Básicas</h3>
+              <mat-icon class="header-icon primary">badge</mat-icon>
+              <h3>Dados do Patrimônio</h3>
             </div>
             <div class="info-grid">
               <div class="info-item">
-                <span class="label">Patrimônio</span>
-                <span class="value">{{ asset.tag }}</span>
+                <span class="label">Nº de Patrimônio (Tag)</span>
+                <span class="value font-mono">{{ asset.tag }}</span>
               </div>
               <div class="info-item">
                 <span class="label">Categoria</span>
-                <span class="value">{{ asset.category?.name }}</span>
+                <span class="value">{{ asset.category?.name || 'Não classificado' }}</span>
               </div>
-              <div class="info-item">
-                <span class="label">Unidade</span>
-                <span class="value">{{ getUnitName(asset.unit_id) }}</span>
+              <div class="info-item full-width">
+                <span class="label">Nome / Descrição do Equipamento</span>
+                <span class="value font-semibold">{{ asset.name }}</span>
               </div>
               <div class="info-item">
                 <span class="label">Responsável / Posse</span>
                 <span class="value">{{ getEmployeeName(asset.employee_id) }}</span>
               </div>
+              <div class="info-item full-width">
+                <span class="label">Status Operacional</span>
+                <span class="value">
+                  <span class="status-badge-sm" [ngClass]="getStatusBadgeClass(asset.status)">
+                    {{ getStatusLabel(asset.status) }}
+                  </span>
+                </span>
+              </div>
             </div>
           </div>
 
-          <!-- SPECS CARD -->
+          <!-- CARD 2: LOCALIZAÇÃO & CUSTÓDIA -->
           <div class="glass-card">
             <div class="card-header">
-              <mat-icon>memory</mat-icon>
-              <h3>Especificações Técnicas</h3>
+              <mat-icon class="header-icon info">domain</mat-icon>
+              <h3>Localização & Custódia</h3>
+            </div>
+            <div class="info-grid">
+              <div class="info-item full-width">
+                <span class="label">Unidade de Lotação</span>
+                <span class="value unit-highlight">
+                  <mat-icon>business</mat-icon>
+                  <span>{{ displayedUnitName }}</span>
+                </span>
+              </div>
+              <div class="info-item full-width">
+                <span class="label">Colaborador Responsável (Custodiante)</span>
+                <span class="value employee-highlight" [class.in-stock]="!asset.employee_id">
+                  <mat-icon>{{ asset.employee_id ? 'person' : 'inventory_2' }}</mat-icon>
+                  <span>{{ displayedEmployeeName }}</span>
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <!-- CARD 3: AQUISIÇÃO & GARANTIA -->
+          <div class="glass-card full-width-card">
+            <div class="card-header">
+              <mat-icon class="header-icon success">verified</mat-icon>
+              <h3>Aquisição, Garantia & Notas</h3>
+            </div>
+            <div class="info-grid three-col">
+              <div class="info-item">
+                <span class="label">Data de Compra / Aquisição</span>
+                <span class="value">
+                  <span *ngIf="asset.purchase_date; else noDate">
+                    {{ asset.purchase_date | date:'dd/MM/yyyy' }}
+                  </span>
+                  <ng-template #noDate><span class="muted-text">Não informada</span></ng-template>
+                </span>
+              </div>
+              
+              <div class="info-item">
+                <span class="label">Data de Fim da Garantia</span>
+                <span class="value">
+                  <span *ngIf="asset.warranty_expires; else noWarranty">
+                    {{ asset.warranty_expires | date:'dd/MM/yyyy' }}
+                  </span>
+                  <ng-template #noWarranty><span class="muted-text">Não cadastrada</span></ng-template>
+                </span>
+              </div>
+
+              <div class="info-item">
+                <span class="label">Situação da Garantia</span>
+                <span class="value">
+                  <span *ngIf="asset.warranty_expires; else noWarrantyStatus">
+                    <span class="warranty-badge" [class.active]="isWarrantyActive" [class.expired]="!isWarrantyActive">
+                      <mat-icon>{{ isWarrantyActive ? 'check_circle' : 'warning' }}</mat-icon>
+                      {{ isWarrantyActive ? ('Garantia Vigente (' + (warrantyDaysRemaining || 0) + ' dias)') : 'Garantia Expirada' }}
+                    </span>
+                  </span>
+                  <ng-template #noWarrantyStatus>
+                    <span class="warranty-badge unknown">
+                      <mat-icon>help_outline</mat-icon> Sem garantia registrada
+                    </span>
+                  </ng-template>
+                </span>
+              </div>
+
+              <div class="info-item full-width notes-item" *ngIf="asset.notes">
+                <span class="label">Observações e Informações Fiscais</span>
+                <div class="notes-box">
+                  <mat-icon>notes</mat-icon>
+                  <p>{{ asset.notes }}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- CARD 4: FICHA TÉCNICA E ESPECIFICAÇÕES -->
+          <div class="glass-card full-width-card specs-card">
+            <div class="card-header">
+              <mat-icon class="header-icon accent">memory</mat-icon>
+              <div>
+                <h3>Ficha Técnica & Especificações de Hardware</h3>
+                <p class="section-desc">Características detalhadas registradas para este equipamento</p>
+              </div>
             </div>
             
-            <div class="specs-grid" *ngIf="specEntries.length > 0; else noSpecs">
-              <div class="spec-item" *ngFor="let spec of specEntries">
-                <span class="spec-label">{{ spec[0] | titlecase }}</span>
-                <span class="spec-value">{{ spec[1] }}</span>
+            <div class="specs-grid-rich" *ngIf="specEntries.length > 0; else noSpecs">
+              <div class="spec-card" *ngFor="let spec of specEntries">
+                <div class="spec-icon-box">
+                  <mat-icon>{{ getSpecIcon(spec[0]) }}</mat-icon>
+                </div>
+                <div class="spec-details">
+                  <span class="spec-title">{{ getSpecLabel(spec[0]) }}</span>
+                  <span class="spec-val">{{ spec[1] }}</span>
+                </div>
               </div>
             </div>
             
             <ng-template #noSpecs>
-              <div class="empty-state">
-                Sem especificações técnicas cadastradas.
+              <div class="empty-specs-box">
+                <mat-icon>developer_board_off</mat-icon>
+                <div class="empty-specs-text">
+                  <strong>Nenhuma especificação técnica detalhada registrada</strong>
+                  <p>Este equipamento não possui parâmetros de hardware cadastrados no momento.</p>
+                </div>
               </div>
             </ng-template>
           </div>
         </div>
         
-        <!-- RESPONSIBILITY STATEMENT & EXTERNAL SIGNATURE CARD -->
+        <!-- CARD 5: FLUXO DE TERMO DE RESPONSABILIDADE E CAUTELA -->
         <div class="glass-card responsibility-flow-card" *ngIf="asset.employee_id; else inStockStatementInfo">
           <div class="card-header flow-card-header">
             <div class="flow-title-group">
@@ -256,12 +367,13 @@
           </div>
         </ng-template>
         
+        <!-- ANEXOS -->
         <app-attachments #attachmentsComp [entityType]="'ASSET'" [entityId]="asset.id" (attachmentsChange)="onAttachmentsChanged($event)"></app-attachments>
 
       </div>
     </mat-tab>
 
-    <!-- TAB: History -->
+    <!-- TAB: Histórico de Movimentações -->
     <mat-tab label="Histórico de Movimentações">
       <div class="tab-content timeline-container">
         
@@ -308,7 +420,7 @@
 
         <div *ngIf="movements.length === 0" class="empty-state-large">
           <mat-icon>history</mat-icon>
-          <p>Sem histórico registrado para este ativo.</p>
+          <p>Sem histórico de movimentações registrado para este ativo.</p>
         </div>
         
       </div>
@@ -385,4 +497,24 @@
 
     </div>
   </div>
+</div>
+
+<!-- LOADING STATE -->
+<div class="loading-state-box" *ngIf="isLoading">
+  <mat-progress-bar mode="indeterminate"></mat-progress-bar>
+  <div class="loading-inner">
+    <mat-icon class="spin-icon">hourglass_empty</mat-icon>
+    <h3>Carregando detalhes do equipamento...</h3>
+    <p>Buscando ficha cadastral, especificações técnicas e movimentações</p>
+  </div>
+</div>
+
+<!-- ERROR STATE -->
+<div class="error-state-box glass-card" *ngIf="!isLoading && errorMessage">
+  <mat-icon class="error-icon">error_outline</mat-icon>
+  <h2>Não foi possível exibir o equipamento</h2>
+  <p>{{ errorMessage }}</p>
+  <button mat-flat-button color="primary" routerLink="/assets">
+    <mat-icon>arrow_back</mat-icon> Voltar para a lista de Patrimônio
+  </button>
 </div>

@@ -24,7 +24,7 @@ class DatabaseBackup(Base, TimestampMixin):
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True)
 
-    created_by = relationship("app.identity.models.UserAccount", lazy="selectin")
+    created_by = relationship("UserAccount", lazy="selectin")
 
     @property
     def created_by_email(self) -> str | None:

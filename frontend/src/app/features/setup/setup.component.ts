@@ -12,6 +12,8 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 import { AuthService } from '../../core/auth/auth.service';
 
+import { MatSelectModule } from '@angular/material/select';
+
 @Component({
   selector: 'app-setup',
   standalone: true,
@@ -24,6 +26,7 @@ import { AuthService } from '../../core/auth/auth.service';
     MatProgressSpinnerModule,
     MatIconModule,
     MatSnackBarModule,
+    MatSelectModule,
   ],
   templateUrl: './setup.component.html',
   styleUrls: ['./setup.component.scss']
@@ -38,7 +41,10 @@ export class SetupComponent {
     name: ['', Validators.required],
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(8)]],
-    confirmPassword: ['', Validators.required]
+    confirmPassword: ['', Validators.required],
+    setup_mode: ['CLEAN', Validators.required],
+    company_name: [''],
+    company_cnpj: ['']
   }, { validators: this.passwordMatchValidator });
 
   isLoading = false;
@@ -54,9 +60,9 @@ export class SetupComponent {
     if (this.setupForm.invalid) return;
 
     this.isLoading = true;
-    const { name, email, password } = this.setupForm.value;
+    const { name, email, password, setup_mode, company_name, company_cnpj } = this.setupForm.value;
 
-    this.authService.setupFirstAdmin({ name, email, password }).subscribe({
+    this.authService.setupFirstAdmin({ name, email, password, setup_mode, company_name, company_cnpj }).subscribe({
       next: () => {
         this.isLoading = false;
         this.snackBar.open('Setup concluído! Bem-vindo.', 'Fechar', { duration: 3000 });

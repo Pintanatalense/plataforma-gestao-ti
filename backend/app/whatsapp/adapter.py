@@ -33,7 +33,13 @@ class WhatsAppProviderAdapter(ABC):
         lines = [title, ""]
         for idx, opt in enumerate(options, 1):
             lines.append(f"[{idx}] {opt}")
-        return await self.send_message(to_phone, "\n".join(lines))
+    async def check_connection_state(self) -> dict[str, Any]:
+        """Verifica o estado da conexão com o WhatsApp/Provedor."""
+        return {"state": "open", "message": "Provedor operacional"}
+
+    async def get_qr_code(self) -> dict[str, Any]:
+        """Obtém o QR Code ou código de pareamento para conectar o WhatsApp."""
+        return {"qrcode": None, "pairingCode": None, "message": "Provedor não requer pareamento via QR Code"}
 
 
 class MockWhatsAppAdapter(WhatsAppProviderAdapter):
@@ -112,6 +118,47 @@ class EvolutionApiAdapter(WhatsAppProviderAdapter):
         except Exception as exc:
             logger.debug("[EvolutionAPI] Erro ao enviar presença (ignorado): %s", exc)
             return False
+
+    async def check_connection_state(self) -> dict[str, Any]:
+        """Consulta o estado da instância na Evolution API (open, close, connecting)."""
+        endpoint = f"{self.api_url}/instance/connectionState/{self.instance_name}"
+        headers = {"apikey": self.api_key}
+        try:
+            async with httpx.AsyncClient(timeout=6.0) as client:
+                resp = await client.get(endpoint, headers=headers)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    # Formatos comuns da Evolution API: {"instance": {"state": "open"}} ou {"state": "open"}
+                    state = "unknown"
+                    if isinstance(data, dict):
+                        if "instance" in data and isinstance(data["instance"], dict):
+                            state = data["instance"].get("state", "unknown")
+                        else:
+                            state = data.get("state", "unknown")
+                    return {"state": state, "data": data}
+                elif resp.status_code == 404:
+                    return {"state": "not_found", "message": f"Instância '{self.instance_name}' não encontrada na Evolution API"}
+                return {"state": "error", "status_code": resp.status_code, "message": resp.text}
+        except Exception as exc:
+            logger.warning("[EvolutionAPI] Falha ao verificar estado de conexão: %s", exc)
+            return {"state": "unreachable", "error": str(exc)}
+
+    async def get_qr_code(self) -> dict[str, Any]:
+        """Obtém QR Code ou status de pareamento da Evolution API."""
+        endpoint = f"{self.api_url}/instance/connect/{self.instance_name}"
+        headers = {"apikey": self.api_key}
+        try:
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                resp = await client.get(endpoint, headers=headers)
+                if resp.status_code in (200, 201):
+                    data = resp.json()
+                    qrcode = data.get("base64") or data.get("qrcode", {}).get("base64")
+                    code = data.get("code") or data.get("pairingCode")
+                    return {"qrcode": qrcode, "pairingCode": code, "data": data}
+                return {"qrcode": None, "error": f"Evolution API retornou status {resp.status_code}", "detail": resp.text}
+        except Exception as exc:
+            logger.warning("[EvolutionAPI] Falha ao buscar QR Code: %s", exc)
+            return {"qrcode": None, "error": str(exc)}
 
 
 class MetaCloudApiAdapter(WhatsAppProviderAdapter):

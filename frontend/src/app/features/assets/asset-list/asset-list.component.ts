@@ -7,8 +7,10 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatInputModule } from '@angular/material/input';
 import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatTooltipModule } from '@angular/material/tooltip';
+import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 
 import { Asset, AssetService } from '../../../core/services/asset.service';
+import { AssetQuickViewDialogComponent } from '../asset-quick-view-dialog/asset-quick-view-dialog.component';
 
 @Component({
   selector: 'app-asset-list',
@@ -21,15 +23,17 @@ import { Asset, AssetService } from '../../../core/services/asset.service';
     MatIconModule,
     MatInputModule,
     MatFormFieldModule,
-    MatTooltipModule
+    MatTooltipModule,
+    MatDialogModule
   ],
   templateUrl: './asset-list.component.html',
   styleUrls: ['./asset-list.component.scss']
 })
 export class AssetListComponent implements OnInit {
   private assetService = inject(AssetService);
+  private dialog = inject(MatDialog);
 
-  displayedColumns: string[] = ['tag', 'name', 'category', 'status', 'actions'];
+  displayedColumns: string[] = ['tag', 'name', 'category', 'unit', 'employee', 'status', 'actions'];
   dataSource = new MatTableDataSource<Asset>([]);
 
   ngOnInit(): void {
@@ -41,7 +45,7 @@ export class AssetListComponent implements OnInit {
       next: (data) => {
         this.dataSource.data = data;
         this.dataSource.filterPredicate = (asset: Asset, filter: string) => {
-          const searchStr = `${asset.tag} ${asset.name} ${asset.category?.name || ''}`.toLowerCase();
+          const searchStr = `${asset.tag} ${asset.name} ${asset.category?.name || ''} ${asset.unit?.name || ''} ${asset.employee?.name || ''}`.toLowerCase();
           return searchStr.includes(filter);
         };
       },
@@ -52,6 +56,18 @@ export class AssetListComponent implements OnInit {
   applyFilter(event: Event): void {
     const filterValue = (event.target as HTMLInputElement).value;
     this.dataSource.filter = filterValue.trim().toLowerCase();
+  }
+
+  openQuickView(asset: Asset, event?: Event): void {
+    if (event) {
+      event.stopPropagation();
+    }
+    this.dialog.open(AssetQuickViewDialogComponent, {
+      data: { asset },
+      width: '680px',
+      maxWidth: '95vw',
+      autoFocus: false
+    });
   }
 
   getStatusBadgeClass(status: string): string {

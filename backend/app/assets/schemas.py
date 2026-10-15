@@ -48,8 +48,28 @@ class AssetUpdate(AssetBase):
     pass
 
 
+class AssetUnitSimple(BaseModel):
+    id: uuid.UUID
+    name: str
+    code: str
+    type: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class AssetEmployeeSimple(BaseModel):
+    id: uuid.UUID
+    name: str
+    registration_number: str
+    position: str | None = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+
 class AssetResponse(AssetBase):
     id: uuid.UUID
     category: AssetCategoryResponse
+    unit: AssetUnitSimple | None = None
+    employee: AssetEmployeeSimple | None = None
 
     model_config = ConfigDict(from_attributes=True)

@@ -43,7 +43,7 @@ async def seed() -> None:
             print(f"Empresa '{company.name}' já existe.")
 
         # 2. Criar Unidade Matriz
-        stmt = select(Unit).where(Unit.company_id == company.id, Unit.type == "MATRIZ")
+        stmt = select(Unit).where(Unit.code == "MAT-01")
         result = await session.execute(stmt)
         matriz = result.scalar_one_or_none()
         
@@ -80,6 +80,7 @@ async def seed() -> None:
             # Assets
             {"code": "assets.read", "description": "Ler patrimônio e ativos"},
             {"code": "assets.write", "description": "Criar/editar ativos e movimentações"},
+            {"code": "assets.read_own", "description": "Visualizar próprios ativos e equipamentos vinculados"},
 
             # Stock
             {"code": "stock.read", "description": "Ler estoque e insumos"},
@@ -89,8 +90,11 @@ async def seed() -> None:
             {"code": "inventory.read", "description": "Ler inventários periódicos"},
             {"code": "inventory.write", "description": "Criar e conduzir inventários periódicos"},
 
+            # Auditoria
+            {"code": "audit.read", "description": "Visualizar logs de auditoria e trilha de conformidade"},
+
             # Service Desk
-            {"code": "service_desk.tickets.manage", "description": "Atender e gerenciar chamados (técnico)"},
+            {"code": "service_desk.tickets.manage", "description": "Atender e gerenciar chamados (técnico/setorial)"},
             {"code": "service_desk.tickets.create", "description": "Abrir novos chamados de suporte"},
             {"code": "service_desk.tickets.read", "description": "Visualizar próprios chamados"},
             {"code": "service_desk.tickets.read_all", "description": "Visualizar todos os chamados da organização (Gestão)"},
@@ -116,7 +120,7 @@ async def seed() -> None:
         await session.flush()
         print("Permissões sincronizadas.")
 
-        # 4. Criar Admin Role (e mantê-lo com todas as permissões a cada execução)
+        # 4. Criar Administrador Global (mantém todas as permissões do sistema)
         stmt_all_perms = select(Permission)
         all_perms = list((await session.execute(stmt_all_perms)).scalars().all())
 
@@ -125,7 +129,7 @@ async def seed() -> None:
         admin_role = result.scalar_one_or_none()
         
         if not admin_role:
-            admin_role = Role(name="Administrador", description="Acesso total ao sistema.")
+            admin_role = Role(name="Administrador", description="Acesso total ao sistema e funções de infraestrutura/backups.")
             admin_role.permissions = all_perms
             session.add(admin_role)
             await session.flush()
@@ -154,51 +158,73 @@ async def seed() -> None:
                 print(f"Perfil '{role.name}' sincronizado com {len(perms)} permissões.")
             return role
 
-        # 5. Perfis Operacionais: Gestão, Atendente e Solicitante
-        gestao_codes = [
-            "service_desk.tickets.read_all",
-            "service_desk.tickets.read",
+        # 5. Hierarquia Acumulativa de Menor Privilégio:
+        # Tier 1 - Solicitante: abre chamado e vê seus itens (notebook, celular)
+        solicitante_codes = [
             "service_desk.tickets.create",
-            "service_desk.reports.read",
-            "service_desk.interactions.internal",
-            "organization.company.read",
-            "organization.units.read",
-            "organization.sectors.read",
-            "organization.employees.read",
-            "assets.read",
-            "stock.read",
-            "inventory.read",
-            "system.data.export",
+            "service_desk.tickets.read",
+            "assets.read_own",
         ]
         await sync_role(
-            name="Gestão",
-            desc="Visualização gerencial, relatórios, SLAs, indicadores e exportação de dados.",
-            perm_codes=gestao_codes,
+            name="Solicitante",
+            desc="Abre chamados, acompanha suas solicitações e consulta seus equipamentos vinculados.",
+            perm_codes=solicitante_codes,
         )
 
-        atendente_codes = [
+        # Tier 2 - Atendente: Solicitante + atendimento de chamados do seu setor/unidade
+        atendente_codes = solicitante_codes + [
             "service_desk.tickets.manage",
-            "service_desk.tickets.read_all",
-            "service_desk.tickets.read",
-            "service_desk.tickets.create",
             "service_desk.interactions.internal",
             "assets.read",
             "stock.read",
         ]
         await sync_role(
             name="Atendente",
-            desc="Atendimento operacional de chamados, encaminhamento, notas técnicas e consumo de estoque.",
+            desc="Atendimento e triagem de chamados do seu setor/unidade, notas técnicas internas e consulta a estoque/ativos.",
             perm_codes=atendente_codes,
         )
 
-        solicitante_codes = [
-            "service_desk.tickets.create",
-            "service_desk.tickets.read",
+        # Tier 3 - Gestão / Gestor: Atendente + relatórios de chamados, inventário periódico e auditoria
+        gestao_codes = atendente_codes + [
+            "service_desk.tickets.read_all",
+            "service_desk.reports.read",
+            "inventory.read",
+            "inventory.write",
+            "audit.read",
+            "organization.company.read",
+            "organization.units.read",
+            "organization.sectors.read",
+            "organization.employees.read",
+            "system.data.export",
         ]
         await sync_role(
-            name="Solicitante",
-            desc="Perfil restrito para abertura e acompanhamento dos próprios chamados.",
-            perm_codes=solicitante_codes,
+            name="Gestão",
+            desc="Visão gerencial ampla de chamados, relatórios e SLAs, inventários periódicos e trilha de auditoria.",
+            perm_codes=gestao_codes,
+        )
+
+        # Tier 4 - Admin: Gestão + cadastro de inventário e ativos completo + usuários e estoque
+        admin_local_codes = gestao_codes + [
+            "assets.write",
+            "stock.write",
+            "organization.company.update",
+            "organization.units.create",
+            "organization.units.update",
+            "organization.sectors.create",
+            "organization.sectors.update",
+            "organization.employees.create",
+            "organization.employees.update",
+            "identity.users.read",
+            "identity.users.create",
+            "identity.users.update",
+            "identity.roles.read",
+            "identity.roles.create",
+            "identity.roles.update",
+        ]
+        await sync_role(
+            name="Admin",
+            desc="Administração operacional com gestão completa de ativos, patrimônio, estoque, organização e usuários.",
+            perm_codes=admin_local_codes,
         )
 
         # 6. Criar Categorias Iniciais de Estoque

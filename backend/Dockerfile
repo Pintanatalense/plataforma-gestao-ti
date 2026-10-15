@@ -26,8 +26,11 @@ COPY --from=deps /usr/local/bin /usr/local/bin
 
 COPY . .
 
-# Criar diretório de anexos e permissões do entrypoint
-RUN mkdir -p /data/attachments && chmod +x docker-entrypoint.sh
+# Instalar cliente do PostgreSQL para utilitários pg_dump e psql
+RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client && rm -rf /var/lib/apt/lists/*
+
+# Criar diretórios de armazenamento persistente e permissões do entrypoint
+RUN mkdir -p /data/attachments /data/backups && chmod +x docker-entrypoint.sh
 
 EXPOSE 8000
 
