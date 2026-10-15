@@ -82,3 +82,22 @@ async def seed_demo_data(
     admin_user_id = uuid.UUID(payload["sub"])
     service = DemoManagementService(session)
     return await service.seed_demo_data(admin_user_id=admin_user_id)
+
+
+@router.post(
+    "/seed-test",
+    status_code=status.HTTP_201_CREATED,
+    summary="Recarrega dados da base de testes e homologação (QA)",
+    dependencies=[Depends(require_permission("system.backup.manage"))]
+)
+async def seed_test_data(
+    payload: Annotated[dict, Depends(get_token_payload)],
+    session: Annotated[AsyncSession, Depends(get_db)]
+):
+    from app.seed_test import seed_test
+    await seed_test(reset=False)
+    return {
+        "success": True,
+        "message": "Base de testes e homologação (QA) recarregada com sucesso!",
+        "system_mode": "TEST"
+    }

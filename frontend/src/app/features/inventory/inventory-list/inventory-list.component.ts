@@ -59,7 +59,7 @@ export class InventoryListComponent implements OnInit {
       next: (audits) => {
         this.dataSource.data = audits;
         this.dataSource.filterPredicate = (data: InventoryAudit, filter: string) => {
-          const unit = this.getUnitName(data.unit_id);
+          const unit = data.unit_name || this.getUnitName(data.unit_id);
           const search = `${data.name} ${unit} ${data.status}`.toLowerCase();
           return search.includes(filter);
         };

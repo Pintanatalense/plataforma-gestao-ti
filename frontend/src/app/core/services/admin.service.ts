@@ -299,6 +299,10 @@ export class AdminService {
     return this.http.post<{ status: string; message: string }>('/api/v1/system/demo/seed', {});
   }
 
+  seedTestData(): Observable<{ status: string; message: string; summary?: any }> {
+    return this.http.post<{ status: string; message: string; summary?: any }>('/api/v1/system/demo/seed-test', {});
+  }
+
   // --- Notificações por E-mail & Servidor SMTP (MOD-11) ---
   getSmtpConfig(): Observable<SmtpConfig> {
     return this.http.get<SmtpConfig>('/api/v1/notifications/email/config');

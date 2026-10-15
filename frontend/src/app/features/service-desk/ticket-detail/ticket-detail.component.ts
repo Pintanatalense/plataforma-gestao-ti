@@ -33,6 +33,7 @@ import { Employee, OrganizationService } from '../../../core/services/organizati
 import { AdminService, WhatsAppTemplate } from '../../../core/services/admin.service';
 import { AttachmentsComponent } from '../../../shared/components/attachments/attachments.component';
 import { AttachmentsService, Attachment } from '../../../core/services/attachments.service';
+import { Asset, AssetService } from '../../../core/services/asset.service';
 import { HttpResponse } from '@angular/common/http';
 
 @Component({
@@ -70,9 +71,16 @@ export class TicketDetailComponent implements OnInit {
   private adminService = inject(AdminService);
   public attachmentsService = inject(AttachmentsService);
   public authService = inject(AuthService);
+  public assetService = inject(AssetService);
   private fb = inject(FormBuilder);
   private snackBar = inject(MatSnackBar);
   private cdr = inject(ChangeDetectorRef);
+
+  showLinkAssetModal = false;
+  allAssets: Asset[] = [];
+  assetSearchTerm = '';
+  selectedAssetToLink: Asset | null = null;
+  linkingAsset = false;
 
 
   ticket: Ticket | null = null;
@@ -515,6 +523,8 @@ export class TicketDetailComponent implements OnInit {
       case 'ticket.material_added': return 'inventory_2';
       case 'ticket.assigned': return 'person_pin';
       case 'ticket.priority_changed': return 'flag';
+      case 'ticket.asset_linked': return 'add_link';
+      case 'ticket.asset_unlinked': return 'link_off';
       case 'ticket.asset_reserved': return 'bookmark';
       case 'ticket.asset_delivered': return 'handshake';
       case 'ticket.asset_returned': return 'keyboard_return';
@@ -531,6 +541,8 @@ export class TicketDetailComponent implements OnInit {
       case 'ticket.interaction_added': return 'type-chat';
       case 'ticket.material_added': return 'type-mat';
       case 'ticket.assigned': return 'type-assign';
+      case 'ticket.asset_linked': return 'type-create';
+      case 'ticket.asset_unlinked': return 'type-close';
       case 'ticket.asset_reserved': return 'type-assign';
       case 'ticket.asset_delivered': return 'type-create';
       case 'ticket.asset_returned': return 'type-status';
@@ -666,5 +678,106 @@ export class TicketDetailComponent implements OnInit {
         container.scrollTop = container.scrollHeight;
       }
     }, 100);
+  }
+
+  // ============================================================================
+  // Vincular / Desvincular Ativos
+  // ============================================================================
+  openLinkAssetModal() {
+    this.assetSearchTerm = '';
+    this.selectedAssetToLink = null;
+    this.showLinkAssetModal = true;
+    this.assetService.getAssets().subscribe({
+      next: (assets) => {
+        const currentIds = (this.ticket?.assets || []).map((a) => a.id);
+        this.allAssets = assets.filter((a) => !currentIds.includes(a.id));
+      },
+      error: (err) => {
+        console.error('Erro ao carregar ativos para vínculo:', err);
+      }
+    });
+  }
+
+  closeLinkAssetModal() {
+    this.showLinkAssetModal = false;
+    this.selectedAssetToLink = null;
+    this.assetSearchTerm = '';
+  }
+
+  get filteredAssetsToLink(): Asset[] {
+    if (!this.assetSearchTerm.trim()) {
+      return this.allAssets;
+    }
+    const q = this.assetSearchTerm.toLowerCase();
+    return this.allAssets.filter(
+      (a) =>
+        a.tag.toLowerCase().includes(q) ||
+        a.name.toLowerCase().includes(q) ||
+        (a.category?.name && a.category.name.toLowerCase().includes(q))
+    );
+  }
+
+  selectAssetToLink(asset: Asset) {
+    this.selectedAssetToLink = asset;
+  }
+
+  confirmLinkAsset() {
+    if (!this.ticket || !this.selectedAssetToLink) return;
+    this.linkingAsset = true;
+    const ticketId = this.ticket.id;
+    const assetId = this.selectedAssetToLink.id;
+
+    this.ticketService.linkAssetToTicket(ticketId, assetId).subscribe({
+      next: () => {
+        this.snackBar.open(
+          `Equipamento #${this.selectedAssetToLink?.tag} vinculado com sucesso!`,
+          'Fechar',
+          { duration: 3000 }
+        );
+        this.linkingAsset = false;
+        this.closeLinkAssetModal();
+        this.loadTicket(ticketId);
+      },
+      error: (err) => {
+        this.linkingAsset = false;
+        console.error(err);
+        const msg =
+          err?.error?.error?.message ||
+          err?.error?.detail ||
+          'Erro ao vincular equipamento.';
+        this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+      }
+    });
+  }
+
+  unlinkAsset(asset: TicketAssetBrief) {
+    if (!this.ticket) return;
+    if (
+      !confirm(
+        `Deseja desvincular o equipamento #${asset.tag} (${asset.name}) deste chamado?`
+      )
+    ) {
+      return;
+    }
+
+    const ticketId = this.ticket.id;
+    this.ticketService.unlinkAssetFromTicket(ticketId, asset.id).subscribe({
+      next: () => {
+        this.snackBar.open(
+          `Equipamento #${asset.tag} desvinculado do chamado.`,
+          'Fechar',
+          { duration: 3000 }
+        );
+        this.loadTicket(ticketId);
+      },
+      error: (err) => {
+        console.error(err);
+        const msg =
+          err?.error?.error?.message ||
+          err?.error?.detail ||
+          'Erro ao desvincular equipamento.';
+        this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+      }
+    });
   }
 }

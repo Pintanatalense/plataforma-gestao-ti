@@ -495,6 +495,75 @@ class ServiceDeskService:
     # Assets Lifecycle (Reserva, Entrega, Devolução e Inspeção)
     # ==========================================================================
 
+    async def list_tickets_by_asset(self, asset_id: uuid.UUID) -> list[Ticket]:
+        return list(await self.repo.list_tickets_by_asset(asset_id))
+
+    async def link_asset_to_ticket(
+        self,
+        ticket_id: uuid.UUID,
+        asset_id: uuid.UUID,
+        author_id: uuid.UUID,
+        is_technician: bool = False,
+    ):
+        if not is_technician:
+            raise ForbiddenException("Apenas técnicos ou gestores podem vincular ativos a chamados.")
+
+        ticket = await self.repo.get_ticket(ticket_id)
+        if not ticket:
+            raise NotFoundException("Ticket", ticket_id)
+
+        if not any(a.id == asset_id for a in ticket.assets):
+            assets_to_add = await self.repo.get_assets_by_ids([asset_id])
+            if not assets_to_add:
+                raise NotFoundException("Asset", asset_id)
+            ticket.assets.append(assets_to_add[0])
+            await self.session.flush()
+
+            await self._record_audit_event(
+                event_type="ticket.asset_linked",
+                ticket_id=ticket.id,
+                data={
+                    "asset_id": str(asset_id),
+                    "asset_name": assets_to_add[0].name,
+                    "asset_tag": assets_to_add[0].tag,
+                },
+                user_id=author_id,
+            )
+
+        return ticket
+
+    async def unlink_asset_from_ticket(
+        self,
+        ticket_id: uuid.UUID,
+        asset_id: uuid.UUID,
+        author_id: uuid.UUID,
+        is_technician: bool = False,
+    ):
+        if not is_technician:
+            raise ForbiddenException("Apenas técnicos ou gestores podem desvincular ativos de chamados.")
+
+        ticket = await self.repo.get_ticket(ticket_id)
+        if not ticket:
+            raise NotFoundException("Ticket", ticket_id)
+
+        asset_to_remove = next((a for a in ticket.assets if a.id == asset_id), None)
+        if asset_to_remove:
+            ticket.assets.remove(asset_to_remove)
+            await self.session.flush()
+
+            await self._record_audit_event(
+                event_type="ticket.asset_unlinked",
+                ticket_id=ticket.id,
+                data={
+                    "asset_id": str(asset_id),
+                    "asset_name": asset_to_remove.name,
+                    "asset_tag": asset_to_remove.tag,
+                },
+                user_id=author_id,
+            )
+
+        return ticket
+
     async def reserve_ticket_asset(
         self,
         ticket_id: uuid.UUID,
@@ -800,6 +869,14 @@ class ServiceDeskService:
         elif event_type == "ticket.material_added":
             qtd = data.get("quantity", 1)
             return "Consumo de Insumo", f"Insumo do estoque lançado (Qtd: {qtd}){by_user}."
+        elif event_type == "ticket.asset_linked":
+            tag = data.get("asset_tag", "")
+            name = data.get("asset_name", "")
+            return "Equipamento Vinculado", f"Ativo #{tag} ({name}) vinculado ao chamado{by_user}."
+        elif event_type == "ticket.asset_unlinked":
+            tag = data.get("asset_tag", "")
+            name = data.get("asset_name", "")
+            return "Equipamento Desvinculado", f"Ativo #{tag} ({name}) desvinculado do chamado{by_user}."
         elif event_type == "ticket.asset_reserved":
             return "Equipamento Reservado", f"Ativo patrimonial reservado para o chamado{by_user}."
         elif event_type == "ticket.asset_delivered":

@@ -239,6 +239,65 @@
     </div>
   </div>
 
+  <!-- Modal Vincular Equipamento -->
+  <div class="modal-overlay" *ngIf="showLinkAssetModal">
+    <div class="modal-card mat-elevation-z8 link-asset-modal">
+      <div class="modal-header">
+        <mat-icon color="primary">add_link</mat-icon>
+        <h3>Vincular Equipamento ao Chamado</h3>
+      </div>
+      <div class="modal-body">
+        <p class="modal-subtitle">
+          Selecione um ativo cadastrado no patrimônio para associá-lo a este atendimento.
+        </p>
+
+        <mat-form-field appearance="outline" class="w-100" subscriptSizing="dynamic">
+          <mat-label>Buscar por Patrimônio, Nome ou Categoria...</mat-label>
+          <input matInput [(ngModel)]="assetSearchTerm" placeholder="Ex: NOTE-001, Dell, Monitor">
+          <mat-icon matSuffix>search</mat-icon>
+        </mat-form-field>
+
+        <div class="assets-picker-list mt-3">
+          <div
+            class="picker-asset-item"
+            *ngFor="let a of filteredAssetsToLink"
+            [class.selected]="selectedAssetToLink?.id === a.id"
+            (click)="selectAssetToLink(a)"
+          >
+            <div class="asset-picker-info">
+              <div class="tag-row">
+                <span class="asset-tag">#{{ a.tag }}</span>
+                <span class="status-badge" [ngClass]="getAssetStatusBadgeClass(a.status)">
+                  {{ getAssetStatusLabel(a.status) }}
+                </span>
+              </div>
+              <strong class="asset-picker-name">{{ a.name }}</strong>
+              <div class="asset-picker-sub">
+                <span *ngIf="a.category?.name">{{ a.category?.name }}</span>
+                <span *ngIf="a.employee"> • Posse: {{ a.employee.name }}</span>
+                <span *ngIf="!a.employee"> • Disponível em estoque</span>
+              </div>
+            </div>
+            <mat-icon class="check-icon" *ngIf="selectedAssetToLink?.id === a.id" color="primary">check_circle</mat-icon>
+          </div>
+
+          <div class="picker-empty" *ngIf="filteredAssetsToLink.length === 0">
+            <mat-icon>search_off</mat-icon>
+            <p>Nenhum equipamento disponível encontrado para a busca.</p>
+          </div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button mat-button (click)="closeLinkAssetModal()" [disabled]="linkingAsset">Cancelar</button>
+        <button mat-flat-button color="primary" [disabled]="!selectedAssetToLink || linkingAsset" (click)="confirmLinkAsset()">
+          <mat-spinner diameter="18" *ngIf="linkingAsset"></mat-spinner>
+          <mat-icon *ngIf="!linkingAsset">link</mat-icon>
+          <span>{{ linkingAsset ? 'Vinculando...' : 'Confirmar Vínculo' }}</span>
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Asset Action Modal -->
   <div class="modal-overlay" *ngIf="selectedAssetForAction && assetActionType">
     <div class="modal-card mat-elevation-z8" [formGroup]="assetActionForm">
@@ -603,6 +662,11 @@
               <h3>Equipamentos Associados a este Chamado</h3>
               <p>Rastreamento integrado do ciclo de vida: reserva antecipada, entrega técnica, devolução física e quarentena de inspeção.</p>
             </div>
+            <div class="header-actions" *ngIf="isTechnician">
+              <button mat-flat-button color="primary" class="link-asset-btn" (click)="openLinkAssetModal()">
+                <mat-icon>add_link</mat-icon> Vincular Equipamento
+              </button>
+            </div>
           </div>
 
           <div class="assets-cards-grid" *ngIf="ticket.assets && ticket.assets.length > 0">
@@ -665,6 +729,9 @@
                   </button>
                 </ng-container>
 
+                <button mat-icon-button color="warn" (click)="unlinkAsset(asset)" matTooltip="Desvincular equipamento deste chamado">
+                  <mat-icon>link_off</mat-icon>
+                </button>
                 <button mat-icon-button class="view-asset-btn" [routerLink]="['/assets', asset.id]" matTooltip="Ver ficha completa do ativo">
                   <mat-icon>open_in_new</mat-icon>
                 </button>
@@ -683,6 +750,11 @@
             <mat-icon>devices</mat-icon>
             <h4>Nenhum equipamento vinculado a este chamado</h4>
             <p>Quando um chamado envolve entrega ou devolução de patrimônio, os ativos selecionados são listados aqui para controle operacional.</p>
+            <div *ngIf="isTechnician" class="mt-3">
+              <button mat-flat-button color="primary" (click)="openLinkAssetModal()">
+                <mat-icon>add_link</mat-icon> Vincular um Equipamento Agora
+              </button>
+            </div>
           </div>
 
         </div>

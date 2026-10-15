@@ -208,6 +208,28 @@ import { Notification, NotificationsService } from '../../services/notifications
           width: 18px;
           height: 18px;
         }
+
+        @media (max-width: 640px) {
+          padding: 2px 4px;
+          gap: 4px;
+
+          .user-meta {
+            display: none;
+          }
+        }
+      }
+
+      @media (max-width: 600px) {
+        padding: 0 8px;
+
+        .demo-badge {
+          margin-right: 6px;
+          padding: 4px 6px;
+
+          span {
+            display: none;
+          }
+        }
       }
     }
 

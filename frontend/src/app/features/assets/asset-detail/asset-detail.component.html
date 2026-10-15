@@ -22,11 +22,11 @@
       <button mat-stroked-button class="print-btn" (click)="printResponsibilityStatement()" title="Imprimir Termo de Responsabilidade e Cautela">
         <mat-icon>print</mat-icon> Termo de Cautela
       </button>
+      <button mat-flat-button color="primary" class="open-ticket-action-btn" [routerLink]="['/service-desk/new']" [queryParams]="{ asset_id: asset.id }">
+        <mat-icon>confirmation_number</mat-icon> Abrir Chamado
+      </button>
       <span class="status-badge" [ngClass]="getStatusBadgeClass(asset.status)">
-<<<<<<< HEAD
-=======
         <span class="status-dot"></span>
->>>>>>> e7e3e62 (feat: profissionalizacao do sistema (demo, producao, backups reais, notificacoes e docs))
         {{ getStatusLabel(asset.status) }}
       </span>
     </div>
@@ -423,6 +423,70 @@
           <p>Sem histórico de movimentações registrado para este ativo.</p>
         </div>
         
+      </div>
+    </mat-tab>
+
+    <!-- TAB: Chamados Relacionados -->
+    <mat-tab>
+      <ng-template mat-tab-label>
+        <mat-icon class="tab-icon">confirmation_number</mat-icon>
+        <span>Chamados Relacionados</span>
+        <span class="tab-count-badge" *ngIf="tickets.length > 0">{{ tickets.length }}</span>
+      </ng-template>
+
+      <div class="tab-content">
+        <div class="tickets-container">
+          <div class="tickets-header-row">
+            <div>
+              <h3>Histórico de Chamados deste Equipamento</h3>
+              <p class="tickets-subtitle">Atendimentos, manutenções e registros operacionais vinculados a este ativo.</p>
+            </div>
+            <button mat-flat-button color="primary" [routerLink]="['/service-desk/new']" [queryParams]="{ asset_id: asset.id }">
+              <mat-icon>add</mat-icon> Abrir Chamado com este Ativo
+            </button>
+          </div>
+
+          <div class="tickets-grid" *ngIf="tickets.length > 0">
+            <div class="ticket-card glass-card" *ngFor="let t of tickets" [routerLink]="['/service-desk', t.id]">
+              <div class="ticket-card-header">
+                <div class="ticket-id-tag">
+                  <mat-icon class="tiny-icon">confirmation_number</mat-icon>
+                  <span>#{{ t.id.substring(0, 8) }}</span>
+                </div>
+                <div class="ticket-badges">
+                  <span class="priority-badge" [ngClass]="getPriorityBadgeClass(t.priority)">
+                    {{ getPriorityLabel(t.priority) }}
+                  </span>
+                  <span class="ticket-status-badge" [ngClass]="getTicketStatusBadgeClass(t.status)">
+                    {{ getTicketStatusLabel(t.status) }}
+                  </span>
+                </div>
+              </div>
+
+              <h4 class="ticket-title">{{ t.title }}</h4>
+              <p class="ticket-desc">{{ t.description }}</p>
+
+              <div class="ticket-card-footer">
+                <div class="footer-info">
+                  <span class="category-name" *ngIf="t.category">{{ t.category.name }}</span>
+                  <span class="ticket-date">{{ t.created_at | date:'dd/MM/yyyy HH:mm' }}</span>
+                </div>
+                <button mat-icon-button class="open-ticket-btn" [routerLink]="['/service-desk', t.id]" matTooltip="Acessar chamado">
+                  <mat-icon>chevron_right</mat-icon>
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <div *ngIf="tickets.length === 0" class="empty-state-large">
+            <mat-icon>confirmation_number</mat-icon>
+            <h4>Nenhum chamado registrado para este ativo</h4>
+            <p>Quando solicitações de suporte, trocas ou manutenções forem abertas vinculando este patrimônio, elas ficarão registradas aqui.</p>
+            <button mat-stroked-button color="primary" class="mt-3" [routerLink]="['/service-desk/new']" [queryParams]="{ asset_id: asset.id }">
+              <mat-icon>add</mat-icon> Abrir Primeiro Chamado
+            </button>
+          </div>
+        </div>
       </div>
     </mat-tab>
   </mat-tab-group>

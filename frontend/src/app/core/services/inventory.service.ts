@@ -8,6 +8,8 @@ export interface InventoryAuditItem {
   item_type: 'ASSET' | 'STOCK';
   asset_id?: string | null;
   stock_item_id?: string | null;
+  item_name?: string | null;
+  item_code?: string | null;
   expected_status?: string | null;
   expected_quantity?: number | null;
   actual_status?: string | null;
@@ -21,7 +23,9 @@ export interface InventoryAudit {
   id: string;
   name: string;
   unit_id: string;
+  unit_name?: string | null;
   auditor_id: string;
+  auditor_name?: string | null;
   status: 'OPENED' | 'IN_PROGRESS' | 'CLOSED' | 'CANCELLED';
   start_date?: string | null;
   end_date?: string | null;
@@ -50,6 +54,10 @@ export class InventoryService {
 
   createAudit(data: { name: string; unit_id: string; auditor_id: string }): Observable<InventoryAudit> {
     return this.http.post<InventoryAudit>(this.apiUrl, data);
+  }
+
+  populateItems(auditId: string): Observable<InventoryAudit> {
+    return this.http.post<InventoryAudit>(`${this.apiUrl}/${auditId}/populate`, {});
   }
 
   updateAudit(id: string, data: Partial<InventoryAudit>): Observable<InventoryAudit> {

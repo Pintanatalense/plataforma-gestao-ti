@@ -1080,25 +1080,33 @@ gzip -d &lt; backup_YYYYMMDD_HHMMSS.sql.gz | docker exec -i gestao-ti-db psql -U
                   Remove registros fictícios preservando rigorosamente: contas de administradores,
                   configurações do sistema, integrações, arquivos reais e logs de auditoria.
                 </p>
-                <button mat-flat-button color="warn" (click)="openCleanPreview()" [disabled]="loadingCleanPreview || !demoStatus?.latest_backup?.is_usable">
+                <button mat-flat-button color="warn" (click)="openCleanPreview()" [disabled]="loadingCleanPreview || demoStatus?.total_demo_records === 0">
                   <mat-icon>delete_sweep</mat-icon> Limpar dados de demonstração
                 </button>
-                <span *ngIf="!demoStatus?.latest_backup?.is_usable" style="display: block; font-size: 11px; color: #b91c1c; margin-top: 6px;">
-                  * Operação bloqueada: Requer backup recente verificado por segurança.
+                <span *ngIf="demoStatus?.total_demo_records === 0" style="display: block; font-size: 11px; color: #64748b; margin-top: 6px;">
+                  * Não há registros de demonstração pendentes de limpeza no momento.
+                </span>
+                <span *ngIf="demoStatus && demoStatus.total_demo_records > 0 && !demoStatus.latest_backup" style="display: block; font-size: 11px; color: #b45309; margin-top: 6px;">
+                  ℹ️ Um snapshot de segurança do banco será gerado automaticamente antes da limpeza.
                 </span>
               </div>
 
               <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;">
 
               <div class="action-block">
-                <h4 style="margin: 0 0 8px 0; color: #1e293b;">2. Recarregar Ambiente Demonstrativo</h4>
+                <h4 style="margin: 0 0 8px 0; color: #1e293b;">2. Recarregar Dados de Simulação</h4>
                 <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">
                   Popula o sistema de forma limpa e idempotente com dados fictícios e relacionamentos
-                  consistentes para apresentações comerciais e treinamentos.
+                  consistentes para apresentações comerciais ou testes de homologação/QA.
                 </p>
-                <button mat-stroked-button color="primary" (click)="executeSeedDemo()" [disabled]="seedingDemo">
-                  <mat-icon>science</mat-icon> Recarregar Dados Demonstrativos
-                </button>
+                <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                  <button mat-stroked-button color="primary" (click)="executeSeedDemo()" [disabled]="seedingDemo">
+                    <mat-icon>science</mat-icon> Recarregar Dados Demonstrativos (Comercial)
+                  </button>
+                  <button mat-flat-button color="primary" (click)="executeSeedTest()" [disabled]="seedingTest">
+                    <mat-icon>rule</mat-icon> Popular Base de Testes / Homologação (QA)
+                  </button>
+                </div>
               </div>
             </mat-card-content>
           </mat-card>

@@ -44,7 +44,7 @@ import { OrganizationService, Unit, Employee } from '../../../core/services/orga
         <mat-form-field appearance="outline">
           <mat-label>Auditor Responsável</mat-label>
           <mat-select formControlName="auditor_id" required>
-            <mat-option *ngFor="let emp of employees" [value]="emp.id">{{ emp.name }} ({{ emp.registration }})</mat-option>
+            <mat-option *ngFor="let emp of employees" [value]="emp.id">{{ emp.name }} ({{ emp.registration_number || emp.registration || '' }})</mat-option>
           </mat-select>
           <mat-icon matPrefix>person</mat-icon>
         </mat-form-field>

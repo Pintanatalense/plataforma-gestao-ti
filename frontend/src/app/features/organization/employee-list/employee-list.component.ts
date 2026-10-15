@@ -28,7 +28,7 @@ export class EmployeeList implements OnInit {
   private snackBar = inject(MatSnackBar);
   private cdr = inject(ChangeDetectorRef);
 
-  displayedColumns: string[] = ['sector', 'registration', 'name', 'job_title', 'status', 'actions'];
+  displayedColumns: string[] = ['sector', 'registration', 'name', 'phone', 'job_title', 'status', 'actions'];
   dataSource: Employee[] = [];
 
   ngOnInit(): void {

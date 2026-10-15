@@ -29,8 +29,82 @@ class InventoryAuditService:
     async def list_audits(self, unit_id: Optional[uuid.UUID] = None) -> List[InventoryAudit]:
         return await self.repo.list_all(unit_id)
 
-    async def create_audit(self, data: InventoryAuditCreate) -> InventoryAudit:
-        return await self.repo.create(data)
+    async def create_audit(self, data: InventoryAuditCreate, fallback_user_id: Optional[uuid.UUID] = None) -> InventoryAudit:
+        from app.identity.models import UserAccount
+        from sqlalchemy import select
+
+        # Resolver auditor_id: caso tenha vindo o employee_id selecionado no frontend
+        stmt_user = select(UserAccount).where(
+            (UserAccount.id == data.auditor_id) | (UserAccount.employee_id == data.auditor_id)
+        )
+        user_res = await self.repo.session.execute(stmt_user)
+        user = user_res.scalars().first()
+        if user:
+            data.auditor_id = user.id
+        elif fallback_user_id:
+            data.auditor_id = fallback_user_id
+
+        audit = await self.repo.create(data)
+        await self.populate_audit_items(audit.id)
+        return await self.get_audit(audit.id)
+
+    async def populate_audit_items(self, audit_id: uuid.UUID) -> InventoryAudit:
+        from sqlalchemy import select
+        from app.assets.models import Asset
+        from app.stock.models import StockItem
+
+        audit = await self.get_audit(audit_id)
+        if audit.status in ["CLOSED", "CANCELLED"]:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Não é possível sincronizar itens de um inventário fechado ou cancelado"
+            )
+
+        existing_asset_ids = {item.asset_id for item in audit.items if item.asset_id}
+        existing_stock_ids = {item.stock_item_id for item in audit.items if item.stock_item_id}
+
+        # 1. Ativos pertencentes à unidade do inventário
+        stmt_assets = select(Asset).where(
+            Asset.unit_id == audit.unit_id,
+            Asset.deleted_at.is_(None)
+        )
+        assets_res = await self.repo.session.execute(stmt_assets)
+        assets = assets_res.scalars().all()
+
+        for a in assets:
+            if a.id not in existing_asset_ids:
+                new_item = InventoryAuditItem(
+                    audit_id=audit.id,
+                    asset_id=a.id,
+                    item_type="ASSET",
+                    expected_status=a.status,
+                    actual_status=None,
+                    notes=None
+                )
+                self.repo.session.add(new_item)
+
+        # 2. Itens de estoque pertencentes à unidade do inventário
+        stmt_stock = select(StockItem).where(
+            StockItem.unit_id == audit.unit_id
+        )
+        stock_res = await self.repo.session.execute(stmt_stock)
+        stock_items = stock_res.scalars().all()
+
+        for s in stock_items:
+            if s.id not in existing_stock_ids:
+                new_item = InventoryAuditItem(
+                    audit_id=audit.id,
+                    stock_item_id=s.id,
+                    item_type="STOCK",
+                    expected_quantity=s.quantity,
+                    actual_quantity=None,
+                    notes=None
+                )
+                self.repo.session.add(new_item)
+
+        await self.repo.session.flush()
+        await self.repo.session.refresh(audit, ["items"])
+        return audit
 
     async def update_audit(self, audit_id: uuid.UUID, data: InventoryAuditUpdate) -> InventoryAudit:
         audit = await self.get_audit(audit_id)

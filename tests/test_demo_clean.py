@@ -2,9 +2,11 @@
 Teste automatizado para o fluxo de Limpeza Segura de Demonstração e Re-Seed Idempotente.
 """
 
+import os
 import httpx
 
-client = httpx.Client(base_url="http://localhost", timeout=25.0)
+target_url = os.environ.get("TARGET_URL", "http://localhost")
+client = httpx.Client(base_url=target_url, timeout=25.0)
 
 # 1. Login Admin
 r = client.post("/api/v1/identity/login", data={"username": "admin@empresa.com.br", "password": "Demo@2026"})

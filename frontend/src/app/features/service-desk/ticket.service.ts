@@ -160,6 +160,14 @@ export class TicketService {
   }
 
   // Ticket Assets Lifecycle
+  linkAssetToTicket(ticketId: string, assetId: string): Observable<any> {
+    return this.http.post(`${this.apiUrl}/${ticketId}/assets/${assetId}`, {});
+  }
+
+  unlinkAssetFromTicket(ticketId: string, assetId: string): Observable<any> {
+    return this.http.delete(`${this.apiUrl}/${ticketId}/assets/${assetId}`);
+  }
+
   reserveTicketAsset(
     ticketId: string,
     assetId: string,

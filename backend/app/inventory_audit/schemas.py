@@ -30,6 +30,8 @@ class InventoryAuditItemOut(InventoryAuditItemBase):
 
     id: uuid.UUID
     audit_id: uuid.UUID
+    item_name: Optional[str] = ""
+    item_code: Optional[str] = ""
     created_at: datetime
     updated_at: datetime
 
@@ -57,6 +59,8 @@ class InventoryAuditOut(InventoryAuditBase):
 
     id: uuid.UUID
     status: str
+    unit_name: Optional[str] = ""
+    auditor_name: Optional[str] = ""
     start_date: Optional[datetime]
     end_date: Optional[datetime]
     notes: Optional[str]

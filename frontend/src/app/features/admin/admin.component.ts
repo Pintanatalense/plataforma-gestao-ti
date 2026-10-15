@@ -158,6 +158,7 @@ export class AdminComponent implements OnInit {
   cleanConfirmationPhrase = '';
   cleaningDemo = false;
   seedingDemo = false;
+  seedingTest = false;
 
   // --- Notificações por E-mail / SMTP (MOD-11) ---
   smtpConfig: SmtpConfig = {
@@ -739,6 +740,25 @@ export class AdminComponent implements OnInit {
         this.seedingDemo = false;
         const msg = err.error?.detail || 'Erro ao recarregar dados demonstrativos.';
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+      }
+    });
+  }
+
+  executeSeedTest(): void {
+    if (!confirm('Deseja popular a base com os dados completos de testes/homologação (QA)?')) {
+      return;
+    }
+    this.seedingTest = true;
+    this.adminService.seedTestData().subscribe({
+      next: (res) => {
+        this.seedingTest = false;
+        this.snackBar.open(res.message || 'Base de testes/homologação carregada com sucesso!', 'OK', { duration: 5000 });
+        this.loadDemoStatus();
+      },
+      error: (err) => {
+        this.seedingTest = false;
+        const msg = err.error?.detail || 'Erro ao carregar dados de testes/homologação.';
+        this.snackBar.open(msg, 'Fechar', { duration: 5000 });
       }
     });
   }

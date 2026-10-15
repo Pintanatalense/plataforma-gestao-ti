@@ -6,6 +6,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
 import { MatButtonModule } from '@angular/material/button';
+import { MatIconModule } from '@angular/material/icon';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { OrganizationService, Employee, Sector } from '../../../core/services/organization.service';
 
@@ -20,6 +21,7 @@ import { OrganizationService, Employee, Sector } from '../../../core/services/or
     MatInputModule,
     MatSelectModule,
     MatButtonModule,
+    MatIconModule,
     MatSlideToggleModule
   ],
   template: `
@@ -48,6 +50,13 @@ import { OrganizationService, Employee, Sector } from '../../../core/services/or
           <input matInput formControlName="job_title" required>
         </mat-form-field>
 
+        <mat-form-field appearance="outline">
+          <mat-label>Telefone / WhatsApp</mat-label>
+          <input matInput formControlName="phone" placeholder="Ex: +5511999998888 ou 11999998888">
+          <mat-icon matPrefix>phone</mat-icon>
+          <mat-hint>Utilizado para notificações e bot de atendimento via WhatsApp</mat-hint>
+        </mat-form-field>
+
         <mat-slide-toggle formControlName="is_active" *ngIf="data">
           Ativo
         </mat-slide-toggle>
@@ -64,7 +73,7 @@ import { OrganizationService, Employee, Sector } from '../../../core/services/or
       flex-direction: column;
       gap: 16px;
       margin-top: 8px;
-      min-width: 300px;
+      min-width: 320px;
     }
   `]
 })
@@ -83,6 +92,7 @@ export class EmployeeDialogComponent implements OnInit {
       registration: [this.data?.registration || '', Validators.required],
       name: [this.data?.name || '', Validators.required],
       job_title: [this.data?.job_title || '', Validators.required],
+      phone: [this.data?.phone || ''],
       is_active: [this.data ? this.data.is_active : true]
     });
   }

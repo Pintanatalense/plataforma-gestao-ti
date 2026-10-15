@@ -147,3 +147,38 @@ async def get_responsibility_statement(
 
     html_content = await service.generate_responsibility_statement(asset_id)
     return HTMLResponse(content=html_content)
+
+
+@router.get(
+    "/{asset_id}/tickets",
+    summary="Lista todos os chamados relacionados a este ativo patrimonial",
+)
+async def list_asset_tickets(
+    asset_id: uuid.UUID,
+    session: AsyncSession = Depends(get_db),
+    payload: dict = Depends(get_token_payload),
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    from app.service_desk.services import ServiceDeskService
+    from app.service_desk.schemas import TicketResponse
+
+    permissions = payload.get("permissions", [])
+    is_admin = payload.get("is_admin", False)
+    if not (is_admin or "assets.read" in permissions or "service_desk.tickets.read" in permissions):
+        if "assets.read_own" in permissions:
+            from app.identity.repository import IdentityRepository
+            from app.assets.repository import AssetRepository
+            from app.movements.repository import AssetMovementRepository
+            user = await IdentityRepository(session).get_user(current_user_id)
+            asset = await AssetService(AssetRepository(session), AssetMovementRepository(session)).get_asset(asset_id)
+            if not (user and user.employee_id and asset.employee_id == user.employee_id):
+                from app.core.exceptions import ForbiddenException
+                raise ForbiddenException("Permissão insuficiente para visualizar chamados deste ativo.")
+        else:
+            from app.core.exceptions import ForbiddenException
+            raise ForbiddenException("Permissão insuficiente.")
+
+    sd_service = ServiceDeskService(session)
+    tickets = await sd_service.list_tickets_by_asset(asset_id)
+    return [TicketResponse.model_validate(t) for t in tickets]
+

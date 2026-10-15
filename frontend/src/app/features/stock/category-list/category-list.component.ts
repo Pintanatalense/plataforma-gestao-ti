@@ -231,10 +231,9 @@ interface SpecFieldItem {
     .page-container {
       display: flex;
       flex-direction: column;
-      gap: 32px;
-      padding: 32px;
-      background: var(--mat-sys-surface-container-lowest, #f8fafc);
-      min-height: calc(100vh - 64px);
+      gap: 24px;
+      width: 100%;
+      box-sizing: border-box;
       animation: fadeIn 0.4s ease-out;
     }
 
@@ -252,6 +251,21 @@ interface SpecFieldItem {
       border-radius: 20px;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
       border: 1px solid var(--mat-sys-outline-variant, #e2e8f0);
+
+      @media (max-width: 640px) {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 16px;
+        padding: 16px 20px;
+
+        .header-actions {
+          width: 100%;
+          .nav-btn {
+            width: 100%;
+            justify-content: center;
+          }
+        }
+      }
 
       .title-area {
         .title-row {
@@ -294,8 +308,8 @@ interface SpecFieldItem {
 
     .content-grid {
       display: grid;
-      grid-template-columns: 480px 1fr;
-      gap: 32px;
+      grid-template-columns: 420px 1fr;
+      gap: 24px;
       align-items: start;
     }
 
@@ -313,8 +327,17 @@ interface SpecFieldItem {
       border: 1px solid var(--mat-sys-outline-variant, #e2e8f0);
     }
 
+    .table-card {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
     .form-card {
       padding: 28px;
+
+      @media (max-width: 640px) {
+        padding: 20px 16px;
+      }
       
       .card-header {
         margin-bottom: 20px;
@@ -558,6 +581,7 @@ interface SpecFieldItem {
 
       .modern-table {
         width: 100%;
+        min-width: 520px;
         border-collapse: separate;
         border-spacing: 0;
 

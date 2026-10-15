@@ -135,3 +135,19 @@ class ServiceDeskRepository:
         await self.session.flush()
         await self.session.refresh(material)
         return material
+
+    async def list_tickets_by_asset(self, asset_id: uuid.UUID) -> Sequence[Ticket]:
+        stmt = (
+            select(Ticket)
+            .join(Ticket.assets)
+            .where(Asset.id == asset_id)
+            .options(
+                selectinload(Ticket.category),
+                selectinload(Ticket.interactions),
+                selectinload(Ticket.assets),
+            )
+            .order_by(Ticket.created_at.desc())
+        )
+        result = await self.session.execute(stmt)
+        return result.scalars().all()
+

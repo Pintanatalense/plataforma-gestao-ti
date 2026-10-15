@@ -93,6 +93,14 @@ export class AssetService {
     return this.http.get<Asset>(`${this.assetsUrl}/${id}`);
   }
 
+  getMyAssets(): Observable<Asset[]> {
+    return this.http.get<Asset[]>(`${this.assetsUrl}/me`);
+  }
+
+  getAssetTickets(assetId: string): Observable<any[]> {
+    return this.http.get<any[]>(`${this.assetsUrl}/${assetId}/tickets`);
+  }
+
   createAsset(data: any): Observable<Asset> {
     return this.http.post<Asset>(this.assetsUrl, data);
   }

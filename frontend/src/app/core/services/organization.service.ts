@@ -21,9 +21,11 @@ export interface Sector {
 export interface Employee {
   id: string;
   registration: string;
+  registration_number?: string;
   name: string;
   sector_id: string;
   job_title: string;
+  phone?: string | null;
   is_active: boolean;
   sector?: Sector;
 }

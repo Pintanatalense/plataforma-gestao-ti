@@ -274,33 +274,51 @@ class DemoManagementService:
             )
 
         # 1. Empresa Modelo
-        company = Company(
-            name="TechCorp Soluções Empresariais Ltda.",
-            cnpj="12.345.678/0001-90",
-            is_demo=True
-        )
-        self.session.add(company)
-        await self.session.flush()
+        stmt_c = select(Company).where(Company.cnpj == "12.345.678/0001-90")
+        company = (await self.session.execute(stmt_c)).scalar_one_or_none()
+        if not company:
+            company = Company(
+                name="TechCorp Soluções Empresariais Ltda.",
+                cnpj="12.345.678/0001-90",
+                is_demo=True
+            )
+            self.session.add(company)
+            await self.session.flush()
+        else:
+            company.is_demo = True
 
         # 2. Unidades
-        matriz = Unit(
-            company_id=company.id,
-            name="Matriz Corporativa - SP",
-            code="MAT-01",
-            type="MATRIZ",
-            address="Av. Paulista, 1000 - Bela Vista, São Paulo - SP",
-            is_demo=True
-        )
-        filial = Unit(
-            company_id=company.id,
-            name="Filial Operacional - RN",
-            code="FIL-01",
-            type="FILIAL",
-            address="Av. Hermes da Fonseca, 500 - Tirol, Natal - RN",
-            is_demo=True
-        )
-        self.session.add_all([matriz, filial])
-        await self.session.flush()
+        stmt_m = select(Unit).where(Unit.code == "MAT-01")
+        matriz = (await self.session.execute(stmt_m)).scalar_one_or_none()
+        if not matriz:
+            matriz = Unit(
+                company_id=company.id,
+                name="Matriz Corporativa - SP",
+                code="MAT-01",
+                type="MATRIZ",
+                address="Av. Paulista, 1000 - Bela Vista, São Paulo - SP",
+                is_demo=True
+            )
+            self.session.add(matriz)
+            await self.session.flush()
+        else:
+            matriz.is_demo = True
+
+        stmt_f = select(Unit).where(Unit.code == "FIL-01")
+        filial = (await self.session.execute(stmt_f)).scalar_one_or_none()
+        if not filial:
+            filial = Unit(
+                company_id=company.id,
+                name="Filial Operacional - RN",
+                code="FIL-01",
+                type="FILIAL",
+                address="Av. Hermes da Fonseca, 500 - Tirol, Natal - RN",
+                is_demo=True
+            )
+            self.session.add(filial)
+            await self.session.flush()
+        else:
+            filial.is_demo = True
 
         # 3. Setores
         sectors_data = [
@@ -315,8 +333,15 @@ class DemoManagementService:
         ]
         sectors = {}
         for s_name, s_code, u_id in sectors_data:
-            sec = Sector(unit_id=u_id, name=s_name, code=s_code, is_demo=True)
-            self.session.add(sec)
+            stmt_s = select(Sector).where(Sector.code == s_code)
+            sec = (await self.session.execute(stmt_s)).scalar_one_or_none()
+            if not sec:
+                sec = Sector(unit_id=u_id, name=s_name, code=s_code, is_demo=True)
+                self.session.add(sec)
+                await self.session.flush()
+            else:
+                sec.is_demo = True
+                sec.unit_id = u_id
             sectors[s_code] = sec
         await self.session.flush()
 
@@ -367,30 +392,45 @@ class DemoManagementService:
         created_employees = []
         for idx, (u_name, u_email, s_code, u_pos, u_role) in enumerate(demo_users_data, 1):
             sec = sectors[s_code]
-            emp = Employee(
-                unit_id=sec.unit_id,
-                sector_id=sec.id,
-                name=u_name,
-                registration_number=f"DEMO-{idx:03d}",
-                position=u_pos,
-                phone=f"+551198888{idx:04d}",
-                status="ATIVO",
-                is_demo=True
-            )
-            self.session.add(emp)
-            await self.session.flush()
+            reg_num = f"DEMO-{idx:03d}"
+            stmt_e = select(Employee).where(Employee.registration_number == reg_num)
+            emp = (await self.session.execute(stmt_e)).scalar_one_or_none()
+            if not emp:
+                emp = Employee(
+                    unit_id=sec.unit_id,
+                    sector_id=sec.id,
+                    name=u_name,
+                    registration_number=reg_num,
+                    position=u_pos,
+                    phone=f"+551198888{idx:04d}",
+                    status="ATIVO",
+                    is_demo=True
+                )
+                self.session.add(emp)
+                await self.session.flush()
+            else:
+                emp.is_demo = True
+                emp.unit_id = sec.unit_id
+                emp.sector_id = sec.id
+                emp.phone = f"+551198888{idx:04d}"
 
-            usr = UserAccount(
-                email=u_email,
-                hashed_password=hash_password("Demo@2026"),
-                must_change_password=False,
-                is_admin=False,
-                is_demo=True,
-                employee_id=emp.id
-            )
-            if u_role:
-                usr.roles = [u_role]
-            self.session.add(usr)
+            stmt_u = select(UserAccount).options(selectinload(UserAccount.roles)).where(UserAccount.email == u_email)
+            usr = (await self.session.execute(stmt_u)).scalar_one_or_none()
+            if not usr:
+                usr = UserAccount(
+                    email=u_email,
+                    hashed_password=hash_password("Demo@2026"),
+                    must_change_password=False,
+                    is_admin=False,
+                    is_demo=True,
+                    employee_id=emp.id
+                )
+                if u_role:
+                    usr.roles = [u_role]
+                self.session.add(usr)
+            else:
+                usr.is_demo = True
+                usr.employee_id = emp.id
             created_employees.append(emp)
 
         await self.session.flush()
@@ -432,17 +472,24 @@ class DemoManagementService:
             ("PAT-0005", "HP ProBook 440 G8 - TI", cat_note.id, filial.id, created_employees[7].id),
         ]
         for tag, name, cat_id, u_id, emp_id in assets_sample:
-            ast = Asset(
-                tag=tag,
-                name=name,
-                category_id=cat_id,
-                unit_id=u_id,
-                employee_id=emp_id,
-                status=AssetStatus.IN_USE.value,
-                technical_specs={"processador": "Core i7 / Apple Silicon", "memoria_ram": "16GB", "armazenamento": "512GB SSD"},
-                is_demo=True
-            )
-            self.session.add(ast)
+            stmt_a = select(Asset).where(Asset.tag == tag)
+            ast = (await self.session.execute(stmt_a)).scalar_one_or_none()
+            if not ast:
+                ast = Asset(
+                    tag=tag,
+                    name=name,
+                    category_id=cat_id,
+                    unit_id=u_id,
+                    employee_id=emp_id,
+                    status=AssetStatus.IN_USE.value,
+                    technical_specs={"processador": "Core i7 / Apple Silicon", "memoria_ram": "16GB", "armazenamento": "512GB SSD"},
+                    is_demo=True
+                )
+                self.session.add(ast)
+            else:
+                ast.is_demo = True
+                ast.unit_id = u_id
+                ast.employee_id = emp_id
 
         # 6. Atualizar modo para DEMO
         await self.set_system_mode("DEMO")

@@ -70,7 +70,10 @@ make seed
 make up          # Iniciar containers
 make down        # Parar containers
 make logs        # Ver logs
-make test        # Executar testes
+make test        # Executar testes unitários rápidos (SQLite in-memory)
+make test-pg     # Executar testes no PostgreSQL descartável real (porta 55432)
+make test-db-up  # Iniciar PostgreSQL de testes (porta 55432)
+make seed-test   # Popular base de homologação/QA com cenários de estresse
 make migrate     # Rodar migrações
 make lint        # Verificar código
 make backup      # Backup do banco
@@ -80,6 +83,8 @@ make backup      # Backup do banco
 
 - [Visão Geral do Sistema](docs/system-overview.md)
 - [Arquitetura](docs/architecture/overview.md)
+- [Base de Testes e Homologação (QA)](docs/11-base-de-testes-e-homologacao.md)
+- [Gestão do Ambiente Demonstrativo](docs/07-gestao-do-ambiente-demonstrativo.md)
 - [Decisões (ADRs)](docs/decisions/)
 - [Módulos](docs/modules/)
 

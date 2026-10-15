@@ -1,6 +1,8 @@
+import os
 import httpx
 
-client = httpx.Client(base_url="http://localhost", timeout=15.0)
+target_url = os.environ.get("TARGET_URL", "http://localhost")
+client = httpx.Client(base_url=target_url, timeout=15.0)
 
 # 1. Login Admin
 r = client.post("/api/v1/identity/login", data={"username": "admin@empresa.com.br", "password": "Demo@2026"})

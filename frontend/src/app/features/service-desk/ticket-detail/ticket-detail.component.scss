@@ -1420,3 +1420,163 @@
     color: #64748b;
   }
 }
+
+/* Modal Vincular Equipamento */
+.link-asset-modal {
+  max-width: 620px;
+  width: 95%;
+
+  .assets-picker-list {
+    max-height: 320px;
+    overflow-y: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+
+    .picker-asset-item {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 10px 14px;
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+
+      &:hover {
+        border-color: #3b82f6;
+        background: #f0f7ff;
+      }
+
+      &.selected {
+        border-color: #2563eb;
+        background: #eff6ff;
+        box-shadow: 0 0 0 1px #2563eb;
+      }
+
+      .asset-picker-info {
+        display: flex;
+        flex-direction: column;
+        gap: 3px;
+
+        .tag-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+
+          .asset-tag {
+            font-family: monospace;
+            font-weight: 700;
+            color: #1e293b;
+            font-size: 13px;
+          }
+        }
+
+        .asset-picker-name {
+          font-size: 14px;
+          color: #1e293b;
+        }
+
+        .asset-picker-sub {
+          font-size: 12px;
+          color: #64748b;
+        }
+      }
+
+      .check-icon {
+        font-size: 22px;
+        width: 22px;
+        height: 22px;
+      }
+    }
+
+    .picker-empty {
+      padding: 32px 16px;
+      text-align: center;
+      color: #94a3b8;
+
+      mat-icon {
+        font-size: 36px;
+        width: 36px;
+        height: 36px;
+        margin-bottom: 6px;
+      }
+
+      p {
+        margin: 0;
+        font-size: 13px;
+      }
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .chat-page-container {
+    height: auto;
+    min-height: calc(100vh - 84px);
+    border-radius: 8px;
+  }
+
+  .chat-header {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 12px 14px;
+    gap: 12px;
+
+    .header-info {
+      .title-row {
+        align-items: flex-start;
+        h1 {
+          font-size: 17px;
+          line-height: 1.3;
+        }
+      }
+
+      .meta-row {
+        gap: 6px;
+      }
+    }
+
+    .header-actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      width: 100%;
+
+      .action-btn {
+        flex: 1 1 auto;
+        justify-content: center;
+        font-size: 13px;
+        padding: 0 12px;
+      }
+    }
+  }
+
+  .chat-input-area {
+    padding: 12px;
+
+    .input-row {
+      flex-direction: column;
+      gap: 8px;
+
+      .send-btn {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  }
+
+  .modal-card,
+  .wa-modal-card {
+    width: 95vw !important;
+    max-width: 95vw !important;
+    max-height: 90vh;
+    padding: 16px;
+  }
+}
+

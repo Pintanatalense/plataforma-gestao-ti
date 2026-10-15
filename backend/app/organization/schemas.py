@@ -117,6 +117,7 @@ class EmployeeBase(BaseModel):
     registration: Optional[str] = Field(None, max_length=50)
     position: Optional[str] = Field(None, max_length=255)
     job_title: Optional[str] = Field(None, max_length=255)
+    phone: Optional[str] = Field(None, max_length=30)
     status: str = Field(default="ATIVO", max_length=20)
     is_active: bool = True
 
@@ -134,6 +135,7 @@ class EmployeeUpdate(BaseModel):
     registration: Optional[str] = Field(None, max_length=50)
     position: Optional[str] = Field(None, max_length=255)
     job_title: Optional[str] = Field(None, max_length=255)
+    phone: Optional[str] = Field(None, max_length=30)
     status: Optional[str] = Field(None, max_length=20)
     is_active: Optional[bool] = None
 
@@ -146,6 +148,7 @@ class EmployeeOut(BaseModel):
     name: str
     registration_number: str
     position: Optional[str] = None
+    phone: Optional[str] = None
     status: str
     is_active: bool
     created_at: datetime

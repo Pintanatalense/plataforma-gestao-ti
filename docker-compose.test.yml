@@ -1,0 +1,48 @@
+# =============================================================================
+# Docker Compose — Base de Testes / Homologação (QA)
+#
+# Serviços:
+#   - postgres-test: Banco de dados PostgreSQL 16 isolado para testes e QA
+#
+# Uso:
+#   docker-compose -f docker-compose.test.yml up -d      # Iniciar PostgreSQL de teste
+#   docker-compose -f docker-compose.test.yml down -v     # Parar e descartar dados
+#
+# Características:
+#   - Porta: 55432 (evita conflito com o PostgreSQL de desenvolvimento na 5432)
+#   - Banco de Dados: gti_test (compatível com a guarda de segurança backend/tests/_guard.py)
+#   - Usuário / Senha: postgres / postgres
+#   - Otimizado para execução rápida de testes (fsync=off, synchronous_commit=off)
+# =============================================================================
+
+services:
+  postgres-test:
+    image: postgres:16-alpine
+    container_name: gestao-ti-db-test
+    restart: "no"
+    command:
+      - "postgres"
+      - "-c"
+      - "fsync=off"
+      - "-c"
+      - "synchronous_commit=off"
+      - "-c"
+      - "full_page_writes=off"
+    environment:
+      POSTGRES_DB: gti_test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "55432:5432"
+    volumes:
+      - postgres_test_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gti_test"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+      start_period: 2s
+
+volumes:
+  postgres_test_data:
+    driver: local

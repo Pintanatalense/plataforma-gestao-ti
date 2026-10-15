@@ -43,11 +43,16 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         if "pg" in item.keywords or "migrations" in item.keywords:
             item.add_marker(skip)
 
-# Engine de teste — SQLite async in-memory
-TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
+# Engine de teste — Se USE_PG_TEST estiver ativo, conecta ao PostgreSQL descartável (porta 55432).
+# Caso contrário, utiliza SQLite async in-memory para execução ultrarrápida.
+USE_PG_TEST = os.environ.get("USE_PG_TEST", "").lower() in ("1", "true", "yes")
+if USE_PG_TEST and TEST_PG_URL:
+    ACTIVE_TEST_DATABASE_URL = TEST_PG_URL
+else:
+    ACTIVE_TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
 test_engine = create_async_engine(
-    TEST_DATABASE_URL,
+    ACTIVE_TEST_DATABASE_URL,
     echo=False,
 )
 

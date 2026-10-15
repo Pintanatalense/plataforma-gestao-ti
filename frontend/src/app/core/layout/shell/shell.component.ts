@@ -64,9 +64,14 @@ import { AuthService } from '../../auth/auth.service';
       overflow-y: auto;
       box-sizing: border-box;
       background-color: #f8fafc;
+      width: 100%;
+
+      @media (max-width: 1024px) {
+        padding: 20px 20px;
+      }
 
       @media (max-width: 768px) {
-        padding: 16px;
+        padding: 14px 12px;
       }
     }
   `]

@@ -36,4 +36,55 @@ body {
   margin: 0;
   height: 100%;
 }
-/* You can add global styles to this file, and also import other style files */
+
+*, *::before, *::after {
+  box-sizing: border-box;
+}
+
+/* Global Responsive Foundations */
+.page-container {
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+/* Responsive Table Wrapper with Smooth Mobile Touch Scrolling */
+.table-container,
+.table-card,
+.table-wrap,
+.table-responsive {
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  background-color: #ffffff;
+  border-radius: 12px;
+}
+
+/* Ensure MatTable scales fluidly without squishing columns */
+.mat-mdc-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+/* Mobile dialog overlay sizing */
+.cdk-overlay-pane {
+  max-width: 95vw !important;
+}
+
+@media (max-width: 600px) {
+  .mat-mdc-dialog-container .mdc-dialog__surface {
+    padding: 16px !important;
+  }
+}
+
+/* Responsive Material Tabs Header */
+.mat-mdc-tab-header {
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Utility for form fields in grids */
+.full-width, .w-100 {
+  width: 100%;
+}
