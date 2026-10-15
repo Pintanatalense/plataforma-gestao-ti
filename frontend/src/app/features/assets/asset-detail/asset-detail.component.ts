@@ -318,8 +318,12 @@ export class AssetDetailComponent implements OnInit {
     switch (status) {
       case 'IN_STOCK':
         return 'status-in_stock';
+      case 'RESERVED':
+        return 'status-reserved';
       case 'IN_USE':
         return 'status-in_use';
+      case 'PENDING_INSPECTION':
+        return 'status-pending_inspection';
       case 'MAINTENANCE':
         return 'status-maintenance';
       case 'DECOMMISSIONED':
@@ -333,8 +337,12 @@ export class AssetDetailComponent implements OnInit {
     switch (status) {
       case 'IN_STOCK':
         return 'Em Estoque';
+      case 'RESERVED':
+        return 'Reservado';
       case 'IN_USE':
         return 'Em Uso';
+      case 'PENDING_INSPECTION':
+        return 'Aguardando Inspeção';
       case 'MAINTENANCE':
         return 'Em Manutenção';
       case 'DECOMMISSIONED':
@@ -465,21 +473,5 @@ export class AssetDetailComponent implements OnInit {
       DECOMMISSION: 'Baixa Definitiva'
     };
     return map[type] || type;
-  }
-
-  getStatusBadgeClass(status: string): string {
-    return `status-${status.toLowerCase()}`;
-  }
-
-  getStatusLabel(status: string): string {
-    const map: Record<string, string> = {
-      IN_STOCK: 'Em Estoque',
-      RESERVED: 'Reservado',
-      IN_USE: 'Em Uso',
-      PENDING_INSPECTION: 'Aguardando Inspeção',
-      MAINTENANCE: 'Em Manutenção',
-      DECOMMISSIONED: 'Baixado'
-    };
-    return map[status] || status;
   }
 }
