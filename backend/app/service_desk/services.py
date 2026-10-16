@@ -824,6 +824,7 @@ class ServiceDeskService:
     async def _record_audit_event(
         self, event_type: str, ticket_id: uuid.UUID, data: dict, user_id: uuid.UUID | None
     ) -> None:
+        """Grava o evento na mesma transação do chamado (única escrita; não emitir também no event_bus)."""
         try:
             from app.audit.repository import AuditRepository
             audit_repo = AuditRepository(self.session)
@@ -836,16 +837,3 @@ class ServiceDeskService:
             )
         except Exception:
             logger.exception("Falha ao gravar registro de auditoria no banco")
-
-        try:
-            from app.core.events import Event, event_bus
-            await event_bus.emit(Event(
-                event_type=event_type,
-                entity_type="ticket",
-                entity_id=ticket_id,
-                data=data,
-                user_id=user_id,
-            ))
-        except Exception:
-            logger.exception("Falha ao emitir evento no event_bus")
-
