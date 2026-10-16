@@ -327,7 +327,7 @@ async def test_inactive_category_is_hidden_from_list_but_old_tickets_survive(
     resp = await client.patch(f"{API}/categories/{env['cat'].id}", json={"is_active": False}, headers=env["h_t"])
     assert resp.status_code == 200
 
-    names = {c["id"] for c in (await client.get(f"{API}/categories")).json()}
+    names = {c["id"] for c in (await client.get(f"{API}/categories", headers=env["h_a"])).json()}
     assert str(env["cat"].id) not in names
     detail = await client.get(f"{API}/{t['id']}", headers=env["h_a"])
     assert detail.status_code == 200
@@ -350,7 +350,6 @@ async def test_category_default_sector_cannot_be_cleared(client: AsyncClient, db
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(strict=True, reason="R1: GET /tickets/categories não exige autenticação")
 async def test_categories_list_requires_authentication(client: AsyncClient, db_session: AsyncSession):
     await _env(db_session)
     resp = await client.get(f"{API}/categories")
@@ -358,11 +357,8 @@ async def test_categories_list_requires_authentication(client: AsyncClient, db_s
 
 
 async def test_attachments_of_foreign_ticket_are_forbidden(
-    client: AsyncClient, db_session: AsyncSession, monkeypatch, tmp_path
+    client: AsyncClient, db_session: AsyncSession
 ):
-    import app.attachments.service as attachment_service
-
-    monkeypatch.setattr(attachment_service, "UPLOADS_DIR", str(tmp_path))
     env = await _env(db_session)
     t = await _open_ticket(client, env["h_a"], env["cat"].id)
     db_session.add(

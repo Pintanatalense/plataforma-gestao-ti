@@ -2,6 +2,8 @@
 Testes automatizados para MOD-15 — WhatsApp Integration & Bot
 """
 
+import uuid
+
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -16,6 +18,21 @@ from app.whatsapp.adapter import default_mock_adapter
 from tests.conftest import make_auth_headers
 
 pytestmark = pytest.mark.asyncio
+
+
+WEBHOOK_SECRET = "segredo-de-teste-do-webhook"
+
+
+async def wa(client: AsyncClient, payload: dict):
+    """Chama o webhook autenticado; a resposta do bot é lida no adapter mock."""
+    return await client.post(
+        "/api/v1/integrations/whatsapp/webhook", json=payload, headers={"X-Webhook-Secret": WEBHOOK_SECRET}
+    )
+
+
+def last_reply() -> str:
+    return default_mock_adapter.sent_messages[-1]["text"]
+
 
 
 async def setup_whatsapp_fixtures(db_session: AsyncSession):
@@ -71,14 +88,14 @@ async def setup_whatsapp_fixtures(db_session: AsyncSession):
     await db_session.flush()
 
     # Configuração de WhatsApp garantida no banco
-    cfg = WhatsAppConfig(provider="MOCK", is_enabled=True)
+    cfg = WhatsAppConfig(provider="MOCK", is_enabled=True, webhook_secret=WEBHOOK_SECRET)
     db_session.add(cfg)
     await db_session.commit()
 
     default_mock_adapter.clear()
 
     return {
-        "admin_headers": make_auth_headers(str(user_admin.id), is_admin=False, permissions=["integrations.whatsapp.manage"]),
+        "admin_headers": make_auth_headers(str(user_admin.id), is_admin=False, permissions=["integrations.whatsapp.manage", "service_desk.tickets.manage"]),
         "regular_headers": make_auth_headers(str(user_linked.id), is_admin=False, permissions=[]),
         "emp_linked": emp_linked,
         "emp_unlinked": emp_unlinked,
@@ -86,33 +103,62 @@ async def setup_whatsapp_fixtures(db_session: AsyncSession):
     }
 
 
-async def test_unlinked_user_identification_and_linking(client: AsyncClient, db_session: AsyncSession):
-    """Testa o fluxo de identificação e vinculação de matrícula funcional via WhatsApp."""
-    fixtures = await setup_whatsapp_fixtures(db_session)
+async def test_unlinked_number_gets_generic_reply_and_is_never_linked(client: AsyncClient, db_session: AsyncSession):
+    """Número desconhecido não é vinculado por matrícula e não recebe dados de ninguém."""
+    await setup_whatsapp_fixtures(db_session)
     phone = "5521999990000"
 
-    # 1. Envia 'Oi' de número desconhecido -> Bot pede a matrícula
-    r1 = await client.post("/api/v1/integrations/whatsapp/webhook", json={"phone": phone, "message": "Oi"})
+    r1 = await wa(client, {"phone": phone, "message": "Oi"})
     assert r1.status_code == 200
-    reply1 = r1.json()["reply"]
-    assert "Matrícula Funcional" in reply1
+    assert "não está vinculado" in last_reply()
 
-    # 2. Envia matrícula inválida -> Bot avisa erro
-    r2 = await client.post("/api/v1/integrations/whatsapp/webhook", json={"phone": phone, "message": "MATRICULA_INEXISTENTE"})
+    # Digitar uma matrícula válida NÃO vincula o número
+    r2 = await wa(client, {"phone": phone, "message": "FL-200"})
     assert r2.status_code == 200
-    assert "não encontrada" in r2.json()["reply"]
-
-    # 3. Envia matrícula válida (FL-200) -> Bot vincula e dá boas-vindas
-    r3 = await client.post("/api/v1/integrations/whatsapp/webhook", json={"phone": phone, "message": "FL-200"})
-    assert r3.status_code == 200
-    assert "vinculado com sucesso" in r3.json()["reply"]
-    assert "Fernanda Lima" in r3.json()["reply"]
-
-    # Verifica no banco que o telefone foi gravado no colaborador
+    assert "não está vinculado" in last_reply()
     stmt = select(Employee).where(Employee.registration_number == "FL-200")
-    emp = (await db_session.execute(stmt)).scalar_one_or_none()
-    assert emp is not None
-    assert emp.phone == phone
+    emp = (await db_session.execute(stmt)).scalar_one()
+    assert emp.phone is None
+
+
+async def test_webhook_requires_shared_secret_and_never_echoes_reply(client: AsyncClient, db_session: AsyncSession):
+    fixtures = await setup_whatsapp_fixtures(db_session)
+    payload = {"phone": fixtures["emp_linked"].phone, "message": "2"}
+    url = "/api/v1/integrations/whatsapp/webhook"
+
+    assert (await client.post(url, json=payload)).status_code == 401
+    assert (await client.post(url, json=payload, headers={"X-Webhook-Secret": "errado"})).status_code == 401
+    assert default_mock_adapter.sent_messages == []
+
+    ok = await client.post(url, json=payload, headers={"X-Webhook-Secret": WEBHOOK_SECRET})
+    assert ok.status_code == 200
+    assert ok.json() == {"status": "accepted"}
+    assert default_mock_adapter.sent_messages  # resposta segue pelo provedor, não pelo corpo HTTP
+
+
+async def test_webhook_rejected_when_secret_not_configured(client: AsyncClient, db_session: AsyncSession):
+    fixtures = await setup_whatsapp_fixtures(db_session)
+    cfg = (await db_session.execute(select(WhatsAppConfig))).scalars().one()
+    cfg.webhook_secret = None
+    await db_session.commit()
+    r = await client.post(
+        "/api/v1/integrations/whatsapp/webhook",
+        json={"phone": fixtures["emp_linked"].phone, "message": "2"},
+        headers={"X-Webhook-Secret": ""},
+    )
+    assert r.status_code == 401
+
+
+async def test_templates_and_ticket_send_require_permissions(client: AsyncClient, db_session: AsyncSession):
+    fixtures = await setup_whatsapp_fixtures(db_session)
+    base = "/api/v1/integrations/whatsapp"
+    assert (await client.get(f"{base}/templates")).status_code == 401
+    assert (await client.get(f"{base}/templates", headers=fixtures["regular_headers"])).status_code == 403
+    assert (await client.get(f"{base}/templates", headers=fixtures["admin_headers"])).status_code == 200
+    r = await client.post(
+        f"{base}/tickets/{uuid.uuid4()}/send", json={"custom_message": "x"}, headers=fixtures["regular_headers"]
+    )
+    assert r.status_code == 403
 
 
 async def test_whatsapp_create_ticket_full_flow(client: AsyncClient, db_session: AsyncSession):
@@ -121,27 +167,27 @@ async def test_whatsapp_create_ticket_full_flow(client: AsyncClient, db_session:
     phone = fixtures["emp_linked"].phone
 
     # 1. Inicia fluxo enviando [1]
-    r1 = await client.post("/api/v1/integrations/whatsapp/webhook", json={"phone": phone, "message": "1"})
+    r1 = await wa(client, {"phone": phone, "message": "1"})
     assert r1.status_code == 200
-    assert "Selecione a categoria" in r1.json()["reply"]
+    assert "Selecione a categoria" in last_reply()
 
     # 2. Seleciona categoria [1]
-    r2 = await client.post("/api/v1/integrations/whatsapp/webhook", json={"phone": phone, "message": "1"})
+    r2 = await wa(client, {"phone": phone, "message": "1"})
     assert r2.status_code == 200
-    assert "Título Resumido" in r2.json()["reply"]
+    assert "Título Resumido" in last_reply()
 
     # 3. Informa título
-    r3 = await client.post("/api/v1/integrations/whatsapp/webhook", json={"phone": phone, "message": "VPN desconectando a cada 5 minutos"})
+    r3 = await wa(client, {"phone": phone, "message": "VPN desconectando a cada 5 minutos"})
     assert r3.status_code == 200
-    assert "descreva detalhadamente" in r3.json()["reply"].lower()
+    assert "descreva detalhadamente" in last_reply().lower()
 
     # 4. Informa descrição
-    r4 = await client.post("/api/v1/integrations/whatsapp/webhook", json={
+    r4 = await wa(client, {
         "phone": phone,
         "message": "Estou em home office e a conexão cai no meio de reuniões."
     })
     assert r4.status_code == 200
-    reply4 = r4.json()["reply"]
+    reply4 = last_reply()
     assert "criado com sucesso" in reply4.lower()
 
     # 5. Valida que o chamado foi persistido no banco
@@ -173,9 +219,9 @@ async def test_whatsapp_list_tickets(client: AsyncClient, db_session: AsyncSessi
     await db_session.commit()
 
     # Usuário digita '2' para consultar
-    r = await client.post("/api/v1/integrations/whatsapp/webhook", json={"phone": phone, "message": "2"})
+    r = await wa(client, {"phone": phone, "message": "2"})
     assert r.status_code == 200
-    reply = r.json()["reply"]
+    reply = last_reply()
     assert "Monitor não liga" in reply
     assert "Em Atendimento" in reply
 
@@ -200,23 +246,23 @@ async def test_whatsapp_interaction_on_ticket(client: AsyncClient, db_session: A
     await db_session.commit()
 
     # 1. Digita [3] para responder
-    r1 = await client.post("/api/v1/integrations/whatsapp/webhook", json={"phone": phone, "message": "3"})
+    r1 = await wa(client, {"phone": phone, "message": "3"})
     assert r1.status_code == 200
-    assert "digite os primeiros dígitos" in r1.json()["reply"].lower()
+    assert "digite os primeiros dígitos" in last_reply().lower()
 
     # 2. Digita primeiros dígitos do ID do chamado
     short_id = str(t.id)[:6]
-    r2 = await client.post("/api/v1/integrations/whatsapp/webhook", json={"phone": phone, "message": short_id})
+    r2 = await wa(client, {"phone": phone, "message": short_id})
     assert r2.status_code == 200
-    assert "Impressora travando papel" in r2.json()["reply"]
+    assert "Impressora travando papel" in last_reply()
 
     # 3. Digita a resposta
-    r3 = await client.post("/api/v1/integrations/whatsapp/webhook", json={
+    r3 = await wa(client, {
         "phone": phone,
         "message": "Consegui destravar reiniciando, mas o ruído continua."
     })
     assert r3.status_code == 200
-    assert "enviada com sucesso" in r3.json()["reply"].lower()
+    assert "enviada com sucesso" in last_reply().lower()
 
     # Verifica interação no banco
     stmt = select(TicketInteraction).where(TicketInteraction.ticket_id == t.id)
@@ -319,7 +365,7 @@ async def test_whatsapp_templates_crud_and_preview(client: AsyncClient, db_sessi
     tpl_id = r_create.json()["id"]
 
     # 2. Listagem de templates
-    r_list = await client.get("/api/v1/integrations/whatsapp/templates?category=SERVICE_DESK")
+    r_list = await client.get("/api/v1/integrations/whatsapp/templates?category=SERVICE_DESK", headers=admin_headers)
     assert r_list.status_code == 200
     assert any(t["code"] == "TEST_TPL" for t in r_list.json())
 
@@ -341,7 +387,7 @@ async def test_whatsapp_templates_crud_and_preview(client: AsyncClient, db_sessi
     r_prev = await client.post(f"/api/v1/integrations/whatsapp/templates/{tpl_id}/preview", json={
         "ticket_id": str(t.id),
         "observacao": "Peça de reposição solicitada."
-    })
+    }, headers=admin_headers)
     assert r_prev.status_code == 200
     rendered = r_prev.json()["rendered_message"]
     assert "Carlos Mendes" in rendered

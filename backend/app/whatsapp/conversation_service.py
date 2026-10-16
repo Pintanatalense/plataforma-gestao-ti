@@ -34,7 +34,7 @@ class WhatsAppConversationService:
         stmt = select(WhatsAppConfig).limit(1)
         config = (await self.session.execute(stmt)).scalar_one_or_none()
         if not config:
-            config = WhatsAppConfig(provider="MOCK", is_enabled=True)
+            config = WhatsAppConfig(provider="NONE", is_enabled=False)
             self.session.add(config)
             await self.session.flush()
         return config
@@ -108,31 +108,16 @@ class WhatsAppConversationService:
         )
 
     async def _handle_unlinked_user(self, wa_session: WhatsAppSession, text: str, adapter) -> str:
-        if wa_session.state == "AWAITING_REGISTRATION_LINK":
-            stmt = select(Employee).where(Employee.registration_number == text)
-            emp = (await self.session.execute(stmt)).scalar_one_or_none()
-            if emp:
-                emp.phone = wa_session.phone
-                wa_session.employee_id = emp.id
-                wa_session.state = "IDLE"
-                await self.session.commit()
-                reply = (
-                    f"✅ Número vinculado com sucesso a *{emp.name}*!\n\n"
-                    + self._get_main_menu(emp.name)
-                )
-                await adapter.send_message(wa_session.phone, reply)
-                return reply
-            else:
-                reply = "❌ Matrícula funcional não encontrada. Por favor, digite uma matrícula válida ou procure o suporte de TI:"
-                await adapter.send_message(wa_session.phone, reply)
-                return reply
+        """Número sem colaborador cadastrado: não revela nada e não vincula por conta própria.
 
-        wa_session.state = "AWAITING_REGISTRATION_LINK"
-        await self.session.commit()
+        O vínculo é feito pela TI, cadastrando o telefone no colaborador. (Vínculo self-service
+        com código de verificação está previsto no ADR-013.)
+        """
         reply = (
-            "Olá! Não identificamos o seu número de WhatsApp no cadastro da empresa.\n\n"
-            "Por favor, digite a sua *Matrícula Funcional* para vincularmos seu acesso:"
+            "Olá! Este número de WhatsApp não está vinculado a um colaborador.\n\n"
+            "Solicite à equipe de TI o cadastro do seu telefone para usar este atendimento."
         )
+        await self.session.commit()
         await adapter.send_message(wa_session.phone, reply)
         return reply
 
@@ -280,11 +265,13 @@ class WhatsAppConversationService:
             ticket_id = wa_session.current_ticket_id
             author_user_id = employee.user_account.id if employee.user_account else None
 
-            # Se não tiver user_account, podemos associar ao user do admin ou gerar interação
             if not author_user_id:
-                # busca qualquer user para autor de auditoria
-                stmt_u = select(Employee.id).limit(1)
-                # se não houver user_account, author_user_id = None
+                wa_session.state = "IDLE"
+                wa_session.current_ticket_id = None
+                return (
+                    "Seu cadastro não possui usuário no sistema, então não é possível responder chamados por aqui. "
+                    "Procure a equipe de TI.\n\n" + self._get_main_menu(employee.name)
+                )
 
             sd_service = ServiceDeskService(self.session)
             await sd_service.add_interaction(
@@ -293,7 +280,7 @@ class WhatsAppConversationService:
                     message=f"[Via WhatsApp] {text}",
                     is_internal=False
                 ),
-                author_id=author_user_id or employee.id,
+                author_id=author_user_id,
                 user_employee_id=employee.id,
                 is_technician=False
             )

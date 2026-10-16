@@ -72,6 +72,20 @@ async def get_current_user_ip(
     return "unknown"
 
 
+def require_any_permission(*required_permissions: str):
+    """Libera se o usuário for admin ou tiver ao menos uma das permissões informadas."""
+    async def _require_any_permission(payload: dict = Depends(get_token_payload)) -> None:
+        if payload.get("is_admin"):
+            return
+        user_permissions = set(payload.get("permissions", []))
+        if not user_permissions.intersection(required_permissions):
+            raise ForbiddenException(
+                "Permissão necessária: " + " ou ".join(f"'{p}'" for p in required_permissions) + "."
+            )
+
+    return _require_any_permission
+
+
 def require_permission(required_permission: str):
     """
     Fábrica de dependências para verificar se o usuário tem a permissão requerida.

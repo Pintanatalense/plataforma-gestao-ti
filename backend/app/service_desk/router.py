@@ -8,7 +8,7 @@ from typing import Sequence
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_token_payload, get_db
+from app.core.dependencies import get_current_user_id, get_db, get_token_payload
 from app.identity.repository import IdentityRepository
 from app.organization.models import Employee
 from app.service_desk.schemas import (
@@ -76,6 +76,7 @@ async def get_user_context(
     summary="Lista categorias de chamados"
 )
 async def list_categories(
+    _user_id: uuid.UUID = Depends(get_current_user_id),
     session: AsyncSession = Depends(get_db)
 ) -> Sequence[TicketCategoryResponse]:
     service = ServiceDeskService(session)

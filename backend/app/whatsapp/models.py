@@ -20,8 +20,8 @@ class WhatsAppConfig(Base, TimestampMixin):
     __tablename__ = "wa_configs"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
-    provider: Mapped[str] = mapped_column(String(50), default="MOCK", nullable=False)  # "EVOLUTION_API", "META_CLOUD_API", "MOCK"
-    is_enabled: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    provider: Mapped[str] = mapped_column(String(50), default="NONE", nullable=False)  # "EVOLUTION_API", "META_CLOUD_API", "MOCK" (só desenvolvimento), "NONE"
+    is_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     
     api_url: Mapped[str] = mapped_column(String(255), default="http://evolution-api:8080", nullable=False)
     api_key: Mapped[str] = mapped_column(String(255), default="", nullable=False)

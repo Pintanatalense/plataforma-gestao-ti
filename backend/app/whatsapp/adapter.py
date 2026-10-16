@@ -195,13 +195,25 @@ class MetaCloudApiAdapter(WhatsAppProviderAdapter):
 
 
 
-# Singleton do Mock para testes unitários
+class DisabledWhatsAppAdapter(WhatsAppProviderAdapter):
+    """Integração desativada/não configurada: nada é enviado e o envio é reportado como falha."""
+
+    async def send_message(self, to_phone: str, text: str) -> bool:
+        logger.warning("[WhatsApp] Envio ignorado: integração desativada ou provedor não configurado.")
+        return False
+
+
+# Singletons
 default_mock_adapter = MockWhatsAppAdapter()
+disabled_adapter = DisabledWhatsAppAdapter()
 
 
 def get_whatsapp_adapter(config: WhatsAppConfig | None) -> WhatsAppProviderAdapter:
     """Factory de adapters conforme o provedor configurado no banco de dados."""
-    if not config or not config.is_enabled or config.provider == "MOCK":
+    if not config or not config.is_enabled:
+        return disabled_adapter
+
+    if config.provider == "MOCK":
         return default_mock_adapter
 
     if config.provider == "EVOLUTION_API":
@@ -217,4 +229,4 @@ def get_whatsapp_adapter(config: WhatsAppConfig | None) -> WhatsAppProviderAdapt
             phone_number_id=config.instance_name
         )
 
-    return default_mock_adapter
+    return disabled_adapter
