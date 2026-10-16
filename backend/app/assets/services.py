@@ -1,4 +1,5 @@
 import uuid
+from html import escape
 
 from app.assets.models import Asset, AssetCategory, AssetStatus
 from app.assets.repository import AssetRepository
@@ -185,8 +186,9 @@ class AssetService:
                 unit_name = unit.name
 
         category_name = asset.category.name if asset.category else "Equipamento de TI"
+        e = escape  # todo valor interpolado no HTML do termo vem do banco/usuário
         specs_rows = "".join([
-            f"<tr><td style='padding:6px 12px;font-weight:600;border:1px solid #cbd5e1;background:#f8fafc;width:35%;'>{k.upper()}</td><td style='padding:6px 12px;border:1px solid #cbd5e1;'>{v}</td></tr>" 
+            f"<tr><td style='padding:6px 12px;font-weight:600;border:1px solid #cbd5e1;background:#f8fafc;width:35%;'>{e(str(k).upper())}</td><td style='padding:6px 12px;border:1px solid #cbd5e1;'>{e(str(v))}</td></tr>" 
             for k, v in (asset.technical_specs or {}).items()
         ])
         if not specs_rows:
@@ -200,7 +202,7 @@ class AssetService:
 <html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
-    <title>Termo de Responsabilidade - Patrimônio {asset.tag}</title>
+    <title>Termo de Responsabilidade - Patrimônio {e(asset.tag)}</title>
     <style>
         body {{
             font-family: Arial, Helvetica, sans-serif;
@@ -320,19 +322,19 @@ class AssetService:
     <table class="info-grid">
         <tr>
             <td class="label">Colaborador:</td>
-            <td><strong>{emp_name}</strong></td>
+            <td><strong>{e(emp_name)}</strong></td>
             <td class="label">Matrícula:</td>
-            <td>{emp_reg}</td>
+            <td>{e(emp_reg)}</td>
         </tr>
         <tr>
             <td class="label">Cargo / Função:</td>
-            <td>{emp_role}</td>
+            <td>{e(emp_role)}</td>
             <td class="label">Setor / Departamento:</td>
-            <td>{emp_sector}</td>
+            <td>{e(emp_sector)}</td>
         </tr>
         <tr>
             <td class="label">Unidade / Localidade:</td>
-            <td colspan="3">{unit_name}</td>
+            <td colspan="3">{e(unit_name)}</td>
         </tr>
     </table>
 
@@ -340,13 +342,13 @@ class AssetService:
     <table class="info-grid">
         <tr>
             <td class="label">Número de Patrimônio:</td>
-            <td><strong style="font-size:14px;color:#2563eb;">{asset.tag}</strong></td>
+            <td><strong style="font-size:14px;color:#2563eb;">{e(asset.tag)}</strong></td>
             <td class="label">Categoria:</td>
-            <td>{category_name}</td>
+            <td>{e(category_name)}</td>
         </tr>
         <tr>
             <td class="label">Equipamento / Modelo:</td>
-            <td colspan="3">{asset.name}</td>
+            <td colspan="3">{e(asset.name)}</td>
         </tr>
     </table>
 
@@ -370,7 +372,7 @@ class AssetService:
     <div class="signatures">
         <div class="sig-block">
             <div class="sig-line"></div>
-            <strong>{emp_name}</strong><br>
+            <strong>{e(emp_name)}</strong><br>
             Colaborador Responsável<br>
             Data: ____ / ____ / ________
         </div>
@@ -383,7 +385,7 @@ class AssetService:
     </div>
 
     <div class="footer">
-        Documento gerado eletronicamente em {now_str} pela Plataforma de Gestão de TI • ID Ativo: {asset.id}
+        Documento gerado eletronicamente em {now_str} pela Plataforma de Gestão de TI • ID Ativo: {e(str(asset.id))}
     </div>
 </body>
 </html>"""
