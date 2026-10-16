@@ -106,7 +106,8 @@ class BackupService:
         try:
             bind = self.session.get_bind()
             if bind is not None and bind.url:
-                return str(bind.url)
+                # str(url) mascara a senha ("***"): o pg_dump precisaria dela em claro.
+                return bind.url.render_as_string(hide_password=False)
         except Exception:
             pass
         return settings.DATABASE_URL
@@ -140,9 +141,11 @@ class BackupService:
                 stdout, stderr = await proc.communicate()
                 if proc.returncode == 0 and stdout:
                     return True, stdout
-                logger.warning("pg_dump local retornou código %d: %s", proc.returncode, stderr.decode(errors="ignore"))
+                detail = stderr.decode(errors="ignore").strip()
+                logger.warning("pg_dump local retornou código %d: %s", proc.returncode, detail)
+                raise RuntimeError(f"pg_dump falhou (código {proc.returncode}): {detail[:300]}")
 
-            raise RuntimeError("Utilitário pg_dump não encontrado ou falhou; verifique o postgresql-client na imagem.")
+            raise RuntimeError("Utilitário pg_dump não encontrado; verifique o postgresql-client na imagem.")
 
         # Cenário 2: SQLite (Ambiente isolado de testes automatizados)
         if "sqlite" in parsed.scheme:
