@@ -50,6 +50,9 @@ class Settings(BaseSettings):
         "video/mp4",
     ]
 
+    # --- Arquivos públicos (logomarca) ---
+    STATIC_DIR: str | None = None  # padrão: backend/static (no container: /app/static)
+
     # --- Chamados ---
     TICKET_REOPEN_DAYS: int = 3
 
@@ -76,6 +79,11 @@ class Settings(BaseSettings):
     def attachment_max_size_bytes(self) -> int:
         """Tamanho máximo de anexo em bytes."""
         return self.ATTACHMENT_MAX_SIZE_MB * 1024 * 1024
+
+    @property
+    def static_dir(self) -> Path:
+        """Diretório dos arquivos públicos servidos em /static."""
+        return Path(self.STATIC_DIR) if self.STATIC_DIR else Path(__file__).resolve().parent.parent / "static"
 
     @property
     def attachment_storage_dir(self) -> Path:

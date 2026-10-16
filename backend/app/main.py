@@ -68,10 +68,8 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    import os
-    static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
-    if not os.path.exists(static_dir):
-        os.makedirs(static_dir)
+    static_dir = settings.static_dir
+    static_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
     # --- Exception Handlers ---

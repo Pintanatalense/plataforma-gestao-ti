@@ -11,6 +11,8 @@ import os
 import aiofiles
 
 from app.core.dependencies import require_permission, get_token_payload
+from app.config import get_settings
+from app.core.exceptions import ValidationException
 from app.database import get_db
 from app.organization.schemas import (
     CompanyCreate,
@@ -29,6 +31,12 @@ from app.organization.schemas import (
 from app.organization.services import OrganizationService
 
 router = APIRouter(prefix="/organization", tags=["Organization"])
+
+_LOGO_MAX_BYTES = 2 * 1024 * 1024
+_LOGO_SIGNATURES = (
+    (b"\x89PNG\r\n\x1a\n", ".png"),
+    (b"\xff\xd8\xff", ".jpg"),
+)
 
 # ==============================================================================
 # Company
@@ -54,23 +62,29 @@ async def update_company(schema: CompanyUpdate, db: AsyncSession = Depends(get_d
 
 @router.post("/company/logo", summary="Upload da logomarca do sistema", dependencies=[Depends(require_permission("organization.company.update"))])
 async def upload_company_logo(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
-    static_dir = os.path.join(os.path.dirname(__file__), "..", "..", "static")
+    """Aceita apenas PNG/JPEG/WebP (até 2 MB), conferindo a assinatura do arquivo; SVG/HTML são recusados."""
+    content = await file.read(_LOGO_MAX_BYTES + 1)
+    if len(content) > _LOGO_MAX_BYTES:
+        raise ValidationException("A logomarca deve ter no máximo 2 MB.")
+    extension = next((ext for sig, ext in _LOGO_SIGNATURES if content.startswith(sig)), None)
+    if extension is None and content[:4] == b"RIFF" and content[8:12] == b"WEBP":
+        extension = ".webp"
+    if extension is None:
+        raise ValidationException("Formato de logomarca inválido. Use PNG, JPEG ou WebP.")
+
+    static_dir = str(get_settings().static_dir)
     os.makedirs(static_dir, exist_ok=True)
-    
-    file_extension = os.path.splitext(file.filename)[1]
-    filename = f"logo{file_extension}"
-    file_path = os.path.join(static_dir, filename)
-    
-    async with aiofiles.open(file_path, 'wb') as out_file:
-        content = await file.read()
+    for old in os.listdir(static_dir):
+        if old.startswith("logo."):
+            os.remove(os.path.join(static_dir, old))
+
+    filename = f"logo{extension}"
+    async with aiofiles.open(os.path.join(static_dir, filename), "wb") as out_file:
         await out_file.write(content)
-        
+
     logo_url = f"/static/{filename}"
-    
-    # Atualiza a empresa
     service = OrganizationService(db)
     await service.update_company(CompanyUpdate(logo_url=logo_url))
-    
     return {"logo_url": logo_url, "message": "Logo atualizada com sucesso"}
 
 
