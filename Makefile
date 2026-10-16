@@ -54,9 +54,29 @@ seed-demo:
 seed-reset:
 	docker-compose exec backend python -m app.seed_demo --reset
 
+seed-test:
+	docker-compose exec backend python -m app.seed_test
+
+seed-test-reset:
+	docker-compose exec backend python -m app.seed_test --reset
+
+# --- Base de Testes e Homologação (Porta 55432 / gti_test) ---
+test-db-up:
+	docker-compose -f docker-compose.test.yml up -d
+
+test-db-down:
+	docker-compose -f docker-compose.test.yml down -v
+
+test-db-reset:
+	docker-compose -f docker-compose.test.yml down -v
+	docker-compose -f docker-compose.test.yml up -d
+
 # --- Testes ---
 test:
 	cd backend && python -m pytest -v --tb=short
+
+test-pg:
+	cd backend && TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/gti_test USE_PG_TEST=true python -m pytest -v --tb=short
 
 test-cov:
 	cd backend && python -m pytest --cov=app --cov-report=term-missing

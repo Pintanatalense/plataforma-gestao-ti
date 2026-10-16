@@ -102,9 +102,18 @@ class BackupService:
             await self.session.commit()
             raise BusinessRuleException(f"Não foi possível gerar o backup: {exc}")
 
+    def _get_active_db_url(self) -> str:
+        try:
+            bind = self.session.get_bind()
+            if bind is not None and bind.url:
+                return str(bind.url)
+        except Exception:
+            pass
+        return settings.DATABASE_URL
+
     async def _execute_database_dump(self) -> tuple[bool, bytes]:
         """Executa pg_dump real ou dump SQLite (em ambiente de teste), evitando backups vazios."""
-        db_url = settings.DATABASE_URL
+        db_url = self._get_active_db_url()
         parsed = urlparse(db_url.replace("postgresql+asyncpg://", "postgresql://").replace("sqlite+aiosqlite://", "sqlite://"))
 
         # Cenário 1: PostgreSQL

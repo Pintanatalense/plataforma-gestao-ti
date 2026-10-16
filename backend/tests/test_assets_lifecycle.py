@@ -380,3 +380,80 @@ async def test_inspection_failure_sends_to_maintenance(client: AsyncClient, db_s
 
     asset = (await client.get(f"/api/v1/assets/{asset_id}", headers=headers)).json()
     assert asset["status"] == "IN_STOCK"
+
+
+async def test_link_and_unlink_asset_to_ticket(client: AsyncClient, db_session: AsyncSession):
+    data = await setup_test_data(db_session)
+    headers = make_auth_headers(
+        str(data["admin"].id),
+        is_admin=True,
+        permissions=["assets.read", "assets.write", "service_desk.tickets.read", "service_desk.tickets.write"],
+    )
+
+    # 1. Cria ativo
+    create_res = await client.post(
+        "/api/v1/assets",
+        json={
+            "tag": f"LNK-{uuid4().hex[:6].upper()}",
+            "name": "Monitor Samsung 27",
+            "category_id": str(data["category"].id),
+            "status": "IN_STOCK",
+            "unit_id": str(data["unit"].id),
+        },
+        headers=headers,
+    )
+    asset_id = create_res.json()["id"]
+
+    # 2. Cria chamado sem ativos
+    ticket_res = await client.post(
+        "/api/v1/tickets",
+        json={
+            "title": "Configuração de monitor secundário",
+            "description": "Colaborador solicitou tela adicional",
+            "priority": "LOW",
+            "category_id": str(data["ticket_cat"].id),
+            "asset_ids": [],
+        },
+        headers=headers,
+    )
+    ticket_id = ticket_res.json()["id"]
+    assert len(ticket_res.json()["assets"]) == 0
+
+    # 3. Vincula o ativo ao chamado existente
+    link_res = await client.post(
+        f"/api/v1/tickets/{ticket_id}/assets/{asset_id}",
+        headers=headers,
+    )
+    assert link_res.status_code == 200
+
+    # Verifica no chamado
+    get_ticket_res = await client.get(f"/api/v1/tickets/{ticket_id}", headers=headers)
+    assert get_ticket_res.status_code == 200
+    assets = get_ticket_res.json()["assets"]
+    assert len(assets) == 1
+    assert assets[0]["id"] == asset_id
+
+    # 4. Verifica na listagem de chamados do ativo
+    asset_tickets_res = await client.get(f"/api/v1/assets/{asset_id}/tickets", headers=headers)
+    assert asset_tickets_res.status_code == 200
+    asset_tickets = asset_tickets_res.json()
+    assert len(asset_tickets) == 1
+    assert asset_tickets[0]["id"] == ticket_id
+
+    # 5. Verifica linha do tempo / histórico
+    history_res = await client.get(f"/api/v1/tickets/{ticket_id}/history", headers=headers)
+    assert history_res.status_code == 200
+    history = history_res.json()
+    assert any(h["event_type"] == "ticket.asset_linked" for h in history)
+
+    # 6. Desvincula o ativo do chamado
+    unlink_res = await client.delete(
+        f"/api/v1/tickets/{ticket_id}/assets/{asset_id}",
+        headers=headers,
+    )
+    assert unlink_res.status_code == 200
+
+    # Verifica que foi removido
+    get_ticket_after = await client.get(f"/api/v1/tickets/{ticket_id}", headers=headers)
+    assert len(get_ticket_after.json()["assets"]) == 0
+

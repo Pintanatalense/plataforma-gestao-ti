@@ -168,6 +168,18 @@ Este documento sumariza o status atual do projeto, as funcionalidades recém-ent
       - Modal com identificação do colaborador, validação de telefone cadastrado, seleção de templates com interpolação instantânea, campo livre de observações adicionais e badge informativo de proteção anti-ban ativa.
       - Registro automático de cada disparo como mensagem de atendimento no chat e linha do tempo do chamado, mantendo auditoria e transparência com o solicitante.
 
+16. **Integração Bidirecional Completa: Ativos x Chamados e Rastreabilidade Operacional**
+    - **Vínculo e Desvínculo Sob Demanda em Chamados Abertos**:
+      - Novos endpoints `POST /api/v1/tickets/{ticket_id}/assets/{asset_id}` e `DELETE /api/v1/tickets/{ticket_id}/assets/{asset_id}` com registro auditado na linha do tempo (`ticket.asset_linked` e `ticket.asset_unlinked`).
+      - Interface visual em `TicketDetailComponent`: modal para pesquisa e vínculo de equipamentos patrimoniais e ação rápida para desvincular itens associados por engano.
+    - **Visão Reversa de Chamados no Detalhe do Ativo (`asset-detail`)**:
+      - Novo endpoint `GET /api/v1/assets/{asset_id}/tickets` listando todos os chamados que envolveram o equipamento com badges de status, prioridade e solicitante.
+      - Nova aba interativa "Chamados Relacionados" no cadastro do ativo com links diretos para cada atendimento.
+      - Botão de ação rápida "Abrir Chamado" no cabeçalho do ativo pré-preenchendo o equipamento via query params.
+    - **Autoatendimento Inclusivo para Solicitantes (`ticket-create`)**:
+      - Solicitantes comuns agora visualizam e vinculam seus próprios equipamentos atribuídos (`GET /api/v1/assets/me`) mesmo sem possuir a permissão administrativa global `assets.read`.
+      - Pré-seleção automática de ativo quando aberto a partir da tela de detalhes de um equipamento.
+
 ---
 
 ## 🎯 Status do MVP
@@ -181,7 +193,8 @@ Todas as Fases do roadmap foram concluídas integralmente:
 - Histórico completo de auditoria e linha do tempo do Service Desk com encerramento pelo solicitante.
 - Módulos avançados do Plano de Evolução: RBAC Tripartite, CSV Import/Export, DB Backups, WhatsApp Bot e Painel Admin entregues.
 - Módulo WhatsApp Anti-Ban, Fila Outbox, Templates e Disparo Rápido em Chamados 100% implementado e validado.
-- Suíte automatizada de testes cobrindo unidade, integração, auditoria, anexos, notificações, WhatsApp e E2E (**113 backend aprovados + 1 xfailed esperado, 39 frontend aprovados com 100% de sucesso**).
+- Integração bidirecional Ativos x Chamados (vínculo dinâmico, visão reversa e autoatendimento de ativos pelo solicitante) 100% entregue.
+- Suíte automatizada de testes cobrindo unidade, integração, auditoria, anexos, notificações, WhatsApp, ciclo de vida e E2E (**122 backend aprovados + 1 xfailed esperado, 39 frontend aprovados com 100% de sucesso**).
 - Build de produção compilando limpo e otimizado via Angular 18+ e FastAPI/PostgreSQL.
 
 

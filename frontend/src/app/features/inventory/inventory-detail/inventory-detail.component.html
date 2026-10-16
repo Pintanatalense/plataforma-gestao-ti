@@ -17,6 +17,10 @@
       </span>
 
       <!-- Action buttons -->
+      <button mat-stroked-button color="primary" *ngIf="audit.status === 'OPENED' || audit.status === 'IN_PROGRESS'" (click)="populateItems()" [disabled]="populatingItems">
+        <mat-icon>sync</mat-icon> {{ populatingItems ? 'Sincronizando...' : 'Sincronizar Itens' }}
+      </button>
+
       <button mat-flat-button color="accent" *ngIf="audit.status === 'OPENED'" (click)="startAudit()">
         <mat-icon>play_arrow</mat-icon> Iniciar Auditoria
       </button>
@@ -36,7 +40,7 @@
       <mat-icon>person</mat-icon>
       <div class="info">
         <span class="label">Auditor Responsável</span>
-        <span class="value">{{ auditorName }}</span>
+        <span class="value">{{ auditorName || audit.auditor_name || 'Não informado' }}</span>
       </div>
     </div>
 
@@ -61,9 +65,14 @@
   <div class="items-section">
     <div class="section-header">
       <h2>Itens da Auditoria</h2>
-      <button mat-flat-button color="primary" *ngIf="audit.status === 'IN_PROGRESS' || audit.status === 'OPENED'" (click)="openAddItemForm()">
-        <mat-icon>add</mat-icon> Adicionar Item à Conferência
-      </button>
+      <div style="display: flex; gap: 8px;">
+        <button mat-stroked-button color="primary" *ngIf="audit.status === 'IN_PROGRESS' || audit.status === 'OPENED'" (click)="populateItems()" [disabled]="populatingItems">
+          <mat-icon>sync</mat-icon> Sincronizar Unidade
+        </button>
+        <button mat-flat-button color="primary" *ngIf="audit.status === 'IN_PROGRESS' || audit.status === 'OPENED'" (click)="openAddItemForm()">
+          <mat-icon>add</mat-icon> Adicionar Item
+        </button>
+      </div>
     </div>
 
     <!-- Quick add inline card -->
@@ -193,6 +202,9 @@
             <div class="empty-state">
               <mat-icon>playlist_add_check</mat-icon>
               <p>Nenhum item adicionado a este inventário ainda.</p>
+              <button mat-flat-button color="primary" style="margin-top: 12px;" (click)="populateItems()" [disabled]="populatingItems || audit.status === 'CLOSED' || audit.status === 'CANCELLED'">
+                <mat-icon>sync</mat-icon> Carregar Todos os Ativos e Estoque da Unidade
+              </button>
             </div>
           </td>
         </tr>

@@ -1,7 +1,7 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormControl } from '@angular/forms';
-import { Router, RouterModule } from '@angular/router';
+import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatInputModule } from '@angular/material/input';
 import { MatSelectModule } from '@angular/material/select';
@@ -46,6 +46,7 @@ export class TicketCreateComponent implements OnInit {
   private assetService = inject(AssetService);
   private attachmentsService = inject(AttachmentsService);
   private router = inject(Router);
+  private route = inject(ActivatedRoute);
   private snackBar = inject(MatSnackBar);
   public authService = inject(AuthService);
 
@@ -73,6 +74,8 @@ export class TicketCreateComponent implements OnInit {
   }
 
   ngOnInit() {
+    const preselectedAssetId = this.route.snapshot.queryParamMap.get('asset_id');
+
     this.ticketService.getCategories().subscribe({
       next: (data) => (this.categories = data),
       error: (err) => console.error(err)
@@ -80,7 +83,22 @@ export class TicketCreateComponent implements OnInit {
 
     if (this.authService.hasPermission('assets.read')) {
       this.assetService.getAssets().subscribe({
-        next: (assets) => (this.availableAssets = assets),
+        next: (assets) => {
+          this.availableAssets = assets;
+          if (preselectedAssetId && this.availableAssets.some((a) => a.id === preselectedAssetId)) {
+            this.ticketForm.patchValue({ asset_id: preselectedAssetId });
+          }
+        },
+        error: () => {}
+      });
+    } else {
+      this.assetService.getMyAssets().subscribe({
+        next: (assets) => {
+          this.availableAssets = assets;
+          if (preselectedAssetId && this.availableAssets.some((a) => a.id === preselectedAssetId)) {
+            this.ticketForm.patchValue({ asset_id: preselectedAssetId });
+          }
+        },
         error: () => {}
       });
     }

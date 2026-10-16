@@ -2,9 +2,16 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
-  max-width: 860px;
-  margin: 0 auto;
-  padding: 32px 20px;
+  width: 100%;
+  max-width: 1100px;
+  margin: 0;
+  padding: 16px 0;
+  box-sizing: border-box;
+
+  @media (max-width: 640px) {
+    gap: 16px;
+    padding: 8px 0;
+  }
 }
 
 .page-header {
@@ -302,6 +309,17 @@
   justify-content: flex-end;
   gap: 16px;
   margin-top: 12px;
+
+  @media (max-width: 640px) {
+    flex-direction: column-reverse;
+    gap: 10px;
+
+    .cancel-btn,
+    .submit-btn {
+      width: 100%;
+      justify-content: center;
+    }
+  }
 
   .cancel-btn {
     border-radius: 12px;

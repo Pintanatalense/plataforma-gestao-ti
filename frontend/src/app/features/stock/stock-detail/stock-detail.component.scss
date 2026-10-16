@@ -290,3 +290,44 @@
     }
   }
 }
+
+@media (max-width: 640px) {
+  .page-container {
+    .page-header {
+      flex-direction: column;
+      align-items: flex-start;
+      gap: 12px;
+
+      .header-content {
+        .title-group {
+          flex-wrap: wrap;
+          h1 { font-size: 20px; }
+        }
+      }
+    }
+
+    .dashboard-grid {
+      .glass-card {
+        padding: 16px;
+
+        .info-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .movement-form {
+          .row-fields {
+            flex-direction: column;
+            gap: 0;
+          }
+
+          .form-actions {
+            button {
+              width: 100%;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+

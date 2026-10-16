@@ -218,6 +218,7 @@ class OrganizationService:
             name=schema.name,
             registration_number=reg,
             position=schema.position or schema.job_title,
+            phone=schema.phone,
             status=schema.status or "ATIVO",
             is_active=schema.is_active if schema.is_active is not None else True,
         )
@@ -257,6 +258,8 @@ class OrganizationService:
         pos = schema.position if schema.position is not None else schema.job_title
         if pos is not None:
             employee.position = pos
+        if schema.phone is not None:
+            employee.phone = schema.phone
         if schema.status is not None:
             employee.status = schema.status
             

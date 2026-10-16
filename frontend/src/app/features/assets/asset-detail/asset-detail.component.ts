@@ -58,6 +58,8 @@ export class AssetDetailComponent implements OnInit {
   units: Unit[] = [];
   employees: Employee[] = [];
   attachments: Attachment[] = [];
+  tickets: any[] = [];
+  isLoadingTickets = false;
 
   isLoading = true;
   errorMessage = '';
@@ -79,6 +81,7 @@ export class AssetDetailComponent implements OnInit {
       this.loadAsset(initialId);
       this.loadMovements(initialId);
       this.loadAttachments(initialId);
+      this.loadTickets(initialId);
     }
 
     this.route.paramMap.subscribe((params) => {
@@ -87,6 +90,7 @@ export class AssetDetailComponent implements OnInit {
         this.loadAsset(assetId);
         this.loadMovements(assetId);
         this.loadAttachments(assetId);
+        this.loadTickets(assetId);
       }
     });
 
@@ -133,6 +137,23 @@ export class AssetDetailComponent implements OnInit {
         this.cdr.markForCheck();
       },
       error: (err) => console.error('Erro ao carregar anexos do ativo:', err)
+    });
+  }
+
+  loadTickets(id?: string): void {
+    const assetId = id || this.asset?.id;
+    if (!assetId) return;
+    this.isLoadingTickets = true;
+    this.assetService.getAssetTickets(assetId).subscribe({
+      next: (tickets) => {
+        this.tickets = tickets || [];
+        this.isLoadingTickets = false;
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.isLoadingTickets = false;
+        console.error('Erro ao carregar chamados do ativo:', err);
+      }
     });
   }
 
@@ -350,6 +371,42 @@ export class AssetDetailComponent implements OnInit {
       default:
         return status || 'Desconhecido';
     }
+  }
+
+  getTicketStatusLabel(status: string): string {
+    const map: Record<string, string> = {
+      OPENED: 'Aberto',
+      IN_PROGRESS: 'Em Atendimento',
+      PENDING: 'Pendente',
+      RESOLVED: 'Resolvido',
+      CLOSED: 'Encerrado'
+    };
+    return map[status] || status;
+  }
+
+  getTicketStatusBadgeClass(status: string): string {
+    switch (status) {
+      case 'OPENED': return 'ticket-opened';
+      case 'IN_PROGRESS': return 'ticket-in_progress';
+      case 'PENDING': return 'ticket-pending';
+      case 'RESOLVED': return 'ticket-resolved';
+      case 'CLOSED': return 'ticket-closed';
+      default: return 'ticket-default';
+    }
+  }
+
+  getPriorityLabel(priority: string): string {
+    const map: Record<string, string> = {
+      LOW: 'Baixa',
+      MEDIUM: 'Média',
+      HIGH: 'Alta',
+      CRITICAL: 'Crítica'
+    };
+    return map[priority] || priority;
+  }
+
+  getPriorityBadgeClass(priority: string): string {
+    return `priority-${priority?.toLowerCase() || 'low'}`;
   }
 
   printResponsibilityStatement(): void {

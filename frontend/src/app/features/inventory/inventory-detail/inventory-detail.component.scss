@@ -197,9 +197,11 @@
 
     .table-container {
       overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
 
       .premium-table {
         width: 100%;
+        min-width: 650px;
 
         th {
           font-weight: 600;
@@ -310,3 +312,47 @@
     }
   }
 }
+
+@media (max-width: 640px) {
+  .page-container {
+    .page-header {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 14px;
+
+      .header-actions {
+        flex-direction: column;
+        align-items: stretch;
+
+        button {
+          width: 100%;
+        }
+      }
+    }
+
+    .audit-summary-cards {
+      grid-template-columns: 1fr;
+    }
+
+    .items-section {
+      padding: 16px 12px;
+
+      .add-item-card {
+        padding: 14px;
+
+        .row-fields {
+          flex-direction: column;
+          gap: 0;
+        }
+
+        .actions {
+          flex-direction: column;
+          button {
+            width: 100%;
+          }
+        }
+      }
+    }
+  }
+}
+

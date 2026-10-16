@@ -45,6 +45,7 @@ export class InventoryDetailComponent implements OnInit {
   audit: InventoryAudit | null = null;
   unitName: string = '';
   auditorName: string = '';
+  populatingItems = false;
 
   displayedColumns: string[] = ['item', 'expected', 'actual', 'notes', 'status_result'];
   itemsDataSource = new MatTableDataSource<InventoryAuditItem>([]);
@@ -74,6 +75,8 @@ export class InventoryDetailComponent implements OnInit {
       next: (audit) => {
         this.audit = audit;
         this.itemsDataSource.data = audit.items || [];
+        if (audit.unit_name) this.unitName = audit.unit_name;
+        if (audit.auditor_name) this.auditorName = audit.auditor_name;
         this.loadUnitAndAuditor(audit.unit_id, audit.auditor_id);
         this.loadAvailableItems(audit.unit_id);
       },
@@ -82,19 +85,23 @@ export class InventoryDetailComponent implements OnInit {
   }
 
   loadUnitAndAuditor(unitId: string, auditorId: string): void {
-    this.orgService.getUnits().subscribe({
-      next: (units) => {
-        const u = units.find((x) => x.id === unitId);
-        this.unitName = u ? u.name : 'N/A';
-      }
-    });
+    if (!this.unitName) {
+      this.orgService.getUnits().subscribe({
+        next: (units) => {
+          const u = units.find((x) => x.id === unitId);
+          if (u) this.unitName = u.name;
+        }
+      });
+    }
 
-    this.orgService.getEmployees().subscribe({
-      next: (emps) => {
-        const e = emps.find((x) => x.id === auditorId);
-        this.auditorName = e ? `${e.name} (${e.registration})` : 'Auditor';
-      }
-    });
+    if (!this.auditorName) {
+      this.orgService.getEmployees().subscribe({
+        next: (emps) => {
+          const e = emps.find((x) => x.id === auditorId);
+          if (e) this.auditorName = `${e.name} (${e.registration_number || e.registration || ''})`;
+        }
+      });
+    }
   }
 
   loadAvailableItems(unitId: string): void {
@@ -187,7 +194,31 @@ export class InventoryDetailComponent implements OnInit {
     }
   }
 
+  populateItems(): void {
+    if (!this.audit) return;
+    this.populatingItems = true;
+    this.inventoryService.populateItems(this.audit.id).subscribe({
+      next: (updatedAudit) => {
+        this.populatingItems = false;
+        this.audit = updatedAudit;
+        this.itemsDataSource.data = updatedAudit.items || [];
+        if (updatedAudit.unit_name) this.unitName = updatedAudit.unit_name;
+        if (updatedAudit.auditor_name) this.auditorName = updatedAudit.auditor_name;
+        const count = updatedAudit.items?.length || 0;
+        this.snackBar.open(`Itens da unidade sincronizados com sucesso (${count} itens carregados).`, 'OK', { duration: 4000 });
+      },
+      error: (err) => {
+        this.populatingItems = false;
+        const msg = err?.error?.detail || 'Erro ao sincronizar itens da unidade.';
+        this.snackBar.open(msg, 'Fechar', { duration: 5000 });
+      }
+    });
+  }
+
   getItemLabel(item: InventoryAuditItem): string {
+    if (item.item_name) {
+      return item.item_code ? `[${item.item_code}] ${item.item_name}` : item.item_name;
+    }
     if (item.item_type === 'ASSET') {
       const asset = this.availableAssets.find((a) => a.id === item.asset_id);
       return asset ? `[${asset.tag}] ${asset.name}` : `Ativo #${item.asset_id?.slice(0, 8)}`;

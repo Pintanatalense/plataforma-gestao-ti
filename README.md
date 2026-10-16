@@ -41,7 +41,7 @@ docker compose logs -f backend
   (`file_path`) — os nomes novos não usam extensão, os antigos sim, então a cópia direta preserva os arquivos antigos.
 - **Logo:** reenvie a logomarca em Administração (apenas PNG/JPEG).
 - **Portas:** 5432 e 8000 deixaram de ser publicadas. Para desenvolvimento use `docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d`.
-- **Banco já migrado:** a nova migration de união (`h8c9d0e1f2a3`) e a de bloqueio de login (`i9d0e1f2a3b4`) são aplicadas automaticamente.
+- **Banco já migrado:** a nova migration de união (`88d09e47595a`) e a de bloqueio de login (`i9d0e1f2a3b4`) são aplicadas automaticamente.
 - **Perfis:** o seed não sobrescreve mais as permissões dos perfis existentes.
 - **Chamados:** atendentes passam a ver apenas chamados do próprio setor, atribuídos a eles ou abertos por eles (quem precisa ver todos recebe `service_desk.tickets.read_all`).
 - **WhatsApp:** o webhook exige o cabeçalho `X-Webhook-Secret` igual ao segredo cadastrado em Administração; o vínculo de número por matrícula foi removido (cadastre o telefone no colaborador).
@@ -68,6 +68,7 @@ cd backend && uv sync && uv run pytest    # testes (SQLite em memória)
 ```
 
 Testes que exigem PostgreSQL (`-m pg`, concorrência de estoque) rodam com `TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/gti_test`.
+Base de testes/homologação (QA) em PostgreSQL descartável: `make test-db-up`, `make test-pg`, `make seed-test` — ver [`docs/11-base-de-testes-e-homologacao.md`](docs/11-base-de-testes-e-homologacao.md).
 Criar migration: `make migration MSG="descrição"`; aplicar: `make migrate`.
 
 ## Licença

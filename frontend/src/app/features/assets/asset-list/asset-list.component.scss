@@ -36,6 +36,22 @@
         }
       }
     }
+
+    @media (max-width: 640px) {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 14px;
+
+      .header-actions {
+        flex-direction: column;
+        align-items: stretch;
+
+        .categories-button, .add-button {
+          width: 100%;
+          justify-content: center;
+        }
+      }
+    }
   }
 
   .table-container {
@@ -43,7 +59,8 @@
     border-radius: 12px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
     border: 1px solid #e2e8f0;
-    overflow: hidden;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 
     .table-toolbar {
       padding: 16px;
@@ -52,11 +69,16 @@
       mat-form-field {
         width: 100%;
         max-width: 450px;
+
+        @media (max-width: 640px) {
+          max-width: 100%;
+        }
       }
     }
 
     table {
       width: 100%;
+      min-width: 720px;
 
       th {
         font-weight: 600;

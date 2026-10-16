@@ -33,9 +33,24 @@
       }
     }
 
-    .add-btn {
-      border-radius: 8px;
-      font-weight: 500;
+    .header-actions {
+      .add-btn {
+        border-radius: 8px;
+        font-weight: 500;
+      }
+    }
+
+    @media (max-width: 640px) {
+      flex-direction: column;
+      align-items: stretch;
+      gap: 14px;
+
+      .header-actions {
+        .add-btn {
+          width: 100%;
+          justify-content: center;
+        }
+      }
     }
   }
 
@@ -44,7 +59,8 @@
     border-radius: 12px;
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05);
     border: 1px solid #e2e8f0;
-    overflow: hidden;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
 
     .table-toolbar {
       padding: 16px;
@@ -58,6 +74,7 @@
 
     .premium-table {
       width: 100%;
+      min-width: 620px;
 
       th {
         font-weight: 600;

@@ -26,14 +26,22 @@ def get_inventory_audit_service(db: AsyncSession = Depends(get_db)) -> Inventory
     return InventoryAuditService(repo)
 
 
-@router.post("", response_model=InventoryAuditOut, dependencies=[Depends(require_permission("inventory.write"))])
+@router.post("", response_model=InventoryAuditWithItemsOut, dependencies=[Depends(require_permission("inventory.write"))])
 async def create_audit(
     data: InventoryAuditCreate,
     service: InventoryAuditService = Depends(get_inventory_audit_service),
     current_user_id: uuid.UUID = Depends(get_current_user_id)
 ):
-    # Pode validar se o user atual tem permissão, mas ignoramos para simplificar
-    return await service.create_audit(data)
+    return await service.create_audit(data, fallback_user_id=current_user_id)
+
+
+@router.post("/{audit_id}/populate", response_model=InventoryAuditWithItemsOut, dependencies=[Depends(require_permission("inventory.write"))])
+async def populate_audit_items(
+    audit_id: uuid.UUID,
+    service: InventoryAuditService = Depends(get_inventory_audit_service),
+    current_user_id: uuid.UUID = Depends(get_current_user_id)
+):
+    return await service.populate_audit_items(audit_id)
 
 
 @router.get("", response_model=List[InventoryAuditOut], dependencies=[Depends(require_permission("inventory.read"))])

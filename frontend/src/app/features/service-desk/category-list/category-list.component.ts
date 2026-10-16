@@ -325,10 +325,9 @@ interface FormFieldBuilder {
     .page-container {
       display: flex;
       flex-direction: column;
-      gap: 32px;
-      padding: 32px;
-      background: #f8fafc;
-      min-height: calc(100vh - 64px);
+      gap: 24px;
+      width: 100%;
+      box-sizing: border-box;
       animation: fadeIn 0.4s ease-out;
     }
 
@@ -339,10 +338,14 @@ interface FormFieldBuilder {
 
     .page-header {
       background: #ffffff;
-      padding: 32px;
+      padding: 24px 32px;
       border-radius: 24px;
       box-shadow: 0 4px 20px rgba(0, 0, 0, 0.04);
       border: 1px solid #e2e8f0;
+
+      @media (max-width: 640px) {
+        padding: 18px 20px;
+      }
 
       .badge-header {
         display: inline-flex;
@@ -384,11 +387,11 @@ interface FormFieldBuilder {
 
     .content-grid {
       display: grid;
-      grid-template-columns: 520px 1fr;
-      gap: 32px;
+      grid-template-columns: 460px 1fr;
+      gap: 24px;
       align-items: start;
 
-      @media (max-width: 1280px) {
+      @media (max-width: 1100px) {
         grid-template-columns: 1fr;
       }
     }
@@ -401,8 +404,17 @@ interface FormFieldBuilder {
       border: 1px solid #e2e8f0;
     }
 
+    .table-card {
+      overflow-x: auto;
+      -webkit-overflow-scrolling: touch;
+    }
+
     .form-card {
       padding: 28px;
+
+      @media (max-width: 640px) {
+        padding: 20px 16px;
+      }
 
       .card-header {
         display: flex;
@@ -780,6 +792,7 @@ interface FormFieldBuilder {
 
     .modern-table {
       width: 100%;
+      min-width: 580px;
 
       tr.mat-mdc-row:hover {
         background-color: #f8fafc;

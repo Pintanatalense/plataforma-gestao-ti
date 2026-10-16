@@ -39,7 +39,7 @@
         <th mat-header-cell *matHeaderCellDef> Unidade </th>
         <td mat-cell *matCellDef="let element">
           <span class="unit-badge">
-            <mat-icon>business</mat-icon> {{ getUnitName(element.unit_id) }}
+            <mat-icon>business</mat-icon> {{ element.unit_name || getUnitName(element.unit_id) }}
           </span>
         </td>
       </ng-container>

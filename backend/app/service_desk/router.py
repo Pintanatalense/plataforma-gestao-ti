@@ -333,6 +333,48 @@ async def add_material(
 # ==============================================================================
 
 @router.post(
+    "/{ticket_id}/assets/{asset_id}",
+    summary="Vincula um ativo existente a um chamado aberto",
+)
+async def link_asset_to_ticket(
+    ticket_id: uuid.UUID,
+    asset_id: uuid.UUID,
+    ctx: dict = Depends(get_user_context),
+    session: AsyncSession = Depends(get_db),
+):
+    service = ServiceDeskService(session)
+    await service.link_asset_to_ticket(
+        ticket_id=ticket_id,
+        asset_id=asset_id,
+        author_id=ctx["user_id"],
+        is_technician=ctx["is_technician"],
+    )
+    await session.commit()
+    return {"message": "Ativo vinculado ao chamado com sucesso"}
+
+
+@router.delete(
+    "/{ticket_id}/assets/{asset_id}",
+    summary="Desvincula um ativo de um chamado aberto",
+)
+async def unlink_asset_from_ticket(
+    ticket_id: uuid.UUID,
+    asset_id: uuid.UUID,
+    ctx: dict = Depends(get_user_context),
+    session: AsyncSession = Depends(get_db),
+):
+    service = ServiceDeskService(session)
+    await service.unlink_asset_from_ticket(
+        ticket_id=ticket_id,
+        asset_id=asset_id,
+        author_id=ctx["user_id"],
+        is_technician=ctx["is_technician"],
+    )
+    await session.commit()
+    return {"message": "Ativo desvinculado do chamado com sucesso"}
+
+
+@router.post(
     "/{ticket_id}/assets/{asset_id}/reserve",
     summary="Reserva um ativo patrimonial para o chamado",
 )
