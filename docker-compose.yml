@@ -4,10 +4,11 @@
 # Serviços:
 #   - postgres: PostgreSQL 16 (NÃO publicado no host)
 #   - backend:  API FastAPI (NÃO publicada no host; acessada pelo Nginx)
+#   - worker:   worker de notificações e agenda (1 réplica; mesma imagem do backend)
 #   - nginx:    única porta publicada; constrói e serve o frontend Angular
 #
 # Pré-requisito: copiar .env.example para .env e preencher POSTGRES_PASSWORD
-# e SECRET_KEY (o compose se recusa a subir sem eles).
+# SECRET_KEY e APP_ENCRYPTION_KEY (o compose se recusa a subir sem eles).
 #
 # Uso:
 #   docker compose up -d --build
@@ -41,6 +42,8 @@ services:
     environment:
       DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}@postgres:5432/${POSTGRES_DB:-gestao_ti}
       SECRET_KEY: ${SECRET_KEY:?Defina SECRET_KEY no .env (openssl rand -hex 32)}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?Defina APP_ENCRYPTION_KEY no .env (veja .env.example)}
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Fortaleza}
       DEBUG: ${DEBUG:-false}
       ATTACHMENT_STORAGE_PATH: /data/attachments
       BACKUP_STORAGE_PATH: /data/backups
@@ -58,6 +61,33 @@ services:
       timeout: 10s
       retries: 3
       start_period: 30s
+
+  # Worker de notificações: expande eventos em entregas, envia (in-app/e-mail), roda a agenda
+  # (backup diário) e publica heartbeat. UMA réplica por desenho (ADR-013 §4.5).
+  worker:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    entrypoint: []
+    command: ["python", "-m", "app.worker"]
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}@postgres:5432/${POSTGRES_DB:-gestao_ti}
+      SECRET_KEY: ${SECRET_KEY:?Defina SECRET_KEY no .env (openssl rand -hex 32)}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?Defina APP_ENCRYPTION_KEY no .env (veja .env.example)}
+      APP_TIMEZONE: ${APP_TIMEZONE:-America/Fortaleza}
+      BACKUP_STORAGE_PATH: /data/backups
+    volumes:
+      - backups_data:/data/backups
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "app.worker", "--healthcheck"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
 
   nginx:
     build:

@@ -42,6 +42,7 @@ jobs:
       env:
         DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/gti_ci
         SECRET_KEY: ci-only-secret-key-0123456789abcdef0123456789
+        APP_ENCRYPTION_KEY: j7aZmoHBs-fLFKl4myK4N7BqySPuIpD8OjzqKQmxKtA=
       run: uv run alembic upgrade head
 
     - name: Run pytest

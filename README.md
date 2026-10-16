@@ -16,13 +16,17 @@ Pré-requisito: Docker com Compose v2.
 
 ```bash
 cp .env.example .env
-# edite o .env: POSTGRES_PASSWORD e SECRET_KEY são OBRIGATÓRIOS
+# edite o .env: POSTGRES_PASSWORD, SECRET_KEY e APP_ENCRYPTION_KEY são OBRIGATÓRIOS
 #   SECRET_KEY:  openssl rand -hex 32   (o sistema recusa valores de exemplo ou curtos)
+#   APP_ENCRYPTION_KEY:  python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"
+#   (guarde uma cópia da APP_ENCRYPTION_KEY FORA do servidor: sem ela a senha SMTP gravada não pode ser lida)
 docker compose up -d --build
 ```
 
 Abra `http://<servidor>` (porta `HTTP_PORT`, padrão 80). No primeiro acesso a tela de **configuração inicial** cria o administrador.
 O Nginx é a única porta publicada; banco e API ficam na rede interna do Compose. O build do frontend acontece dentro da imagem do Nginx.
+
+O serviço **`worker`** (mesma imagem, 1 réplica) envia as notificações (sino e e-mail), executa o **backup diário às 02:00** (fuso `APP_TIMEZONE`, padrão America/Fortaleza) e a limpeza de dados antigos às 03:30. Saúde: `docker compose ps` (healthcheck por heartbeat) e `components.worker` em `/api/v1/health`.
 
 Migrations e seed rodam sozinhos ao iniciar o backend (`backend/docker-entrypoint.sh`); uma falha derruba o container em vez de ser ignorada.
 
@@ -33,6 +37,13 @@ git pull
 docker compose up -d --build
 docker compose logs -f backend
 ```
+
+### Ao migrar de uma versão anterior à Fase A (hub de notificações)
+
+- **`.env`:** defina `APP_ENCRYPTION_KEY` (veja a instalação). O Compose não sobe sem ela.
+- **E-mail:** a configuração SMTP antiga (senha em texto puro em `system_settings`) é movida pela migration `j0e1f2a3b4c5` para `channel_configs`, com a senha cifrada. Nada a fazer; reconfigurar só se a migration for aplicada com outra chave depois.
+- **Worker:** `docker compose up -d --build` já cria o serviço `worker`. Sem ele as notificações ficam em fila (`deliveries` PENDING) e nenhum backup agendado roda.
+- **Notificações:** chamados novos, atribuições, mudanças de status e respostas passam a gerar notificações no sino (e e-mail, se o SMTP estiver habilitado). Os e-mails não saem mais dentro da requisição.
 
 ### Ao migrar de uma versão anterior à Fase 0
 
@@ -58,7 +69,7 @@ docker compose logs -f backend
 
   O script faz um dump de segurança, para o backend, restaura em transação única (aborta no primeiro erro) e religa o backend.
 - O backup cobre **somente o banco**. Anexos e logo estão nos volumes `attachments_data` e `static_data`: inclua-os na rotina de backup do servidor.
-- Backup automático/agendado ainda não existe (previsto no ADR-013).
+- **Backup automático:** o worker gera um backup por dia às 02:00; falha dispara notificação crítica (sino + e-mail) aos administradores. A retenção segue `BACKUP_MAX_KEEP`. Os arquivos ficam no volume `backups_data`: copie-os para fora do servidor.
 
 ## Desenvolvimento
 
