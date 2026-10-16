@@ -8,7 +8,10 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, WebSocket, WebSocketDisconnect, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.database import get_db
+from sqlalchemy import select
+
+from app.database import AsyncSessionLocal, get_db
+from app.identity.models import UserAccount
 from app.core.security import decode_access_token
 from app.core.dependencies import require_permission, get_current_user_id
 from app.notifications.repository import NotificationRepository
@@ -62,6 +65,12 @@ async def websocket_endpoint(websocket: WebSocket, token: str):
         if not payload:
             raise Exception("Token inválido")
         user_id = uuid.UUID(payload.get("sub"))
+        async with AsyncSessionLocal() as session:
+            active = (
+                await session.execute(select(UserAccount.is_active).where(UserAccount.id == user_id))
+            ).scalar_one_or_none()
+        if not active:
+            raise Exception("Usuário inexistente ou inativo")
     except Exception as e:
         logger.warning(f"WS authentication failed: {e}")
         await websocket.close(code=1008)

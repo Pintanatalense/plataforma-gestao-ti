@@ -4,7 +4,7 @@ MOD-03 — Identidade (Services)
 Regras de negócio para as entidades de identidade e controle de acesso.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 import uuid
 from typing import Sequence
 
@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.events import Event, event_bus
 from app.core.exceptions import (
+    AppException,
     BusinessRuleException,
     ConflictException,
     NotFoundException,
@@ -31,6 +32,10 @@ from app.identity.schemas import (
 )
 
 ADMIN_ROLE_NAME = "Administrador"
+MAX_FAILED_LOGINS = 5
+LOCKOUT_MINUTES = 15
+# Hash bcrypt válido (de uma senha aleatória descartada), usado só para igualar o tempo de resposta.
+_DUMMY_HASH = hash_password("dummy-password-for-timing-only")
 
 
 class IdentityService:
@@ -44,18 +49,38 @@ class IdentityService:
     async def authenticate(self, email: str, password: str, ip_address: str | None = None) -> str:
         user = await self.repo.get_user_by_email(email)
         if not user:
+            # Mesmo custo de uma verificação real, para não revelar se o e-mail existe pelo tempo de resposta.
+            verify_password(password, _DUMMY_HASH)
             raise UnauthorizedException("Credenciais inválidas.")
-            
+
+        now = datetime.now(timezone.utc)
+        locked_until = user.locked_until
+        if locked_until is not None and locked_until.tzinfo is None:
+            locked_until = locked_until.replace(tzinfo=timezone.utc)
+        if locked_until is not None and locked_until > now:
+            raise AppException(
+                "Muitas tentativas inválidas. Tente novamente em alguns minutos.",
+                code="ACCOUNT_LOCKED",
+                status_code=429,
+            )
+
         if not verify_password(password, user.hashed_password):
+            user.failed_login_count = (user.failed_login_count or 0) + 1
+            if user.failed_login_count >= MAX_FAILED_LOGINS:
+                user.locked_until = now + timedelta(minutes=LOCKOUT_MINUTES)
+                user.failed_login_count = 0
+            await self.repo.update_user(user)
+            # Persistir a tentativa antes de responder: o get_db faria rollback ao levantar a exceção.
+            await self.repo.session.commit()
             raise UnauthorizedException("Credenciais inválidas.")
-            
-        # Update login metadata
-        user.last_login_at = datetime.now(timezone.utc)
+
+        user.failed_login_count = 0
+        user.locked_until = None
+        user.last_login_at = now
         if ip_address:
             user.last_login_ip = ip_address
-            
         await self.repo.update_user(user)
-        
+
         return self._issue_token(user)
 
     def _issue_token(self, user: UserAccount) -> str:

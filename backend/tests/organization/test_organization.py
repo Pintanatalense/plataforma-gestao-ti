@@ -1,11 +1,31 @@
 """Testes de integração do MOD-02 — Organização."""
 
-from httpx import AsyncClient
+import uuid
 
+import pytest_asyncio
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.security import hash_password
+from app.identity.models import UserAccount
 from tests.conftest import make_auth_headers
 
 BASE = "/api/v1/organization"
-ADMIN = make_auth_headers(is_admin=True)
+ADMIN_ID = uuid.uuid4()
+REGULAR_ID = uuid.uuid4()
+ADMIN = make_auth_headers(str(ADMIN_ID), is_admin=True)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _users(db_session: AsyncSession) -> None:
+    """O usuário do token precisa existir e estar ativo no banco."""
+    db_session.add_all(
+        [
+            UserAccount(id=ADMIN_ID, email="admin@org.test", hashed_password=hash_password("x"), is_admin=True),
+            UserAccount(id=REGULAR_ID, email="regular@org.test", hashed_password=hash_password("x")),
+        ]
+    )
+    await db_session.commit()
 
 
 async def _create_company(client: AsyncClient) -> dict:
@@ -50,14 +70,14 @@ async def test_requires_authentication(client: AsyncClient) -> None:
 
 
 async def test_missing_permission_returns_403(client: AsyncClient) -> None:
-    headers = make_auth_headers(permissions=["organization.units.read"])
+    headers = make_auth_headers(str(REGULAR_ID), permissions=["organization.units.read"])
     response = await client.get(f"{BASE}/sectors", headers=headers)
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "FORBIDDEN"
 
 
 async def test_permission_grants_access(client: AsyncClient) -> None:
-    headers = make_auth_headers(permissions=["organization.units.read"])
+    headers = make_auth_headers(str(REGULAR_ID), permissions=["organization.units.read"])
     response = await client.get(f"{BASE}/units", headers=headers)
     assert response.status_code == 200
     assert response.json() == []

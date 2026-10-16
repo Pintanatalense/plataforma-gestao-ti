@@ -23,7 +23,7 @@ async def list_audit_logs(
     service: Annotated[AuditService, Depends(get_audit_service)],
     limit: int = 100,
     offset: int = 0,
-    _: None = Depends(require_permission("admin")),
+    _: None = Depends(require_permission("audit.read")),
 ):
     """Lista todos os logs de auditoria (apenas admin)."""
     return await service.get_all_logs(limit, offset)
@@ -33,7 +33,7 @@ async def list_entity_audit_logs(
     entity_type: str,
     entity_id: uuid.UUID,
     service: Annotated[AuditService, Depends(get_audit_service)],
-    _: None = Depends(require_permission("admin")),
+    _: None = Depends(require_permission("audit.read")),
 ):
     """Lista logs de auditoria para uma entidade específica."""
     return await service.get_entity_history(entity_type, entity_id)
