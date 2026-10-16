@@ -8,6 +8,39 @@
 
 ---
 
+## 0. Status após a Fase 0 (branch `fix/phase-0-hardening`)
+
+Validado na stack real (instalação do zero, `docker compose up --build`) e na suíte (`pytest`). O corpo deste documento permanece como foi escrito na auditoria, com o estado **antes** das correções.
+
+| Item | Status | Observação |
+|---|---|---|
+| P0-1 Alembic duas cabeças | **Corrigido** | revisão de união + teste de cabeça única + `alembic upgrade head` no CI; upgrade a partir de `c2a8f41e9b03` validado |
+| P0-2 Path traversal em anexos | **Corrigido** | enum fechado, nome UUID, caminho conferido, tipo/assinatura/tamanho, autorização por entidade, container não-root |
+| P0-3 JWT forjável / chave padrão | **Corrigido** | `SECRET_KEY` obrigatória (≥ 32, sem "CHANGE-ME"); usuário verificado no banco a cada request |
+| P0-4 Restore trava o sistema | **Corrigido** | restore saiu da API; `scripts/restore-backup.sh` validado (inclui falha sem aplicar). Achado extra: cliente `pg_dump` 17 gerava dumps que o PG 16 não restaura → imagem usa `postgresql-client-16` |
+| P0-5 Webhook aberto | **Corrigido** | `X-Webhook-Secret`, sem eco de resposta, sem vínculo por matrícula (vínculo com código fica para a Fase C do ADR-013) |
+| P1-1 Auditoria duplicada | **Corrigido** (tickets) | `organization` ainda usa o bus; unifica no outbox |
+| P1-2 Estoque sem lock | **Corrigido** | 40 saídas paralelas → saldo 0; teste `pg` |
+| P1-3 Anexos de ativo | **Corrigido** | junto de P0-2 |
+| P1-4 XSS no termo | **Corrigido** | `html.escape`; logo agora só PNG/JPEG |
+| P1-5 / P1-6 rotas abertas | **Corrigido** | teste de contrato percorre o OpenAPI |
+| P1-7 provedor MOCK padrão | **Corrigido** | padrão `NONE` (desabilitado); MOCK marca "simulada" |
+| P1-8 revogação / lockout / troca de senha | **Corrigido, com limite** | usuário desativado perde acesso na hora; permissões ainda vêm do token (≤ 8 h); lockout 5 falhas/15 min; troca de senha imposta no servidor |
+| P1-9 `/audit` e permissões fantasmas | **Corrigido** (`audit.read`); `service_desk.tickets.create/read` seguem sem uso |
+| P1-10 seed sobrescreve perfis | **Corrigido** | perfis existentes preservados; seed não duplica empresa renomeada |
+| P1-11 setup ignora nome | **Corrigido** | |
+| P1-12 bind mount do código | **Corrigido** | volumes nomeados; override de dev separado |
+| P1-13 backup incompleto/sem agenda | **Aberto** | anexos/logo fora do dump; sem agendamento (Fase A do ADR-013) |
+| P1-14 fila WhatsApp sem worker | **Aberto** | Fase A/D do ADR-013 |
+| P1-15 ciclo de ativos por chamado | **Corrigido** | escopo do chamado + corpo tipado |
+| P1-16 FK do autor no WhatsApp | **Corrigido** | |
+| P1-17 portas expostas | **Corrigido** | só o Nginx publica porta |
+| **Novo (achado na Fase 0)** | Corrigido | `can_read_all` era concedido a todo técnico (`tickets.manage`), tornando inútil o isolamento por setor; agora só `read_all`/admin |
+| **Novo** | Corrigido | `npm ci` falhava (ERESOLVE) por `@angular/cdk` 22.2.2 vs. Material 22.2.1 → o build de imagem e o CI do frontend quebravam |
+| P2-1…P2-22 | **Aberto** | exceto: P2-1 parcial (usuário não-root), P2-18/P2-20 parcial (CI roda migration) |
+
+---
+
 ## 1. Reconferência dos 8 problemas da revisão anterior
 
 | # | Problema | Status | Evidência |
