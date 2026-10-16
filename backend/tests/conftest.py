@@ -35,6 +35,7 @@ os.environ.setdefault("ATTACHMENT_STORAGE_PATH", os.path.join(_TEST_DATA_DIR, "a
 os.environ.setdefault("STATIC_DIR", os.path.join(_TEST_DATA_DIR, "static"))
 os.environ.setdefault("BACKUP_STORAGE_PATH", os.path.join(_TEST_DATA_DIR, "backups"))
 os.environ.setdefault("SECRET_KEY", "pytest-only-secret-key-0123456789abcdef0123456789")
+os.environ.setdefault("APP_ENCRYPTION_KEY", "j7aZmoHBs-fLFKl4myK4N7BqySPuIpD8OjzqKQmxKtA=")
 
 from app.core.security import create_access_token, hash_password  # noqa: E402
 from app.database import Base, get_db  # noqa: E402

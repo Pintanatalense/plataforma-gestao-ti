@@ -37,6 +37,13 @@ class Settings(BaseSettings):
     SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_HOURS: int = 8
+    # Chave Fernet que cifra segredos de canais (senha SMTP, tokens). Obrigatória:
+    # `python -c "from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())"`.
+    # Guarde-a fora do banco e do backup do banco: sem ela os segredos não podem ser lidos.
+    APP_ENCRYPTION_KEY: str
+
+    # --- Notificações ---
+    APP_TIMEZONE: str = "America/Fortaleza"
 
     # --- Anexos ---
     ATTACHMENT_STORAGE_PATH: str = "/data/attachments"
@@ -73,6 +80,20 @@ class Settings(BaseSettings):
                 "SECRET_KEY inválida: use um valor aleatório com pelo menos 32 caracteres "
                 "(ex.: openssl rand -hex 32) e sem o texto 'CHANGE-ME'."
             )
+        return value
+
+    @field_validator("APP_ENCRYPTION_KEY")
+    @classmethod
+    def _validate_encryption_key(cls, value: str) -> str:
+        from cryptography.fernet import Fernet
+
+        try:
+            Fernet(value.encode())
+        except Exception as exc:
+            raise ValueError(
+                "APP_ENCRYPTION_KEY inválida: gere com "
+                "`python -c \"from cryptography.fernet import Fernet; print(Fernet.generate_key().decode())\"`."
+            ) from exc
         return value
 
     @property
