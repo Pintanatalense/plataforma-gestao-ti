@@ -122,19 +122,17 @@ class IdentityService:
             from app.core.settings_model import SystemSetting
             from sqlalchemy import select
 
-            stmt = select(Company)
-            comp = (await self.repo.session.execute(stmt)).scalar_one_or_none()
+            comp = (await self.repo.session.execute(select(Company).order_by(Company.created_at).limit(1))).scalars().first()
             if not comp:
                 comp = Company(
-                    corporate_name=schema.company_name or "Empresa Contratante S.A.",
-                    trade_name=schema.company_name or "Matriz",
-                    cnpj=schema.company_cnpj or "00.000.000/0001-00",
-                    is_demo=False
+                    name=schema.company_name or "Empresa Contratante S.A.",
+                    cnpj=schema.company_cnpj or None,
+                    is_demo=False,
                 )
                 self.repo.session.add(comp)
-            elif schema.company_name:
-                comp.corporate_name = schema.company_name
-                comp.trade_name = schema.company_name
+            else:
+                if schema.company_name:
+                    comp.name = schema.company_name
                 if schema.company_cnpj:
                     comp.cnpj = schema.company_cnpj
 

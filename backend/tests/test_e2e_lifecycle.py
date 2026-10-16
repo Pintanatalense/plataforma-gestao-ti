@@ -181,8 +181,8 @@ async def test_full_platform_lifecycle_e2e(client: AsyncClient, db_session: Asyn
     # -------------------------------------------------------------------------
     # 6. ANEXO DE EVIDÊNCIA NO CHAMADO (Técnico anexa foto/laudo)
     # -------------------------------------------------------------------------
-    file_content = b"Evidencia do cabo rompido na sala 104"
-    files = {"file": ("cabo_defeituoso.txt", io.BytesIO(file_content), "text/plain")}
+    file_content = b"%PDF-1.4\nEvidencia do cabo rompido na sala 104"
+    files = {"file": ("cabo_defeituoso.pdf", io.BytesIO(file_content), "application/pdf")}
     data = {"entity_type": "TICKET", "entity_id": str(ticket_id)}
     resp_attach = await client.post("/api/v1/attachments", files=files, data=data, headers=headers_tec)
     assert resp_attach.status_code == 201
