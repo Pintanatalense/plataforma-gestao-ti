@@ -1,6 +1,6 @@
 # ADR-013 — Hub de notificações e automação multicanal
 
-**Status:** Proposto (aguarda aprovação; nenhum código escrito)
+**Status:** Aceito (2026-10-15). Fase 0 concluída; **Fase A implementada** (ver §16). Fases B–F pendentes.
 **Data:** 2026-10-15
 **Base:** commit `a544af7`; `docs/PROJECT_MAP.md`, `docs/AUDIT.md`
 **Numeração:** `DEC-013` já é citado em `core/events.py` mas não tem arquivo; este ADR usa o próximo número livre da série ADR.
@@ -407,3 +407,27 @@ Não resolve: o SLA em si, o modelo de termo, a divergência de inventário e a 
 - Teste de vínculo: código errado 5× bloqueia; remetente não vinculado não vê dados.
 - Teste de `LISTEN/NOTIFY` com 2 processos de API e 1 worker.
 - `alembic upgrade head` em banco vazio no CI (guarda contra P0-1).
+
+---
+
+## 16. Registro de implementação — Fase A
+
+Implementado em `feat/phase-a-notification-core`. Onde difere do desenho acima:
+
+| Tema | Decidido no ADR | Feito na Fase A |
+|---|---|---|
+| Auditoria como consumidor do outbox (D1) | auditoria lê `domain_events` | **adiado**: tickets gravam auditoria direto (atômico) e `organization` segue no `EventBus` só para auditoria. Unificar exige um consumidor idempotente no worker; fica para a Fase B/F |
+| Preferências, horário de silêncio, escalonamento (D4) | `user_notification_prefs`, quiet hours, escalonamento | **não implementado** (a Fase B traz as telas). Hoje: o piso é in-app e o e-mail segue a regra; sem silêncio. `critical` já existe como prioridade |
+| Seletor `sector_manager` | previsto | **não existe** no modelo de dados; no lugar `admins`, `counterpart`, `sector_attendants`, `role:`, `user:` |
+| Rastreio do endereço de canal (`user_channel_addresses`) | previsto | só na Fase C; e-mail usa `UserAccount.email` |
+| `LISTEN/NOTIFY` do WS | tirar o JWT da query string | **adiado** para a Fase B (o token ainda vai na URL do WS) |
+| `WhatsAppNotificationDispatcher` / `wa_outbox` | removidos na A | **mantidos** até a Fase D; não há consumidor |
+| Permissão `notifications.manage` | criada na A/B | **Fase B** (a configuração de e-mail segue em `system.backup.manage`) |
+
+Detalhes que valem registro:
+
+- **Entrega:** `deliveries.idempotency_key = sha256(event|rule|user|canal)`; um destinatário recebe no máximo uma entrega por canal e evento, mesmo casando duas regras. Canal sem configuração habilitada (e-mail por padrão) **não gera entrega** (não vira `SKIPPED`): habilitar depois não reenvia o passado.
+- **Segredos:** `channel_configs.secrets_encrypted` (Fernet). Trocar `APP_ENCRYPTION_KEY` sem recifrar torna a senha SMTP ilegível; o e-mail passa a falhar de forma visível (`SecretDecryptionError`), não silenciosa.
+- **Jobs:** `backup.daily` (`daily:02:00`) e `retention.cleanup` (`daily:03:30`, 90 dias para eventos/entregas, 180 para notificações lidas). A próxima execução é gravada **antes** de rodar: um job que trava não repete em loop.
+- **Backup:** falha → `backup.failed` crítico para administradores (sino + e-mail); sucesso gera `backup.completed`, cuja regra nasce **desativada**. O dump continua só do banco.
+- **Testes:** SQLite cobre regras, audiência, DEC-012, backoff, circuito e jobs; PostgreSQL (`-m pg`) cobre dois dispatchers sem duplicar (`SKIP LOCKED`), dois fan-outs concorrentes, `NOTIFY` só após `COMMIT` e a migration com a senha SMTP legada.
