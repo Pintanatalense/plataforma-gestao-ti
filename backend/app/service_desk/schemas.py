@@ -151,3 +151,16 @@ class TicketHistoryItem(BaseModel):
 
     model_config = ConfigDict(from_attributes=True)
 
+
+
+class TicketAssetActionRequest(BaseModel):
+    """Corpo das ações de reserva/entrega/devolução de ativo a partir do chamado."""
+
+    notes: str | None = Field(default=None, max_length=1000)
+    employee_id: uuid.UUID | None = None
+
+
+class TicketAssetInspectRequest(BaseModel):
+    approved: bool = True
+    notes: str | None = Field(default=None, max_length=1000)
+    send_to_maintenance: bool = False

@@ -23,6 +23,8 @@ from app.service_desk.schemas import (
     TicketResponse,
     TicketUpdate,
     TicketHistoryItem,
+    TicketAssetActionRequest,
+    TicketAssetInspectRequest,
 )
 from app.service_desk.services import ServiceDeskService
 
@@ -38,7 +40,7 @@ async def get_user_context(
     is_admin = payload.get("is_admin", False)
     
     is_technician = is_admin or "service_desk.tickets.manage" in perms
-    can_read_all = is_admin or is_technician or "service_desk.tickets.read_all" in perms
+    can_read_all = is_admin or "service_desk.tickets.read_all" in perms
     can_internal_notes = is_admin or is_technician or "service_desk.interactions.internal" in perms
     can_view_reports = is_admin or "service_desk.reports.read" in perms
     
@@ -337,14 +339,13 @@ async def add_material(
 async def reserve_ticket_asset(
     ticket_id: uuid.UUID,
     asset_id: uuid.UUID,
-    payload: dict = {},
+    body: TicketAssetActionRequest = TicketAssetActionRequest(),
     ctx: dict = Depends(get_user_context),
     session: AsyncSession = Depends(get_db),
 ):
     service = ServiceDeskService(session)
-    notes = payload.get("notes") if isinstance(payload, dict) else None
-    emp_raw = payload.get("employee_id") if isinstance(payload, dict) else None
-    employee_id = uuid.UUID(str(emp_raw)) if emp_raw else None
+    notes = body.notes
+    employee_id = body.employee_id
 
     movement = await service.reserve_ticket_asset(
         ticket_id=ticket_id,
@@ -352,6 +353,8 @@ async def reserve_ticket_asset(
         author_id=ctx["user_id"],
         user_employee_id=ctx["employee_id"],
         is_technician=ctx["is_technician"],
+        can_read_all=ctx["can_read_all"],
+        sector_id=ctx["sector_id"],
         employee_id=employee_id,
         notes=notes,
     )
@@ -366,14 +369,13 @@ async def reserve_ticket_asset(
 async def deliver_ticket_asset(
     ticket_id: uuid.UUID,
     asset_id: uuid.UUID,
-    payload: dict = {},
+    body: TicketAssetActionRequest = TicketAssetActionRequest(),
     ctx: dict = Depends(get_user_context),
     session: AsyncSession = Depends(get_db),
 ):
     service = ServiceDeskService(session)
-    notes = payload.get("notes") if isinstance(payload, dict) else None
-    emp_raw = payload.get("employee_id") if isinstance(payload, dict) else None
-    employee_id = uuid.UUID(str(emp_raw)) if emp_raw else None
+    notes = body.notes
+    employee_id = body.employee_id
 
     movement = await service.deliver_ticket_asset(
         ticket_id=ticket_id,
@@ -381,6 +383,8 @@ async def deliver_ticket_asset(
         author_id=ctx["user_id"],
         user_employee_id=ctx["employee_id"],
         is_technician=ctx["is_technician"],
+        can_read_all=ctx["can_read_all"],
+        sector_id=ctx["sector_id"],
         employee_id=employee_id,
         notes=notes,
     )
@@ -395,18 +399,20 @@ async def deliver_ticket_asset(
 async def return_ticket_asset(
     ticket_id: uuid.UUID,
     asset_id: uuid.UUID,
-    payload: dict = {},
+    body: TicketAssetActionRequest = TicketAssetActionRequest(),
     ctx: dict = Depends(get_user_context),
     session: AsyncSession = Depends(get_db),
 ):
     service = ServiceDeskService(session)
-    notes = payload.get("notes") if isinstance(payload, dict) else None
+    notes = body.notes
     movement = await service.return_ticket_asset(
         ticket_id=ticket_id,
         asset_id=asset_id,
         author_id=ctx["user_id"],
         user_employee_id=ctx["employee_id"],
         is_technician=ctx["is_technician"],
+        can_read_all=ctx["can_read_all"],
+        sector_id=ctx["sector_id"],
         notes=notes,
     )
     await session.commit()
@@ -420,14 +426,14 @@ async def return_ticket_asset(
 async def inspect_ticket_asset(
     ticket_id: uuid.UUID,
     asset_id: uuid.UUID,
-    payload: dict = {},
+    body: TicketAssetInspectRequest = TicketAssetInspectRequest(),
     ctx: dict = Depends(get_user_context),
     session: AsyncSession = Depends(get_db),
 ):
     service = ServiceDeskService(session)
-    approved = payload.get("approved", True) if isinstance(payload, dict) else True
-    notes = payload.get("notes") if isinstance(payload, dict) else None
-    send_to_maintenance = payload.get("send_to_maintenance", False) if isinstance(payload, dict) else False
+    approved = body.approved
+    notes = body.notes
+    send_to_maintenance = body.send_to_maintenance
 
     movement = await service.inspect_ticket_asset(
         ticket_id=ticket_id,
@@ -436,6 +442,8 @@ async def inspect_ticket_asset(
         author_id=ctx["user_id"],
         user_employee_id=ctx["employee_id"],
         is_technician=ctx["is_technician"],
+        can_read_all=ctx["can_read_all"],
+        sector_id=ctx["sector_id"],
         notes=notes,
         send_to_maintenance=send_to_maintenance,
     )

@@ -504,13 +504,20 @@ class ServiceDeskService:
         is_technician: bool = False,
         employee_id: uuid.UUID | None = None,
         notes: str | None = None,
+        can_read_all: bool = False,
+        sector_id: uuid.UUID | None = None,
     ):
         if not is_technician:
             raise ForbiddenException("Apenas técnicos podem gerenciar o ciclo de ativos.")
 
-        ticket = await self.repo.get_ticket(ticket_id)
-        if not ticket:
-            raise NotFoundException("Ticket", ticket_id)
+        ticket = await self.get_ticket_for_user(
+            ticket_id=ticket_id,
+            user_employee_id=user_employee_id,
+            is_technician=is_technician,
+            can_read_all=can_read_all,
+            user_id=author_id,
+            sector_id=sector_id,
+        )
 
         # Se o ativo ainda não estiver associado na lista do chamado, associa automaticamente
         if not any(a.id == asset_id for a in ticket.assets):
@@ -554,13 +561,20 @@ class ServiceDeskService:
         is_technician: bool = False,
         employee_id: uuid.UUID | None = None,
         notes: str | None = None,
+        can_read_all: bool = False,
+        sector_id: uuid.UUID | None = None,
     ):
         if not is_technician:
             raise ForbiddenException("Apenas técnicos podem entregar ativos.")
 
-        ticket = await self.repo.get_ticket(ticket_id)
-        if not ticket:
-            raise NotFoundException("Ticket", ticket_id)
+        ticket = await self.get_ticket_for_user(
+            ticket_id=ticket_id,
+            user_employee_id=user_employee_id,
+            is_technician=is_technician,
+            can_read_all=can_read_all,
+            user_id=author_id,
+            sector_id=sector_id,
+        )
 
         if not any(a.id == asset_id for a in ticket.assets):
             assets_to_add = await self.repo.get_assets_by_ids([asset_id])
@@ -602,13 +616,20 @@ class ServiceDeskService:
         user_employee_id: uuid.UUID | None,
         is_technician: bool = False,
         notes: str | None = None,
+        can_read_all: bool = False,
+        sector_id: uuid.UUID | None = None,
     ):
         if not is_technician:
             raise ForbiddenException("Apenas técnicos podem registrar devolução de ativos.")
 
-        ticket = await self.repo.get_ticket(ticket_id)
-        if not ticket:
-            raise NotFoundException("Ticket", ticket_id)
+        ticket = await self.get_ticket_for_user(
+            ticket_id=ticket_id,
+            user_employee_id=user_employee_id,
+            is_technician=is_technician,
+            can_read_all=can_read_all,
+            user_id=author_id,
+            sector_id=sector_id,
+        )
 
         from app.assets.repository import AssetRepository
         from app.movements.repository import AssetMovementRepository
@@ -644,13 +665,20 @@ class ServiceDeskService:
         is_technician: bool = False,
         notes: str | None = None,
         send_to_maintenance: bool = False,
+        can_read_all: bool = False,
+        sector_id: uuid.UUID | None = None,
     ):
         if not is_technician:
             raise ForbiddenException("Apenas técnicos podem inspecionar ativos.")
 
-        ticket = await self.repo.get_ticket(ticket_id)
-        if not ticket:
-            raise NotFoundException("Ticket", ticket_id)
+        ticket = await self.get_ticket_for_user(
+            ticket_id=ticket_id,
+            user_employee_id=user_employee_id,
+            is_technician=is_technician,
+            can_read_all=can_read_all,
+            user_id=author_id,
+            sector_id=sector_id,
+        )
 
         from app.assets.repository import AssetRepository
         from app.movements.repository import AssetMovementRepository
