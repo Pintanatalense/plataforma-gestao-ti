@@ -14,9 +14,12 @@ WORKDIR /app
 # --- Stage: dependencies ---
 FROM base AS deps
 
-RUN pip install --no-cache-dir hatchling --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
-COPY pyproject.toml ./
-RUN pip install --no-cache-dir . --no-build-isolation --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
+# Dependências exatas do uv.lock (build reproduzível: sem o lock, o pip pegava a versão mais nova de cada
+# pacote e uma release sem wheel quebrava o build).
+RUN pip install --no-cache-dir uv --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
+COPY pyproject.toml uv.lock ./
+RUN uv export --frozen --no-dev --no-emit-project --no-hashes -o requirements.lock \
+    && pip install --no-cache-dir -r requirements.lock --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
 
 # --- Stage: runtime ---
 FROM base AS runtime
