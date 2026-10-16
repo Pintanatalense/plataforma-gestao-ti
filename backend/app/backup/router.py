@@ -89,19 +89,6 @@ async def verify_backup(
     return await service.validate_backup_integrity(backup_id)
 
 
-@router.post(
-    "/{backup_id}/restore",
-    summary="Restaura o banco de dados a partir de um backup validado",
-    dependencies=[Depends(require_permission("system.backup.manage"))]
-)
-async def restore_backup(
-    backup_id: uuid.UUID,
-    session: Annotated[AsyncSession, Depends(get_db)]
-):
-    service = BackupService(session)
-    return await service.restore_backup(backup_id)
-
-
 @router.delete(
     "/{backup_id}",
     summary="Exclui um arquivo de backup do histórico e do armazenamento",

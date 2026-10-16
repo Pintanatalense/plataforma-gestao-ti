@@ -17,6 +17,17 @@ from tests.conftest import make_auth_headers
 pytestmark = pytest.mark.asyncio
 
 
+@pytest.fixture(autouse=True)
+def fake_pg_dump(monkeypatch):
+    """O dump real exige pg_dump + PostgreSQL; aqui isolamos o serviço da infraestrutura."""
+    from app.backup.services import BackupService
+
+    async def _fake(self):
+        return True, b"-- dump de teste\nSELECT 1;\n"
+
+    monkeypatch.setattr(BackupService, "_execute_database_dump", _fake)
+
+
 async def setup_backup_fixtures(db_session: AsyncSession):
     company = Company(name="Backup Corp", cnpj="33.444.555/0001-66")
     db_session.add(company)

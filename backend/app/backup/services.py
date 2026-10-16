@@ -133,24 +133,7 @@ class BackupService:
                     return True, stdout
                 logger.warning("pg_dump local retornou código %d: %s", proc.returncode, stderr.decode(errors="ignore"))
 
-            # 1.b) Fallback para docker exec se pg_dump não estiver no PATH local mas o container gestao-ti-db estiver acessível
-            docker_bin = shutil.which("docker")
-            if docker_bin:
-                cmd = [docker_bin, "exec", "gestao-ti-db", "pg_dump", "-U", user, "-d", dbname, "--clean", "--if-exists"]
-                try:
-                    proc = await asyncio.create_subprocess_exec(
-                        *cmd,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                    stdout, stderr = await proc.communicate()
-                    if proc.returncode == 0 and stdout:
-                        return True, stdout
-                    logger.warning("docker exec pg_dump falhou: %s", stderr.decode(errors="ignore"))
-                except Exception as exc:
-                    logger.debug("docker exec indisponível: %s", exc)
-
-            raise RuntimeError("Utilitário pg_dump não encontrado e container gestao-ti-db inacessível.")
+            raise RuntimeError("Utilitário pg_dump não encontrado ou falhou; verifique o postgresql-client na imagem.")
 
         # Cenário 2: SQLite (Ambiente isolado de testes automatizados)
         if "sqlite" in parsed.scheme:
@@ -200,77 +183,6 @@ class BackupService:
             "expected_sha256": backup.checksum_sha256,
             "calculated_sha256": current_hash,
             "size_bytes": len(content)
-        }
-
-    async def restore_backup(self, backup_id: uuid.UUID) -> dict:
-        """Restaura o banco de dados a partir do arquivo de backup compactado."""
-        integrity = await self.validate_backup_integrity(backup_id)
-        if not integrity["is_valid"]:
-            raise BusinessRuleException(f"Falha de integridade no backup: {integrity.get('error', 'Hash SHA-256 divergente')}")
-
-        backup = await self.get_backup(backup_id)
-        target_file = self.storage_dir / backup.filename
-
-        with open(target_file, "rb") as f:
-            compressed_bytes = f.read()
-
-        raw_sql = gzip.decompress(compressed_bytes)
-
-        db_url = settings.DATABASE_URL
-        parsed = urlparse(db_url.replace("postgresql+asyncpg://", "postgresql://").replace("sqlite+aiosqlite://", "sqlite://"))
-
-        if "postgresql" in parsed.scheme:
-            host = parsed.hostname or "localhost"
-            port = str(parsed.port or 5432)
-            user = parsed.username or "postgres"
-            password = parsed.password or "postgres"
-            dbname = parsed.path.lstrip("/") or "gestao_ti"
-
-            env = os.environ.copy()
-            env["PGPASSWORD"] = password
-
-            psql_bin = shutil.which("psql")
-            if psql_bin:
-                cmd = [psql_bin, "-h", host, "-p", port, "-U", user, "-d", dbname]
-                proc = await asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdin=asyncio.subprocess.PIPE,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    env=env
-                )
-                stdout, stderr = await proc.communicate(input=raw_sql)
-                if proc.returncode != 0:
-                    raise BusinessRuleException(f"Erro ao restaurar banco com psql: {stderr.decode(errors='ignore')}")
-            else:
-                docker_bin = shutil.which("docker")
-                if docker_bin:
-                    cmd = [docker_bin, "exec", "-i", "gestao-ti-db", "psql", "-U", user, "-d", dbname]
-                    proc = await asyncio.create_subprocess_exec(
-                        *cmd,
-                        stdin=asyncio.subprocess.PIPE,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                    stdout, stderr = await proc.communicate(input=raw_sql)
-                    if proc.returncode != 0:
-                        raise BusinessRuleException(f"Erro ao restaurar banco via docker exec: {stderr.decode(errors='ignore')}")
-                else:
-                    raise RuntimeError("Nem psql nativo nem docker foram encontrados para restauração.")
-
-        elif "sqlite" in parsed.scheme:
-            sqlite_path = parsed.path.lstrip("/")
-            import sqlite3
-            con = sqlite3.connect(sqlite_path)
-            con.executescript(raw_sql.decode("utf-8"))
-            con.close()
-
-        logger.info("Backup %s restaurado com sucesso.", backup.filename)
-        return {
-            "success": True,
-            "backup_id": str(backup.id),
-            "filename": backup.filename,
-            "restored_at": datetime.now(timezone.utc).isoformat(),
         }
 
     async def get_recent_valid_backup(self, max_age_hours: int = 24) -> tuple[bool, DatabaseBackup | None]:
