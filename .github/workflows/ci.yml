@@ -41,6 +41,7 @@ jobs:
       working-directory: ./backend
       env:
         DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/gti_ci
+        SECRET_KEY: ci-only-secret-key-0123456789abcdef0123456789
       run: uv run alembic upgrade head
 
     - name: Run pytest

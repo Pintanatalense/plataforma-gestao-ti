@@ -28,6 +28,12 @@ TEST_PG_URL: str | None = os.environ.get("TEST_DATABASE_URL")
 if TEST_PG_URL:
     assert_safe_test_url(TEST_PG_URL)
 os.environ["DATABASE_URL"] = TEST_PG_URL or DEFAULT_TEST_DATABASE_URL
+import tempfile  # noqa: E402
+
+_TEST_DATA_DIR = tempfile.mkdtemp(prefix="gti_test_")
+os.environ.setdefault("ATTACHMENT_STORAGE_PATH", os.path.join(_TEST_DATA_DIR, "attachments"))
+os.environ.setdefault("BACKUP_STORAGE_PATH", os.path.join(_TEST_DATA_DIR, "backups"))
+os.environ.setdefault("SECRET_KEY", "pytest-only-secret-key-0123456789abcdef0123456789")
 
 from app.core.security import create_access_token, hash_password  # noqa: E402
 from app.database import Base, get_db  # noqa: E402
