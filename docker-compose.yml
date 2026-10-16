@@ -1,33 +1,30 @@
 # =============================================================================
-# Docker Compose — Plataforma de Gestão de TI
+# Docker Compose — Plataforma de Gestão de TI (produção)
 #
 # Serviços:
-#   - postgres:  Banco de dados PostgreSQL 16
-#   - backend:   API FastAPI
-#   - nginx:     Proxy reverso + static files
+#   - postgres: PostgreSQL 16 (NÃO publicado no host)
+#   - backend:  API FastAPI (NÃO publicada no host; acessada pelo Nginx)
+#   - nginx:    única porta publicada; constrói e serve o frontend Angular
+#
+# Pré-requisito: copiar .env.example para .env e preencher POSTGRES_PASSWORD
+# e SECRET_KEY (o compose se recusa a subir sem eles).
 #
 # Uso:
-#   docker-compose up -d          # Iniciar todos os serviços
-#   docker-compose down           # Parar todos os serviços
-#   docker-compose logs -f        # Ver logs em tempo real
+#   docker compose up -d --build
+#   docker compose logs -f backend
 #
-# O frontend Angular é buildado localmente e copiado para o Nginx.
+# Desenvolvimento (portas no localhost, código montado):
+#   docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
 # =============================================================================
 
 services:
-  # ---------------------------------------------------------------------------
-  # PostgreSQL 16
-  # ---------------------------------------------------------------------------
   postgres:
     image: postgres:16-alpine
-    container_name: gestao-ti-db
     restart: unless-stopped
     environment:
       POSTGRES_DB: ${POSTGRES_DB:-gestao_ti}
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}
-    ports:
-      - "${DB_PORT:-5432}:5432"
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -36,27 +33,22 @@ services:
       timeout: 5s
       retries: 5
 
-  # ---------------------------------------------------------------------------
-  # Backend — FastAPI
-  # ---------------------------------------------------------------------------
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: gestao-ti-api
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-gestao_ti}
-      SECRET_KEY: ${SECRET_KEY:-CHANGE-ME-IN-PRODUCTION}
+      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}@postgres:5432/${POSTGRES_DB:-gestao_ti}
+      SECRET_KEY: ${SECRET_KEY:?Defina SECRET_KEY no .env (openssl rand -hex 32)}
       DEBUG: ${DEBUG:-false}
       ATTACHMENT_STORAGE_PATH: /data/attachments
-      CORS_ORIGINS: '["http://localhost:4200", "http://localhost"]'
-    ports:
-      - "${API_PORT:-8000}:8000"
+      BACKUP_STORAGE_PATH: /data/backups
+      CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost"]}
     volumes:
       - attachments_data:/data/attachments
       - backups_data:/data/backups
-      - ./backend:/app
+      - static_data:/app/static
     depends_on:
       postgres:
         condition: service_healthy
@@ -65,42 +57,32 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
-      start_period: 15s
+      start_period: 30s
 
-  # ---------------------------------------------------------------------------
-  # Nginx — Proxy reverso
-  # ---------------------------------------------------------------------------
   nginx:
     build:
-      context: ./nginx
-      dockerfile: Dockerfile
-    container_name: gestao-ti-proxy
+      context: .
+      dockerfile: nginx/Dockerfile
     restart: unless-stopped
     ports:
       - "${HTTP_PORT:-80}:80"
-    volumes:
-      - ./frontend/dist/plataforma-gestao-ti/browser:/usr/share/nginx/html:ro
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
 
-  # ---------------------------------------------------------------------------
-  # Evolution API v2 (Opcional — Iniciar com: docker compose --profile evolution up -d)
-  # ---------------------------------------------------------------------------
+  # Evolution API (opcional, não oficial): docker compose --profile evolution up -d
   evolution-api:
     image: atendai/evolution-api:v2.1.2
-    container_name: gestao-ti-evolution
     profiles:
       - evolution
     restart: unless-stopped
-    ports:
-      - "${EVOLUTION_PORT:-8084}:8084"
     environment:
       SERVER_URL: ${EVOLUTION_SERVER_URL:-http://localhost:8084}
-      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-CHANGE-EVOLUTION-API-KEY-IN-PRODUCTION}
-      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "true"
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-}
+      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
       DATABASE_ENABLED: "true"
       DATABASE_PROVIDER: "postgresql"
-      DATABASE_CONNECTION_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-gestao_ti}?schema=evolution"
+      DATABASE_CONNECTION_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-gestao_ti}?schema=evolution"
       LOG_LEVEL: "ERROR,WARN,INFO"
       DEL_INSTANCE: "false"
     depends_on:
@@ -109,15 +91,9 @@ services:
     volumes:
       - evolution_instances:/evolution/instances
 
-# =============================================================================
-# Volumes persistentes
-# =============================================================================
 volumes:
   postgres_data:
-    driver: local
   attachments_data:
-    driver: local
   backups_data:
-    driver: local
+  static_data:
   evolution_instances:
-    driver: local

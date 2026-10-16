@@ -30,7 +30,9 @@ COPY . .
 RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client && rm -rf /var/lib/apt/lists/*
 
 # Criar diretórios de armazenamento persistente e permissões do entrypoint
-RUN mkdir -p /data/attachments /data/backups && chmod +x docker-entrypoint.sh
+# Usuário não-root; diretórios de dados pertencem a ele (volumes nomeados herdam o dono)
+RUN useradd --system --uid 1000 --home-dir /app app     && mkdir -p /data/attachments /data/backups /app/static     && chown -R app:app /data /app/static     && chmod +x docker-entrypoint.sh
+USER app
 
 EXPOSE 8000
 
