@@ -65,6 +65,19 @@ export const routes: Routes = [
         loadComponent: () => import('./features/admin/admin.component').then(m => m.AdminComponent)
       },
       {
+        path: 'notifications',
+        loadComponent: () => import('./features/notifications/inbox/inbox.component').then(m => m.InboxComponent)
+      },
+      {
+        path: 'notifications/preferences',
+        loadComponent: () => import('./features/notifications/preferences/preferences.component').then(m => m.PreferencesComponent)
+      },
+      {
+        path: 'notifications/admin',
+        canActivate: [permissionGuard('notifications.manage')],
+        loadComponent: () => import('./features/notifications/admin/notifications-admin.component').then(m => m.NotificationsAdminComponent)
+      },
+      {
         path: 'service-desk',
         loadComponent: () => import('./features/service-desk/ticket-list/ticket-list.component').then(m => m.TicketListComponent)
       },
