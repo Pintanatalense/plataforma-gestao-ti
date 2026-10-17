@@ -41,6 +41,22 @@ Validado na stack real (instalação do zero, `docker compose up --build`) e na 
 
 ---
 
+## 0.1 Status após a Fase A (branch `feat/phase-a-notification-core`)
+
+Hub de notificações do ADR-013 (outbox + worker + in-app + e-mail + backup agendado). Validado em PostgreSQL real e na stack Compose.
+
+| Item | Status | Observação |
+|---|---|---|
+| P1-13 backup sem agenda | **Parcial** | backup diário às 02:00 (fuso `America/Fortaleza`) pelo worker, com alerta crítico de falha; **anexos e logo continuam fora do dump** |
+| P1-14 fila WhatsApp sem worker | **Aberto** | `wa_outbox` segue sem consumidor; sai na Fase D (substituída por `deliveries`) |
+| P1-1 auditoria do `organization` no bus | **Aberto** | tickets já gravavam uma vez; a unificação da auditoria como consumidor do outbox **não foi feita** na Fase A (o bus segue só para auditoria) |
+| P2-12 senha SMTP em texto puro | **Corrigido** | `channel_configs` + Fernet (`APP_ENCRYPTION_KEY`); migration cifra a senha antiga |
+| Achado 1.6 (notificações nunca criadas) | **Corrigido** | chamado novo/atribuído/status/resposta geram entregas; nota interna nunca chega ao solicitante (DEC-012, teste) |
+| Achado 1.6 (WS com 4 workers) | **Corrigido** | `LISTEN/NOTIFY` entre worker e APIs (teste `pg`) |
+| **Novo** | Corrigido | `backend/Dockerfile` instalava as dependências sem o `uv.lock` (versões soltas); uma release do SQLAlchemy sem wheel quebrou o build. Agora instala do lock |
+
+---
+
 ## 1. Reconferência dos 8 problemas da revisão anterior
 
 | # | Problema | Status | Evidência |

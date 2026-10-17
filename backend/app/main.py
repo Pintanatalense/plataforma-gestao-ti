@@ -9,6 +9,7 @@ Responsabilidades:
 - Endpoint de healthcheck
 """
 
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from collections.abc import AsyncGenerator
@@ -40,11 +41,39 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     setup_audit_listener()
 
+    # Tempo real: ouve o NOTIFY do worker (só PostgreSQL) e empurra para os WebSockets deste processo.
+    stop_listener = asyncio.Event()
+    listener_task = None
+    if engine.dialect.name == "postgresql":
+        from app.notifications.realtime import run_inbox_listener
+
+        listener_task = asyncio.create_task(run_inbox_listener(stop_listener))
+
     yield
 
     # Shutdown
+    stop_listener.set()
+    if listener_task:
+        listener_task.cancel()
     await engine.dispose()
     logger.info("Aplicação encerrada")
+
+
+async def _worker_status(session) -> str:
+    """`healthy` se o worker de notificações publicou heartbeat há menos de 60 s (não afeta o status geral)."""
+    from sqlalchemy import select
+
+    from app.notifications.models import WorkerHeartbeat
+
+    try:
+        beat_at = (await session.execute(select(WorkerHeartbeat.beat_at).where(WorkerHeartbeat.name == "notifier"))).scalar_one_or_none()
+    except Exception:
+        return "unknown"
+    if beat_at is None:
+        return "stopped"
+    if beat_at.tzinfo is None:
+        beat_at = beat_at.replace(tzinfo=timezone.utc)
+    return "healthy" if (datetime.now(timezone.utc) - beat_at).total_seconds() < 60 else "stale"
 
 
 def create_app() -> FastAPI:
@@ -99,9 +128,11 @@ def _mount_routers(app: FastAPI) -> None:
     async def healthcheck() -> dict:
         """Retorna status de saúde da aplicação e conexão com o banco."""
         db_status = "healthy"
+        worker_status = "unknown"
         try:
             async with AsyncSessionLocal() as session:
                 await session.execute(text("SELECT 1"))
+                worker_status = await _worker_status(session)
         except Exception:
             db_status = "unhealthy"
 
@@ -111,6 +142,7 @@ def _mount_routers(app: FastAPI) -> None:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "components": {
                 "database": db_status,
+                "worker": worker_status,
             },
         }
 

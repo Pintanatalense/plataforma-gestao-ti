@@ -13,7 +13,7 @@ from sqlalchemy import select
 from app.database import AsyncSessionLocal, get_db
 from app.identity.models import UserAccount
 from app.core.security import decode_access_token
-from app.core.dependencies import require_permission, get_current_user_id
+from app.core.dependencies import get_current_user_id
 from app.notifications.repository import NotificationRepository
 from app.notifications.schemas import NotificationOut
 from app.notifications.services import NotificationService, manager

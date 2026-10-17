@@ -342,6 +342,14 @@ async def seed() -> None:
         await session.flush()
         print("Templates de WhatsApp sincronizados.")
 
+        # 7b. Regras de notificação e agenda do worker (criadas só se ausentes; edições são preservadas).
+        from app.notifications.jobs import ensure_default_jobs
+        from app.notifications.rules_seed import seed_notification_rules
+
+        rules_created = await seed_notification_rules(session)
+        jobs_created = await ensure_default_jobs(session)
+        print(f"Notificações: {rules_created} regra(s) e {jobs_created} job(s) criados.")
+
         # 8. Usuário administrador: criado no primeiro acesso (tela de setup).
         print("Primeiro administrador: acesse o sistema para concluir a configuração inicial.")
 

@@ -18,6 +18,8 @@ from app.core.exceptions import (
     NotFoundException,
     StateTransitionException,
 )
+from app.identity.models import UserAccount
+from app.notifications.outbox import emit_event
 from app.organization.models import Employee
 from app.service_desk.models import Ticket, TicketCategory, TicketInteraction, TicketMaterial
 from app.service_desk.repository import ServiceDeskRepository
@@ -239,6 +241,7 @@ class ServiceDeskService:
             },
             user_id=user_id
         )
+        await self._emit_ticket_event("ticket.created", loaded_ticket, user_id)
 
         return loaded_ticket
 
@@ -334,6 +337,9 @@ class ServiceDeskService:
                 },
                 user_id=user_id
             )
+            await self._emit_ticket_event(
+                "ticket.status_changed", ticket, user_id, old_status=old_status, new_status=schema.status
+            )
             if schema.status in ("RESOLVED", "CLOSED"):
                 await self._record_audit_event(
                     event_type="ticket.closed",
@@ -357,6 +363,7 @@ class ServiceDeskService:
                 data={"assignee_id": str(schema.assignee_id)},
                 user_id=user_id
             )
+            await self._emit_ticket_event("ticket.assigned", ticket, user_id)
 
         return await self.repo.get_ticket(ticket.id)
 
@@ -409,22 +416,20 @@ class ServiceDeskService:
             user_id=author_id
         )
 
-        # Disparo seguro de notificação por e-mail (respeitando DEC-012)
-        try:
-            from app.identity.models import UserAccount
-            from app.notifications.email_service import EmailService
-            from sqlalchemy import select
-            stmt_author = select(UserAccount).where(UserAccount.id == author_id)
-            author = (await self.session.execute(stmt_author)).scalar_one_or_none()
-            if author:
-                email_svc = EmailService(self.session)
-                await email_svc.notify_ticket_interaction(
-                    ticket=ticket,
-                    interaction=created_interaction,
-                    author=author
-                )
-        except Exception:
-            logger.exception("Falha ao processar notificações por e-mail do chamado %s", ticket.id)
+        # Notificação via outbox (mesma transação). A regra DEC-012 (nota interna jamais ao solicitante)
+        # vive no seletor de audiência `counterpart`.
+        author = await self.session.get(UserAccount, author_id)
+        author_name = None
+        if author:
+            author_name = getattr(author.employee, "name", None) or author.email.split("@")[0].title()
+        await self._emit_ticket_event(
+            "ticket.interaction_added",
+            ticket,
+            author_id,
+            is_internal=schema.is_internal,
+            author_name=author_name,
+            excerpt=schema.message[:300],
+        )
 
         return created_interaction
 
@@ -925,6 +930,23 @@ class ServiceDeskService:
             "CLOSED": "Encerrado",
         }
         return mapping.get(status, status)
+
+    async def _emit_ticket_event(self, event_type: str, ticket: Ticket, actor_id: uuid.UUID | None, **extra) -> None:
+        """Registra o fato no outbox (mesma transação do chamado); o worker decide quem é avisado e por onde."""
+        priority = {"LOW": "low", "HIGH": "high", "CRITICAL": "high"}.get(ticket.priority, "normal")
+        payload = {
+            "ticket_id": str(ticket.id),
+            "title": ticket.title[:200],
+            "priority": ticket.priority,
+            "status": ticket.status,
+            "requester_employee_id": str(ticket.requester_id),
+            "assignee_id": str(ticket.assignee_id) if ticket.assignee_id else None,
+            "responsible_sector_id": str(ticket.responsible_sector_id),
+            **extra,
+        }
+        await emit_event(
+            self.session, event_type, "ticket", ticket.id, payload, actor_user_id=actor_id, priority=priority
+        )
 
     async def _record_audit_event(
         self, event_type: str, ticket_id: uuid.UUID, data: dict, user_id: uuid.UUID | None

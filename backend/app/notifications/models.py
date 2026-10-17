@@ -1,27 +1,151 @@
 """
 MOD-11 — Notificações (Models)
+
+Caixa de entrada in-app (`notifications`) e hub de entrega (ADR-013): outbox de eventos,
+entregas com retentativa, regras de roteamento, configuração de canais e agenda do worker.
 """
 import uuid
-from sqlalchemy import ForeignKey, String, Text, Boolean
+from datetime import datetime, timezone
+
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.timestamps import TimestampMixin
 from app.database import Base
+
+
+def _utcnow() -> datetime:
+    return datetime.now(timezone.utc)
+
 
 class Notification(Base, TimestampMixin):
     __tablename__ = "notifications"
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_accounts.id"), nullable=False, index=True)
-    
+
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     message: Mapped[str] = mapped_column(Text, nullable=False)
-    type: Mapped[str] = mapped_column(String(50), nullable=False) # e.g., 'info', 'warning', 'success', 'error'
-    
+    type: Mapped[str] = mapped_column(String(50), nullable=False)  # 'info', 'warning', 'success', 'error'
+
     is_read: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
-    
-    # Optional entity link
+
+    # Vínculo opcional com a entidade de origem
     entity_type: Mapped[str | None] = mapped_column(String(50), nullable=True)
     entity_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
-    
+
     user = relationship("UserAccount")
+
+
+class DomainEvent(Base):
+    """Fato de negócio gravado na mesma transação da mudança (padrão outbox)."""
+
+    __tablename__ = "domain_events"
+    __table_args__ = (Index("ix_domain_events_pending", "fanned_out_at", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    entity_type: Mapped[str] = mapped_column(String(50), nullable=False)
+    entity_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    actor_user_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    payload: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, default="normal")
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    fanned_out_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class NotificationRule(Base, TimestampMixin):
+    """Regra evento -> audiência -> canais. As semeadas têm `code` e nunca são sobrescritas."""
+
+    __tablename__ = "notification_rules"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    code: Mapped[str | None] = mapped_column(String(100), unique=True, nullable=True)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    event_type: Mapped[str] = mapped_column(String(100), nullable=False, index=True)  # exato ou prefixo "ticket.*"
+    condition: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    audience: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    channels: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    template_code: Mapped[str] = mapped_column(String(100), nullable=False)
+
+
+class Delivery(Base):
+    """Uma mensagem para um destinatário por um canal, com estado de envio e retentativas."""
+
+    __tablename__ = "deliveries"
+    __table_args__ = (Index("ix_deliveries_dispatch", "status", "next_attempt_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    event_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("domain_events.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    rule_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("notification_rules.id", ondelete="SET NULL"), nullable=True
+    )
+    recipient_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True
+    )
+    channel: Mapped[str] = mapped_column(String(30), nullable=False)
+    address: Mapped[str] = mapped_column(String(255), nullable=False)
+    # PENDING, SENDING, SENT, DEAD, SKIPPED, CANCELLED
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="PENDING")
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, default="normal")
+    message: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, nullable=False, default=5)
+    next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class DeliveryAttempt(Base):
+    __tablename__ = "delivery_attempts"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    delivery_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("deliveries.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    attempt_no: Mapped[int] = mapped_column(Integer, nullable=False)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    outcome: Mapped[str] = mapped_column(String(20), nullable=False)  # ok, retryable, permanent
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ChannelConfig(Base, TimestampMixin):
+    """Configuração de um canal; os segredos ficam cifrados (Fernet, APP_ENCRYPTION_KEY)."""
+
+    __tablename__ = "channel_configs"
+
+    channel: Mapped[str] = mapped_column(String(30), primary_key=True)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    config: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    secrets_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class ScheduledJob(Base):
+    """Agenda executada pelo worker: `every:<minutos>` ou `daily:HH:MM` no fuso do sistema."""
+
+    __tablename__ = "scheduled_jobs"
+
+    name: Mapped[str] = mapped_column(String(100), primary_key=True)
+    schedule: Mapped[str] = mapped_column(String(50), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    next_run_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class WorkerHeartbeat(Base):
+    __tablename__ = "worker_heartbeat"
+
+    name: Mapped[str] = mapped_column(String(50), primary_key=True)
+    beat_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    info: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
