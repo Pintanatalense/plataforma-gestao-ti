@@ -143,6 +143,20 @@ class ScheduledJob(Base):
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class UserNotificationPref(Base, TimestampMixin):
+    """Preferências do usuário. O canal in-app não pode ser desligado (piso garantido)."""
+
+    __tablename__ = "user_notification_prefs"
+
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), primary_key=True)
+    channels_disabled: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    categories_disabled: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    quiet_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    quiet_start: Mapped[str] = mapped_column(String(5), nullable=False, default="20:00")
+    quiet_end: Mapped[str] = mapped_column(String(5), nullable=False, default="07:00")
+    critical_bypass: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
 class WorkerHeartbeat(Base):
     __tablename__ = "worker_heartbeat"
 

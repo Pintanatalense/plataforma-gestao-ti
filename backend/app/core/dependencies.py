@@ -41,6 +41,9 @@ async def get_token_payload(
     payload = decode_access_token(authorization[7:])
     if payload is None:
         raise UnauthorizedException("Token expirado ou inválido")
+    if payload.get("typ") == "ws":
+        # Ticket de WebSocket (vai na URL e pode aparecer em log): só serve para abrir o WS.
+        raise UnauthorizedException("Token inválido para esta operação")
 
     try:
         user_id = UUID(str(payload.get("sub")))

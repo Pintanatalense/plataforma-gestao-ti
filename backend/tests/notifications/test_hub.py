@@ -54,6 +54,12 @@ def _bind_session_factory(db_session: AsyncSession) -> None:
     TestSessionLocal = async_sessionmaker(bind=db_session.bind, class_=AsyncSession, expire_on_commit=False)
 
 
+@pytest.fixture(autouse=True)
+def _no_quiet_hours(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Silêncio (20h-07h) dependeria da hora em que o teste roda; ele é testado em test_panel.py."""
+    monkeypatch.setattr("app.notifications.fanout.quiet_until", lambda *args, **kwargs: None)
+
+
 @dataclass
 class World:
     requester: object

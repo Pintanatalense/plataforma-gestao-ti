@@ -107,6 +107,9 @@ async def seed() -> None:
             {"code": "system.backup.manage", "description": "Gerenciar e gerar backups do banco de dados"},
             {"code": "system.backup.download", "description": "Baixar arquivos de backup do banco de dados"},
 
+            # Notificações
+            {"code": "notifications.manage", "description": "Administrar o hub de notificações: entregas, regras, canais e agenda"},
+
             # Integrações
             {"code": "integrations.whatsapp.manage", "description": "Configurar e gerenciar bot do WhatsApp"},
         ]
