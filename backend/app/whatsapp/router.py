@@ -9,20 +9,23 @@ Endpoints REST para:
 - Disparo de WhatsApp vinculado a chamados do Service Desk
 """
 
+import hmac
 import re
 from typing import Annotated, Sequence
 import uuid
-from fastapi import APIRouter, Depends, Query, status, HTTPException
+from fastapi import APIRouter, Depends, Header, Query, status, HTTPException
 from sqlalchemy import select, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.database import get_db
-from app.core.dependencies import require_permission, get_current_user_id
+from app.core.dependencies import require_permission, require_any_permission, get_current_user_id
 from app.identity.models import UserAccount
 
 from app.organization.models import Company
 from app.service_desk.models import Ticket, TicketInteraction
+from app.service_desk.router import get_user_context
+from app.service_desk.services import ServiceDeskService
 from app.whatsapp.models import WhatsAppConfig, WhatsAppTemplate, WhatsAppOutbox
 from app.whatsapp.schemas import (
     WhatsAppWebhookPayload,
@@ -56,8 +59,17 @@ router = APIRouter(prefix="/integrations/whatsapp", tags=["Integração WhatsApp
 )
 async def whatsapp_webhook(
     payload: WhatsAppWebhookPayload,
-    session: Annotated[AsyncSession, Depends(get_db)]
+    session: Annotated[AsyncSession, Depends(get_db)],
+    x_webhook_secret: Annotated[str | None, Header()] = None,
 ):
+    # Autenticação do webhook: segredo compartilhado configurado no provedor (cabeçalho X-Webhook-Secret).
+    config = await WhatsAppConversationService(session).get_config()
+    expected = config.webhook_secret or ""
+    if not expected or not x_webhook_secret or not hmac.compare_digest(
+        x_webhook_secret.encode(), expected.encode()
+    ):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Webhook não autorizado.")
+
     phone = payload.phone
     message_text = payload.message
 
@@ -76,8 +88,9 @@ async def whatsapp_webhook(
         return {"status": "ignored", "reason": "No valid phone or message content identified"}
 
     service = WhatsAppConversationService(session)
-    reply = await service.process_incoming_message(from_phone=phone, text=message_text)
-    return {"status": "processed", "reply": reply}
+    await service.process_incoming_message(from_phone=phone, text=message_text)
+    # A resposta ao usuário segue pelo provedor; o corpo HTTP nunca carrega o texto do bot.
+    return {"status": "accepted"}
 
 
 # ==============================================================================
@@ -259,6 +272,7 @@ async def test_send_message(
     "/templates",
     response_model=list[WhatsAppTemplateResponse],
     summary="Lista todos os templates pré-definidos de mensagens",
+    dependencies=[Depends(require_any_permission("integrations.whatsapp.manage", "service_desk.tickets.manage"))],
 )
 async def list_templates(
     session: Annotated[AsyncSession, Depends(get_db)],
@@ -366,7 +380,8 @@ async def delete_template(
 @router.post(
     "/templates/{template_id}/preview",
     response_model=WhatsAppPreviewTemplateResponse,
-    summary="Gera pré-visualização interpolada do template com dados do chamado"
+    summary="Gera pré-visualização interpolada do template com dados do chamado",
+    dependencies=[Depends(require_any_permission("integrations.whatsapp.manage", "service_desk.tickets.manage"))],
 )
 async def preview_template(
     template_id: uuid.UUID,
@@ -511,14 +526,15 @@ async def retry_outbox_message(
 @router.post(
     "/tickets/{ticket_id}/send",
     summary="Dispara mensagem ou template pré-definido para o solicitante do chamado via WhatsApp",
-    dependencies=[Depends(get_current_user_id)]
+    dependencies=[Depends(require_any_permission("integrations.whatsapp.manage", "service_desk.tickets.manage"))],
 )
 async def send_whatsapp_ticket_message(
     ticket_id: uuid.UUID,
     body: WhatsAppSendTicketRequest,
-    current_user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
+    ctx: Annotated[dict, Depends(get_user_context)],
     session: Annotated[AsyncSession, Depends(get_db)]
 ):
+    current_user_id = ctx["user_id"]
     """
     Envia uma mensagem segura para o WhatsApp do solicitante do chamado:
     1. Valida se o solicitante possui telefone cadastrado.
@@ -526,17 +542,15 @@ async def send_whatsapp_ticket_message(
     3. Enfileira na fila com proteção Anti-Ban e controle de taxa.
     4. Registra automaticamente no chat/interações do chamado.
     """
-    stmt_t = (
-        select(Ticket)
-        .options(
-            selectinload(Ticket.requester),
-            selectinload(Ticket.assignee),
-        )
-        .where(Ticket.id == ticket_id)
+    # Mesma regra de visibilidade da API de chamados (setor responsável / atribuído / gestão).
+    ticket = await ServiceDeskService(session).get_ticket_for_user(
+        ticket_id=ticket_id,
+        user_employee_id=ctx["employee_id"],
+        is_technician=ctx["is_technician"],
+        can_read_all=ctx["can_read_all"],
+        user_id=ctx["user_id"],
+        sector_id=ctx["sector_id"],
     )
-    ticket = (await session.execute(stmt_t)).scalar_one_or_none()
-    if not ticket:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Chamado não encontrado.")
 
     if not ticket.requester or not ticket.requester.phone:
         raise HTTPException(

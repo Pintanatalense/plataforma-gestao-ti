@@ -8,6 +8,7 @@ Todas as variáveis podem ser definidas via .env ou variáveis de ambiente do si
 from functools import lru_cache
 from pathlib import Path
 
+from pydantic import field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -32,7 +33,8 @@ class Settings(BaseSettings):
     DATABASE_ECHO: bool = False
 
     # --- Segurança ---
-    SECRET_KEY: str = "CHANGE-ME-IN-PRODUCTION-USE-STRONG-RANDOM-KEY"
+    # Obrigatória (sem padrão): gere com `openssl rand -hex 32`.
+    SECRET_KEY: str
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRATION_HOURS: int = 8
 
@@ -48,6 +50,9 @@ class Settings(BaseSettings):
         "video/mp4",
     ]
 
+    # --- Arquivos públicos (logomarca) ---
+    STATIC_DIR: str | None = None  # padrão: backend/static (no container: /app/static)
+
     # --- Chamados ---
     TICKET_REOPEN_DAYS: int = 3
 
@@ -59,10 +64,26 @@ class Settings(BaseSettings):
     # --- CORS ---
     CORS_ORIGINS: list[str] = ["http://localhost:4200"]
 
+    @field_validator("SECRET_KEY")
+    @classmethod
+    def _reject_weak_secret_key(cls, value: str) -> str:
+        """Impede subir com chave de exemplo ou curta (tokens JWT seriam forjáveis)."""
+        if len(value) < 32 or "change-me" in value.lower():
+            raise ValueError(
+                "SECRET_KEY inválida: use um valor aleatório com pelo menos 32 caracteres "
+                "(ex.: openssl rand -hex 32) e sem o texto 'CHANGE-ME'."
+            )
+        return value
+
     @property
     def attachment_max_size_bytes(self) -> int:
         """Tamanho máximo de anexo em bytes."""
         return self.ATTACHMENT_MAX_SIZE_MB * 1024 * 1024
+
+    @property
+    def static_dir(self) -> Path:
+        """Diretório dos arquivos públicos servidos em /static."""
+        return Path(self.STATIC_DIR) if self.STATIC_DIR else Path(__file__).resolve().parent.parent / "static"
 
     @property
     def attachment_storage_dir(self) -> Path:

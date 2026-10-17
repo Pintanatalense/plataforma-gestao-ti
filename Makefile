@@ -13,7 +13,7 @@
 #   make shell       - Abre shell no container do backend
 #   make db-shell    - Abre psql no container do banco
 #   make backup      - Gera backup do banco + anexos
-#   make restore     - Restaura backup (FILE="backup.sql")
+#   make restore     - Restaura backup .sql.gz com a API parada (FILE="arquivo.sql.gz")
 # =============================================================================
 
 .PHONY: up down logs migrate migration seed test lint shell db-shell backup restore
@@ -103,9 +103,7 @@ backup:
 	@echo "Backup concluído."
 
 restore:
-	@echo "Restaurando backup: $(FILE)"
-	docker-compose exec -T postgres psql -U postgres gestao_ti < $(FILE)
-	@echo "Restauração concluída."
+	@scripts/restore-backup.sh "$(FILE)"
 
 # --- Frontend ---
 fe-install:

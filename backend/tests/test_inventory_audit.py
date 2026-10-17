@@ -25,7 +25,7 @@ async def test_create_inventory_audit(
     await db_session.flush()
 
     # Criar user
-    user = UserAccount(email=f"auditor{uuid.uuid4()}@test.com", hashed_password="hash")
+    user = UserAccount(email=f"auditor{uuid.uuid4()}@test.com", hashed_password="hash", is_admin=True)
     db_session.add(user)
     await db_session.flush()
 
@@ -67,7 +67,7 @@ async def test_list_and_update_inventory_audit(
     db_session.add(unit)
     await db_session.flush()
 
-    user = UserAccount(email=f"auditor2{uuid.uuid4()}@test.com", hashed_password="hash")
+    user = UserAccount(email=f"auditor2{uuid.uuid4()}@test.com", hashed_password="hash", is_admin=True)
     db_session.add(user)
     await db_session.flush()
 

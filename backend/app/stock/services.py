@@ -114,7 +114,9 @@ class StockService:
         return await self.repo.update_item(item)
 
     async def add_movement(self, schema: StockMovementCreate, author_id: uuid.UUID):
-        item = await self.get_item(schema.item_id)
+        item = await self.repo.get_item_for_update(schema.item_id)
+        if not item:
+            raise NotFoundException("Item de Estoque", schema.item_id)
         
         if schema.movement_type == "OUT" and item.quantity < schema.quantity:
             raise BusinessRuleException("Estoque insuficiente para esta saída.")

@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, String, Table, Column, DateTime
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Table, Column, DateTime
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.soft_delete import SoftDeleteMixin
@@ -47,10 +47,14 @@ class UserAccount(Base, TimestampMixin, SoftDeleteMixin):
     hashed_password: Mapped[str] = mapped_column(String(255), nullable=False)
     
     # Flags de acesso
-    must_change_password: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # Superadmin
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     
+    # Bloqueio temporário após tentativas de login inválidas
+    failed_login_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+    locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_login_ip: Mapped[str | None] = mapped_column(String(50), nullable=True)
 

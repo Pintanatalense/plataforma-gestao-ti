@@ -26,11 +26,25 @@ COPY --from=deps /usr/local/bin /usr/local/bin
 
 COPY . .
 
-# Instalar cliente do PostgreSQL para utilitários pg_dump e psql
-RUN apt-get update && apt-get install -y --no-install-recommends postgresql-client && rm -rf /var/lib/apt/lists/*
+# Cliente do PostgreSQL 16 (mesma versão major do servidor do compose). O cliente do Debian é mais
+# novo e gera dumps com parâmetros (ex.: transaction_timeout) que o servidor 16 não restaura.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+    && install -d /usr/share/keyrings \
+    && curl -fsSL https://www.postgresql.org/media/keys/ACCC4CF8.asc | gpg --dearmor -o /usr/share/keyrings/pgdg.gpg \
+    && echo "deb [signed-by=/usr/share/keyrings/pgdg.gpg] https://apt.postgresql.org/pub/repos/apt $(. /etc/os-release && echo $VERSION_CODENAME)-pgdg main" > /etc/apt/sources.list.d/pgdg.list \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends postgresql-client-16 \
+    && apt-get purge -y --auto-remove curl gnupg \
+    && rm -rf /var/lib/apt/lists/*
 
 # Criar diretórios de armazenamento persistente e permissões do entrypoint
-RUN mkdir -p /data/attachments /data/backups && chmod +x docker-entrypoint.sh
+# Usuário não-root; diretórios de dados pertencem a ele (volumes nomeados herdam o dono)
+RUN useradd --system --uid 1000 --home-dir /app app \
+    && mkdir -p /data/attachments /data/backups /app/static \
+    && chown -R app:app /data /app/static \
+    && chmod +x docker-entrypoint.sh
+USER app
 
 EXPOSE 8000
 

@@ -33,7 +33,7 @@ class WhatsAppQueueService:
         stmt = select(WhatsAppConfig).limit(1)
         config = (await self.session.execute(stmt)).scalar_one_or_none()
         if not config:
-            config = WhatsAppConfig(provider="MOCK", is_enabled=True)
+            config = WhatsAppConfig(provider="NONE", is_enabled=False)
             self.session.add(config)
             await self.session.flush()
         return config
@@ -209,7 +209,10 @@ class WhatsAppQueueService:
                 if success:
                     item.status = "SENT"
                     item.sent_at = datetime.now(timezone.utc)
-                    item.last_error = None
+                    item.last_error = (
+                        "Provedor MOCK: mensagem simulada, nada foi enviado de fato."
+                        if config.provider == "MOCK" else None
+                    )
                     processed_count += 1
                 else:
                     item.attempts += 1

@@ -75,6 +75,12 @@ class StockRepository:
         result = await self.session.execute(stmt)
         return result.scalars().first()
 
+    async def get_item_for_update(self, item_id: uuid.UUID) -> StockItem | None:
+        """Lê o item travando a linha até o fim da transação (evita perda de atualização)."""
+        stmt = select(StockItem).where(StockItem.id == item_id).with_for_update()
+        result = await self.session.execute(stmt)
+        return result.scalars().first()
+
     async def create_item(self, item: StockItem) -> StockItem:
         self.session.add(item)
         await self.session.flush()

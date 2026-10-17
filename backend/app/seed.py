@@ -30,9 +30,9 @@ async def seed() -> None:
     print("Iniciando seed...")
     async with AsyncSessionLocal() as session:
         # 1. Criar Empresa
-        stmt = select(Company).where(Company.name == "Empresa Padrão")
-        result = await session.execute(stmt)
-        company = result.scalar_one_or_none()
+        # Single tenant: se já existe uma empresa (mesmo renomeada no setup), não cria outra.
+        stmt = select(Company).order_by(Company.created_at).limit(1)
+        company = (await session.execute(stmt)).scalars().first()
         
         if not company:
             company = Company(name="Empresa Padrão", cnpj="00.000.000/0001-00")
@@ -152,10 +152,9 @@ async def seed() -> None:
                 await session.flush()
                 print(f"Perfil '{role.name}' criado com {len(perms)} permissões.")
             else:
-                role.description = desc
-                role.permissions = perms
-                await session.flush()
-                print(f"Perfil '{role.name}' sincronizado com {len(perms)} permissões.")
+                # Perfis existentes não são sobrescritos: personalizações feitas na tela de perfis
+                # sobrevivem a reinícios. Permissões novas devem ser concedidas por migration ou pela UI.
+                print(f"Perfil '{role.name}' já existe; permissões preservadas.")
             return role
 
         # 5. Hierarquia Acumulativa de Menor Privilégio:

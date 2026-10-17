@@ -58,8 +58,10 @@ async def setup_test_data(db_session: AsyncSession):
 
 
 async def test_list_categories(client: AsyncClient, db_session: AsyncSession):
-    await setup_test_data(db_session)
-    response = await client.get("/api/v1/tickets/categories")
+    data = await setup_test_data(db_session)
+    assert (await client.get("/api/v1/tickets/categories")).status_code == 401
+    headers = make_auth_headers(str(data["user"].id))
+    response = await client.get("/api/v1/tickets/categories", headers=headers)
     assert response.status_code == 200
     data = response.json()
     assert len(data) == 1

@@ -1,11 +1,31 @@
 """Testes de integração do MOD-02 — Organização."""
 
-from httpx import AsyncClient
+import uuid
 
+import pytest_asyncio
+from httpx import AsyncClient
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.core.security import hash_password
+from app.identity.models import UserAccount
 from tests.conftest import make_auth_headers
 
 BASE = "/api/v1/organization"
-ADMIN = make_auth_headers(is_admin=True)
+ADMIN_ID = uuid.uuid4()
+REGULAR_ID = uuid.uuid4()
+ADMIN = make_auth_headers(str(ADMIN_ID), is_admin=True)
+
+
+@pytest_asyncio.fixture(autouse=True)
+async def _users(db_session: AsyncSession) -> None:
+    """O usuário do token precisa existir e estar ativo no banco."""
+    db_session.add_all(
+        [
+            UserAccount(id=ADMIN_ID, email="admin@org.test", hashed_password=hash_password("x"), is_admin=True),
+            UserAccount(id=REGULAR_ID, email="regular@org.test", hashed_password=hash_password("x")),
+        ]
+    )
+    await db_session.commit()
 
 
 async def _create_company(client: AsyncClient) -> dict:
@@ -50,14 +70,14 @@ async def test_requires_authentication(client: AsyncClient) -> None:
 
 
 async def test_missing_permission_returns_403(client: AsyncClient) -> None:
-    headers = make_auth_headers(permissions=["organization.units.read"])
+    headers = make_auth_headers(str(REGULAR_ID), permissions=["organization.units.read"])
     response = await client.get(f"{BASE}/sectors", headers=headers)
     assert response.status_code == 403
     assert response.json()["error"]["code"] == "FORBIDDEN"
 
 
 async def test_permission_grants_access(client: AsyncClient) -> None:
-    headers = make_auth_headers(permissions=["organization.units.read"])
+    headers = make_auth_headers(str(REGULAR_ID), permissions=["organization.units.read"])
     response = await client.get(f"{BASE}/units", headers=headers)
     assert response.status_code == 200
     assert response.json() == []
@@ -175,3 +195,25 @@ async def test_employee_sector_must_belong_to_unit(client: AsyncClient) -> None:
     payload = {"unit_id": unit_b["id"], "sector_id": sector_a["id"], "name": "Maria", "registration_number": "001"}
     response = await client.post(f"{BASE}/employees", json=payload, headers=ADMIN)
     assert response.status_code == 400
+
+
+async def test_logo_upload_accepts_png_and_rejects_html_and_svg(client: AsyncClient, db_session: AsyncSession):
+    from tests.factories import headers_for, make_user
+
+    admin = await make_user(db_session, is_admin=True)
+    h = headers_for(admin)
+    url = "/api/v1/organization/company/logo"
+    from app.organization.models import Company
+
+    db_session.add(Company(name="Logo Corp"))
+    await db_session.commit()
+
+    png = b"\x89PNG\r\n\x1a\n" + b"0" * 32
+    ok = await client.post(url, files={"file": ("../../x.html", png, "image/png")}, headers=h)
+    assert ok.status_code == 200
+    assert ok.json()["logo_url"] == "/static/logo.png"
+
+    html = await client.post(url, files={"file": ("logo.png", b"<script>alert(1)</script>", "image/png")}, headers=h)
+    assert html.status_code == 422
+    svg = await client.post(url, files={"file": ("logo.svg", b"<svg onload=alert(1)/>", "image/svg+xml")}, headers=h)
+    assert svg.status_code == 422

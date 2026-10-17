@@ -1,0 +1,11 @@
+# Sobreposição para desenvolvimento local: portas apenas em 127.0.0.1 e código montado.
+services:
+  postgres:
+    ports:
+      - "127.0.0.1:${DB_PORT:-5432}:5432"
+  backend:
+    ports:
+      - "127.0.0.1:${API_PORT:-8000}:8000"
+    volumes:
+      - ./backend/app:/app/app
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
