@@ -75,6 +75,22 @@ DEFAULT_RULES: list[dict] = [
         "template_code": "backup.completed",
     },
     {
+        "code": "stock.below_minimum",
+        "name": "Estoque abaixo do mínimo → administradores e gestão",
+        "event_type": "stock.below_minimum",
+        "audience": ["admins", "role:Gestão"],
+        "channels": ["in_app", "email", "preferred"],
+        "template_code": "stock.below_minimum",
+    },
+    {
+        "code": "asset.warranty_expiring",
+        "name": "Garantia perto de vencer (30 e 7 dias) → administradores e gestão",
+        "event_type": "asset.warranty_expiring",
+        "audience": ["admins", "role:Gestão"],
+        "channels": ["in_app", "email", "preferred"],
+        "template_code": "asset.warranty_expiring",
+    },
+    {
         "code": "channel.degraded",
         "name": "Canal degradado → administradores",
         "event_type": "channel.degraded",

@@ -485,3 +485,23 @@ Limites conhecidos: os *status* de entrega do webhook (`sent/delivered/read/fail
 | UI | — | cartão "Slack" em Saúde dos canais com a Request URL pronta; "Meus canais" passou a mostrar o código **só no canal para o qual foi gerado** (antes, com 2 canais, o código aparecia em todos) |
 
 Limites conhecidos: sem Socket Mode (exige HTTPS público, como o WhatsApp); sem botões/blocos interativos; só DMs; o limitador por remetente é por processo da API; sem teste contra o Slack real (transporte simulado).
+
+---
+
+## 20. Registro de implementação — Fase F (automações)
+
+Entregues só as automações cujo fato o sistema **consegue detectar hoje** (regra do §10.2).
+
+| # | Automação | Feito |
+|---|---|---|
+| 2 | Estoque abaixo do mínimo | job `stock.low_check` (`every:30`). Critério `quantidade <= mínimo` com `mínimo > 0`, o mesmo da tela de estoque. Evento `stock.below_minimum` (prioridade `high`) |
+| 4 | Garantia vencendo | job `assets.warranty_check` (`daily:08:00`). Faixas de 30 e 7 dias, ativos ativos e não baixados. Evento `asset.warranty_expiring` (`high` se algum vence em até 7 dias) |
+| 7 | Retenção | já existia (Fase A); passou a apagar também marcas de garantia com mais de 400 dias |
+
+Decisões de desenho:
+- **Um resumo por execução**, não um evento por item: na primeira execução de uma instalação com dezenas de itens baixos, ninguém recebe dezenas de mensagens. O evento lista até 10 itens e informa o total.
+- **Sem repetir:** `automation_marks` (nova tabela, migration `n4c5d6e7f8a9`) guarda "já avisei". A chave do estoque é o item (apagada quando o estoque volta ao normal, o que rearma); a da garantia inclui a data de vencimento e a faixa (renovar a garantia rearma). Ativo cadastrado a 5 dias do fim recebe **um** aviso, não dois.
+- **Audiência padrão:** administradores e o papel "Gestão"; canais `in_app`, `email` e `preferred`. Editável no painel como qualquer regra. As regras novas são semeadas pelo worker na subida (instalações existentes recebem sozinhas).
+- **Acoplamento (ADR-004):** `automations.py` lê `StockItem` e `Asset` diretamente, só leitura. É o único ponto do hub que consulta tabelas de outro módulo, deliberadamente concentrado num arquivo.
+
+**Adiadas** (dependem de dado que não existe): #3 SLA (prazos por prioridade ainda não decididos, §14.3), #5 termo não assinado (não há modelo de termo) e #6 divergência de inventário (o inventário não calcula divergência). Cada uma vira um job novo + uma regra quando o dado existir.

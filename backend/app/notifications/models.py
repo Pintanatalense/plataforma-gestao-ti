@@ -129,6 +129,16 @@ class ChannelConfig(Base, TimestampMixin):
     secrets_encrypted: Mapped[str | None] = mapped_column(Text, nullable=True)
 
 
+class AutomationMark(Base):
+    """Memória das automações: 'já avisei sobre isto'. A chave inclui o fato (ex.: item + faixa), então
+    refazer o fato (nova garantia, estoque reabastecido) rearma o aviso."""
+
+    __tablename__ = "automation_marks"
+
+    key: Mapped[str] = mapped_column(String(200), primary_key=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+
 class ScheduledJob(Base):
     """Agenda executada pelo worker: `every:<minutos>` ou `daily:HH:MM` no fuso do sistema."""
 

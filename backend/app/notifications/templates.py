@@ -153,6 +153,39 @@ def channel_degraded(p: dict[str, Any], priority: str) -> Message:
     )
 
 
+def _digest(title: str, lines: list[str], extra: int, link: str, entity_type: str, priority: str) -> Message:
+    if extra > 0:
+        lines = [*lines, f"... e mais {extra}."]
+    return Message(
+        title=title,
+        body_text="\n".join(lines),
+        body_html=_html_card(title, lines),
+        link=link,
+        priority=priority,
+        entity_type=entity_type,
+    )
+
+
+def stock_below_minimum(p: dict[str, Any], priority: str) -> Message:
+    items = p.get("items") or []
+    total = int(p.get("total") or len(items))
+    lines = [f"{i.get('name', '?')}: {i.get('quantity', 0)} em estoque (mínimo {i.get('min_quantity', 0)})" for i in items]
+    title = "1 item com estoque baixo" if total == 1 else f"{total} itens com estoque baixo"
+    return _digest(title, lines, total - len(items), "/stock", "stock", priority)
+
+
+def asset_warranty_expiring(p: dict[str, Any], priority: str) -> Message:
+    items = p.get("items") or []
+    total = int(p.get("total") or len(items))
+
+    def when(days: int) -> str:
+        return "vence hoje" if days <= 0 else ("vence amanhã" if days == 1 else f"vence em {days} dias")
+
+    lines = [f"{i.get('tag', '?')} - {i.get('name', '')}: garantia {when(int(i.get('days_left', 0)))}" for i in items]
+    title = "1 garantia perto de vencer" if total == 1 else f"{total} garantias perto de vencer"
+    return _digest(title, lines, total - len(items), "/assets", "asset", priority)
+
+
 def generic(p: dict[str, Any], priority: str) -> Message:
     title = str(p.get("title") or "Notificação do sistema")
     return Message(title=title, body_text=str(p.get("message") or title), priority=priority)
@@ -167,6 +200,8 @@ TEMPLATES: dict[str, Callable[[dict[str, Any], str], Message]] = {
     "backup.failed": backup_failed,
     "backup.completed": backup_completed,
     "channel.degraded": channel_degraded,
+    "stock.below_minimum": stock_below_minimum,
+    "asset.warranty_expiring": asset_warranty_expiring,
 }
 
 
