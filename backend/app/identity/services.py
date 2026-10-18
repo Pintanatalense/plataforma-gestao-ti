@@ -137,6 +137,9 @@ class IdentityService:
         user.roles = [admin_role]
         await self.repo.create_user(user)
 
+        from app.core.starter_catalog import seed_starter_catalog
+        await seed_starter_catalog(self.repo.session)
+
         if schema.setup_mode == "DEMO":
             from app.core.demo_service import DemoManagementService
             demo_svc = DemoManagementService(self.repo.session)

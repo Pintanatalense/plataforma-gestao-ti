@@ -15,6 +15,7 @@ from pathlib import Path
 
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.assets.models import Asset, AssetCategory, AssetStatus
 from app.attachments.models import Attachment
@@ -206,7 +207,11 @@ class DemoManagementService:
 
         # Desvincular admin de colaborador demo
         await self.session.execute(update(UserAccount).where(UserAccount.id == admin_user_id).values(employee_id=None))
-        await self.session.execute(update(TicketCategory).values(default_sector_id=None))
+        # Só categorias que apontam para setor de exemplo (as do catálogo inicial apontam para o setor de TI real).
+        demo_sector_ids = select(Sector.id).where(Sector.is_demo == True)
+        await self.session.execute(
+            update(TicketCategory).where(TicketCategory.default_sector_id.in_(demo_sector_ids)).values(default_sector_id=None)
+        )
         await self.session.execute(update(Employee).values(manager_id=None))
 
         if demo_user_ids:
