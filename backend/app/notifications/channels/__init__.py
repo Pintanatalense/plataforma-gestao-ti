@@ -5,11 +5,13 @@ from app.notifications.channels.base import AdapterContext, ChannelAdapter
 from app.notifications.channels.email import EmailAdapter
 from app.notifications.channels.in_app import InAppAdapter
 from app.notifications.channels.telegram import TelegramAdapter
+from app.notifications.channels.whatsapp import WhatsAppAdapter
 
 ADAPTERS: dict[str, type] = {
     InAppAdapter.channel: InAppAdapter,
     EmailAdapter.channel: EmailAdapter,
     TelegramAdapter.channel: TelegramAdapter,
+    WhatsAppAdapter.channel: WhatsAppAdapter,
 }
 
 

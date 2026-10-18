@@ -27,7 +27,6 @@ from app.notifications.linking import (
 )
 from app.notifications.models import (
     ChannelLinkCode,
-    ConversationSession,
     Delivery,
     DomainEvent,
     InboundMessage,

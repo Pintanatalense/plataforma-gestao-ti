@@ -1,12 +1,14 @@
 """
-MOD-11 — Canais externos: vínculo da conta (usuário) e configuração do Telegram (administração).
+MOD-11 — Canais externos: vínculo da conta (usuário) e configuração de Telegram e WhatsApp (administração).
 
-Vínculo: o usuário autenticado gera um código, envia ao bot e só então o chat passa a ser dele
-(ADR-013 §7.3). Configuração: token do bot cifrado em `channel_configs`; nunca volta pela API.
+Vínculo: o usuário autenticado gera um código, envia ao bot e só então o chat/telefone passa a ser dele
+(ADR-013 §7.3). Configuração: tokens cifrados em `channel_configs`; nunca voltam pela API.
 """
+import secrets
 import uuid
 from datetime import datetime
 from typing import Annotated
+from urllib.parse import quote
 
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
@@ -17,8 +19,9 @@ from app.audit.repository import AuditRepository
 from app.core.dependencies import get_current_user_id, require_permission
 from app.core.exceptions import BusinessRuleException
 from app.database import get_db
-from app.notifications.channel_store import load_channel, save_channel
+from app.notifications.channel_store import StoredChannel, load_channel, save_channel
 from app.notifications.channels.telegram import TELEGRAM_CHANNEL, api_call
+from app.notifications.channels.whatsapp import DEFAULT_GRAPH_VERSION, WHATSAPP_CHANNEL, error_info, graph_call
 from app.notifications.linking import create_link_code, unlink
 from app.notifications.models import UserChannelAddress
 
@@ -28,6 +31,19 @@ DB = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[uuid.UUID, Depends(get_current_user_id)]
 Manage = Depends(require_permission("notifications.manage"))
 MASKED = "********"
+
+LABELS = {TELEGRAM_CHANNEL: "Telegram", WHATSAPP_CHANNEL: "WhatsApp"}
+
+
+def is_ready(channel: str, stored: StoredChannel | None) -> bool:
+    """Habilitado e com tudo o que o canal precisa para enviar e receber."""
+    if stored is None or not stored.enabled:
+        return False
+    if channel == TELEGRAM_CHANNEL:
+        return bool(stored.secrets.get("bot_token"))
+    return bool(
+        stored.secrets.get("access_token") and stored.secrets.get("app_secret") and stored.config.get("phone_number_id")
+    )
 
 
 # --- Vínculo (usuário) ----------------------------------------------------------------------------
@@ -43,44 +59,52 @@ class LinkCodeResponse(BaseModel):
 @router.get("/channels")
 async def my_channels(db: DB, user_id: CurrentUser):
     """Canais externos disponíveis e se a conta está vinculada a cada um."""
-    stored = await load_channel(db, TELEGRAM_CHANNEL)
-    address = (
-        await db.execute(
-            select(UserChannelAddress).where(
-                UserChannelAddress.user_id == user_id, UserChannelAddress.channel == TELEGRAM_CHANNEL
-            )
-        )
-    ).scalar_one_or_none()
-    available = bool(stored and stored.enabled and stored.secrets.get("bot_token"))
-    return {
-        "channels": [
+    addresses = {
+        row.channel: row
+        for row in (await db.execute(select(UserChannelAddress).where(UserChannelAddress.user_id == user_id))).scalars()
+    }
+    result = []
+    for channel, label in LABELS.items():
+        stored = await load_channel(db, channel)
+        address = addresses.get(channel)
+        result.append(
             {
-                "channel": TELEGRAM_CHANNEL,
-                "label": "Telegram",
-                "available": available,
-                "bot_username": (stored.config.get("bot_username") if stored else None),
+                "channel": channel,
+                "label": label,
+                "available": is_ready(channel, stored),
+                "bot_username": stored.config.get("bot_username") if stored and channel == TELEGRAM_CHANNEL else None,
+                "display_phone": stored.config.get("display_phone") if stored and channel == WHATSAPP_CHANNEL else None,
                 "linked": bool(address and address.verified_at),
                 "linked_at": address.verified_at if address else None,
             }
-        ]
-    }
+        )
+    return {"channels": result}
+
+
+def _deep_link(channel: str, stored: StoredChannel, code: str) -> str | None:
+    if channel == TELEGRAM_CHANNEL and stored.config.get("bot_username"):
+        return f"https://t.me/{stored.config['bot_username']}?start={code}"
+    if channel == WHATSAPP_CHANNEL:
+        digits = "".join(ch for ch in str(stored.config.get("display_phone") or "") if ch.isdigit())
+        if digits:
+            return f"https://wa.me/{digits}?text={quote(f'vincular {code}')}"
+    return None
 
 
 @router.post("/channels/{channel}/link-code", response_model=LinkCodeResponse)
 async def new_link_code(channel: str, db: DB, user_id: CurrentUser):
-    if channel != TELEGRAM_CHANNEL:
+    if channel not in LABELS:
         raise BusinessRuleException("Canal sem suporte a vínculo.")
     stored = await load_channel(db, channel)
-    if not (stored and stored.enabled and stored.secrets.get("bot_token")):
-        raise BusinessRuleException("O Telegram ainda não foi habilitado pela administração.")
+    if not is_ready(channel, stored):
+        raise BusinessRuleException(f"O {LABELS[channel]} ainda não foi habilitado pela administração.")
     code, expires_at = await create_link_code(db, user_id, channel)
     await db.commit()
-    username = stored.config.get("bot_username")
     return LinkCodeResponse(
         code=code,
         expires_at=expires_at,
-        command=f"/vincular {code}",
-        deep_link=f"https://t.me/{username}?start={code}" if username else None,
+        command=f"/vincular {code}" if channel == TELEGRAM_CHANNEL else f"vincular {code}",
+        deep_link=_deep_link(channel, stored, code),
     )
 
 
@@ -94,7 +118,14 @@ async def unlink_channel(channel: str, db: DB, user_id: CurrentUser):
     await db.commit()
 
 
-# --- Configuração do Telegram (administração) -----------------------------------------------------
+async def _audit_config(db: AsyncSession, channel: str, enabled: bool, user_id: uuid.UUID) -> None:
+    await AuditRepository(db).create(
+        event_type=f"notifications.{channel}_configured", entity_type="notification",
+        entity_id=uuid.uuid5(uuid.NAMESPACE_OID, f"channel:{channel}"), data={"enabled": enabled}, user_id=user_id,
+    )
+
+
+# --- Telegram (administração) ---------------------------------------------------------------------
 
 
 class TelegramConfigIn(BaseModel):
@@ -110,7 +141,7 @@ class TelegramConfigOut(BaseModel):
     app_base_url: str
 
 
-def _out(stored) -> TelegramConfigOut:
+def _telegram_out(stored: StoredChannel | None) -> TelegramConfigOut:
     if stored is None:
         return TelegramConfigOut(enabled=False, bot_token="", bot_username=None, app_base_url="")
     return TelegramConfigOut(
@@ -123,7 +154,7 @@ def _out(stored) -> TelegramConfigOut:
 
 @router.get("/telegram/config", response_model=TelegramConfigOut, dependencies=[Manage])
 async def get_telegram_config(db: DB):
-    return _out(await load_channel(db, TELEGRAM_CHANNEL))
+    return _telegram_out(await load_channel(db, TELEGRAM_CHANNEL))
 
 
 @router.put("/telegram/config", response_model=TelegramConfigOut, dependencies=[Manage])
@@ -148,9 +179,97 @@ async def update_telegram_config(body: TelegramConfigIn, db: DB, user_id: Curren
         {"bot_username": username, "app_base_url": body.app_base_url.strip()},
         {"bot_token": token} if token else {},
     )
-    await AuditRepository(db).create(
-        event_type="notifications.telegram_configured", entity_type="notification",
-        entity_id=uuid.uuid5(uuid.NAMESPACE_OID, "channel:telegram"), data={"enabled": body.enabled}, user_id=user_id,
-    )
+    await _audit_config(db, TELEGRAM_CHANNEL, body.enabled, user_id)
     await db.commit()
-    return _out(await load_channel(db, TELEGRAM_CHANNEL))
+    return _telegram_out(await load_channel(db, TELEGRAM_CHANNEL))
+
+
+# --- WhatsApp / Meta Cloud API (administração) ----------------------------------------------------
+
+
+class WhatsAppConfigIn(BaseModel):
+    enabled: bool = False
+    access_token: str = Field("", max_length=1000)  # vazio ou mascarado = manter o atual
+    app_secret: str = Field("", max_length=200)  # idem
+    phone_number_id: str = Field("", max_length=50)
+    graph_version: str = Field(DEFAULT_GRAPH_VERSION, pattern=r"^v\d+\.\d+$")
+    template_name: str = Field("", max_length=100, pattern=r"^[a-z0-9_]*$")
+    template_language: str = Field("pt_BR", max_length=10)
+    app_base_url: str = Field("", max_length=255)
+
+
+class WhatsAppConfigOut(BaseModel):
+    enabled: bool
+    access_token: str
+    app_secret: str
+    phone_number_id: str
+    graph_version: str
+    template_name: str
+    template_language: str
+    app_base_url: str
+    display_phone: str | None
+    verified_name: str | None
+    verify_token: str | None
+    webhook_path: str = "/api/v1/integrations/whatsapp/webhook"
+
+
+def _whatsapp_out(stored: StoredChannel | None) -> WhatsAppConfigOut:
+    cfg = stored.config if stored else {}
+    secrets_ = stored.secrets if stored else {}
+    return WhatsAppConfigOut(
+        enabled=bool(stored and stored.enabled),
+        access_token=MASKED if secrets_.get("access_token") else "",
+        app_secret=MASKED if secrets_.get("app_secret") else "",
+        phone_number_id=cfg.get("phone_number_id", ""),
+        graph_version=cfg.get("graph_version") or DEFAULT_GRAPH_VERSION,
+        template_name=cfg.get("template_name", ""),
+        template_language=cfg.get("template_language") or "pt_BR",
+        app_base_url=cfg.get("app_base_url", ""),
+        display_phone=cfg.get("display_phone"),
+        verified_name=cfg.get("verified_name"),
+        verify_token=secrets_.get("verify_token"),  # só handshake do webhook; a rota exige notifications.manage
+    )
+
+
+@router.get("/whatsapp/config", response_model=WhatsAppConfigOut, dependencies=[Manage])
+async def get_whatsapp_config(db: DB):
+    return _whatsapp_out(await load_channel(db, WHATSAPP_CHANNEL))
+
+
+@router.put("/whatsapp/config", response_model=WhatsAppConfigOut, dependencies=[Manage])
+async def update_whatsapp_config(body: WhatsAppConfigIn, db: DB, user_id: CurrentUser):
+    current = await load_channel(db, WHATSAPP_CHANNEL)
+    old = current.secrets if current else {}
+
+    def keep(new: str, key: str) -> str:
+        new = new.strip()
+        return old.get(key, "") if (not new or new == MASKED) else new
+
+    token, app_secret = keep(body.access_token, "access_token"), keep(body.app_secret, "app_secret")
+    phone_id = body.phone_number_id.strip()
+    if body.enabled and not (token and app_secret and phone_id):
+        raise BusinessRuleException("Para habilitar o WhatsApp informe o token de acesso, o App Secret e o Phone Number ID.")
+
+    cfg = dict(current.config) if current else {}
+    changed = token != old.get("access_token") or phone_id != cfg.get("phone_number_id") or body.graph_version != cfg.get("graph_version")
+    if token and phone_id and changed:
+        # Valida o par token/número na Graph API e descobre o telefone exibido (usado no link wa.me).
+        status, resp = await graph_call(
+            token, "GET", phone_id, params={"fields": "display_phone_number,verified_name"}, version=body.graph_version
+        )
+        if status != 200:
+            _, message = error_info(resp)
+            raise BusinessRuleException(f"A Meta recusou o token ou o Phone Number ID: {message or status}")
+        cfg["display_phone"] = resp.get("display_phone_number")
+        cfg["verified_name"] = resp.get("verified_name")
+
+    cfg.update(
+        phone_number_id=phone_id, graph_version=body.graph_version, template_name=body.template_name.strip(),
+        template_language=body.template_language.strip() or "pt_BR", app_base_url=body.app_base_url.strip(),
+    )
+    secrets_ = {k: v for k, v in {"access_token": token, "app_secret": app_secret}.items() if v}
+    secrets_["verify_token"] = old.get("verify_token") or secrets.token_urlsafe(24)
+    await save_channel(db, WHATSAPP_CHANNEL, body.enabled, cfg, secrets_)
+    await _audit_config(db, WHATSAPP_CHANNEL, body.enabled, user_id)
+    await db.commit()
+    return _whatsapp_out(await load_channel(db, WHATSAPP_CHANNEL))

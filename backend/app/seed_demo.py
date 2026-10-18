@@ -35,7 +35,7 @@ from app.notifications.models import Notification
 from app.organization.models import Company, Employee, Sector, Unit
 from app.service_desk.models import Ticket, TicketCategory, TicketInteraction, TicketMaterial, ticket_assets
 from app.stock.models import StockCategory, StockItem, StockMovement
-from app.whatsapp.models import WhatsAppConfig, WhatsAppOutbox, WhatsAppSession, WhatsAppTemplate
+from app.whatsapp.models import WhatsAppTemplate
 
 
 DEMO_PASSWORD = "Demo@2026"
@@ -154,9 +154,11 @@ async def clean_database(session: AsyncSession) -> None:
     """Limpa tabelas de negócio e transações de teste, mantendo estrutura do sistema."""
     print("--> Limpando dados de teste e tabelas transacionais...")
 
-    # 1. WhatsApp outbox e sessões
-    await session.execute(delete(WhatsAppOutbox))
-    await session.execute(delete(WhatsAppSession))
+    # 1. Hub de notificações: entregas, eventos e conversas de teste
+    from app.notifications.models import ConversationSession, Delivery, DeliveryAttempt, DomainEvent, InboundMessage
+
+    for model in (DeliveryAttempt, Delivery, DomainEvent, InboundMessage, ConversationSession):
+        await session.execute(delete(model))
 
     # 2. Notificações e auditoria
     await session.execute(delete(Notification))
@@ -1340,23 +1342,6 @@ async def _seed_demo_impl(session: AsyncSession) -> None:
         is_internal=False,
     )
     session.add(interac_5)
-
-    # 9. Configuração inicial do WhatsApp (Mock habilitado)
-    stmt_wa = select(WhatsAppConfig)
-    wa_cfg = (await session.execute(stmt_wa)).scalar_one_or_none()
-    if not wa_cfg:
-        wa_cfg = WhatsAppConfig(
-            provider="MOCK",
-            is_enabled=True,
-            instance_name="gestao_ti_demo",
-            api_url="http://evolution-api:8080",
-            api_key="demo_token_123",
-            welcome_message=(
-                "Olá! Bem-vindo à Central de TI da TechCorp.\n"
-                "Digite [1] para abrir um chamado, [2] para consultar seus chamados ou [3] para falar com um analista."
-            ),
-        )
-        session.add(wa_cfg)
 
     await session.commit()
     print("\n==================================================================")

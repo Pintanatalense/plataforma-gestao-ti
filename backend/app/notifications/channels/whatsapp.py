@@ -1,0 +1,199 @@
+"""
+Canal WhatsApp pela Meta Cloud API (oficial). Decisão do ADR-013 §14.1: sem Evolution/não oficial.
+
+Regra da plataforma: dentro de 24 h após a última mensagem DA PESSOA, a empresa pode enviar texto livre;
+fora disso só vale mensagem de *template* aprovado. O adapter decide sozinho:
+
+  janela aberta  -> texto livre
+  janela fechada -> template configurado (1 variável com o texto), ou falha permanente explicando
+
+Configuração em `channel_configs['whatsapp']`:
+  config  = {phone_number_id, graph_version, template_name, template_language, display_phone, app_base_url}
+  secrets = {access_token, app_secret, verify_token}
+"""
+import logging
+import re
+from datetime import datetime, timedelta, timezone
+from typing import Any, ClassVar
+
+import httpx
+from sqlalchemy import select
+
+from app.notifications.channel_store import load_channel
+from app.notifications.channels.base import (
+    AdapterContext,
+    Capabilities,
+    ChannelHealth,
+    DeliveryResult,
+    Message,
+    Recipient,
+)
+from app.notifications.models import ConversationSession
+
+for _noisy in ("httpx", "httpcore"):  # a URL da Graph API pode carregar ids da conta
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
+
+WHATSAPP_CHANNEL = "whatsapp"
+GRAPH_BASE = "https://graph.facebook.com"
+DEFAULT_GRAPH_VERSION = "v21.0"
+CUSTOMER_WINDOW = timedelta(hours=24)
+MAX_TEXT = 4000  # limite da API: 4096
+
+# Códigos de erro da Cloud API que mudam a política de retentativa.
+TOKEN_ERRORS = {190, 102, 10}  # token expirado/inválido/sem permissão: corrigir a configuração resolve
+THROTTLE_ERRORS = {4, 80007, 130429, 131048, 131056}  # limites de taxa: tentar de novo mais tarde
+WINDOW_CLOSED = 131047  # fora da janela de 24 h: exige template
+
+
+def http_client(timeout: float = 15.0) -> httpx.AsyncClient:
+    """Ponto único de criação do cliente (os testes o substituem por um transporte falso)."""
+    return httpx.AsyncClient(timeout=timeout)
+
+
+async def graph_call(
+    token: str, method: str, path: str, payload: dict[str, Any] | None = None, params: dict[str, str] | None = None,
+    version: str = DEFAULT_GRAPH_VERSION, timeout: float = 15.0,
+) -> tuple[int, dict]:
+    """Chama a Graph API. Devolve (status HTTP, corpo JSON). Erros de rede viram status 0."""
+    try:
+        async with http_client(timeout) as client:
+            response = await client.request(
+                method, f"{GRAPH_BASE}/{version}/{path}", json=payload, params=params,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+    except httpx.HTTPError as exc:
+        return 0, {"error": {"message": f"{type(exc).__name__}: {exc}"}}
+    try:
+        body = response.json()
+    except ValueError:
+        body = {"error": {"message": response.text[:200]}}
+    return response.status_code, body
+
+
+def error_info(body: dict) -> tuple[int | None, str]:
+    error = body.get("error") or {}
+    return error.get("code"), str(error.get("message") or "")
+
+
+def classify(status: int, body: dict) -> DeliveryResult:
+    """Traduz a resposta da Cloud API para a política de retentativa do hub."""
+    if status == 200 and (body.get("messages") or [{}])[0].get("id"):
+        return DeliveryResult("ok", provider_message_id=body["messages"][0]["id"])
+    code, message = error_info(body)
+    detail = f"{status or 'rede'}/{code} {message}".strip()
+    if code in TOKEN_ERRORS or status == 401:
+        return DeliveryResult("retryable", error=f"token da Meta inválido ou expirado: {detail}")
+    if code in THROTTLE_ERRORS or status == 429:
+        return DeliveryResult("retryable", error=detail, retry_after_seconds=60)
+    if status == 0 or status >= 500:
+        return DeliveryResult("retryable", error=detail)
+    # 400/403/404 com outros códigos: número sem WhatsApp, fora da lista de teste, parâmetro inválido...
+    return DeliveryResult("permanent", error=detail)
+
+
+def template_text(text: str) -> str:
+    """Parâmetros de template não aceitam quebra de linha, tabulação nem 4+ espaços seguidos."""
+    flat = re.sub(r"\s*[\r\n\t]+\s*", " | ", text.strip())
+    flat = re.sub(r" {2,}", " ", flat)
+    return flat[:1000]
+
+
+def render_text(message: Message, base_url: str | None) -> str:
+    parts = [message.title, message.body_text]
+    if message.link and base_url:
+        parts.append(f"Abrir no sistema: {base_url.rstrip('/')}{message.link}")
+    text = "\n\n".join(p for p in parts if p)
+    return text if len(text) <= MAX_TEXT else text[: MAX_TEXT - 1] + "…"
+
+
+def _aware(value: datetime) -> datetime:
+    return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
+
+
+class WhatsAppAdapter:
+    channel: ClassVar[str] = WHATSAPP_CHANNEL
+    capabilities: ClassVar[Capabilities] = Capabilities(inbound=True, max_len=MAX_TEXT, rate_per_second=10.0)
+
+    def __init__(self, ctx: AdapterContext) -> None:
+        self._session_factory = ctx.session_factory
+
+    async def _load(self, phone: str):
+        async with self._session_factory() as session:
+            stored = await load_channel(session, WHATSAPP_CHANNEL)
+            last = (
+                await session.execute(
+                    select(ConversationSession.last_interaction_at).where(
+                        ConversationSession.channel == WHATSAPP_CHANNEL, ConversationSession.external_id == phone
+                    )
+                )
+            ).scalar_one_or_none()
+        return stored, last
+
+    async def send(self, recipient: Recipient, message: Message) -> DeliveryResult:
+        stored, last_inbound = await self._load(recipient.address)
+        if stored is None or not stored.enabled or not stored.secrets.get("access_token"):
+            return DeliveryResult("permanent", error="Canal WhatsApp desabilitado ou sem token.")
+        cfg = stored.config
+        phone_id, version = cfg.get("phone_number_id"), cfg.get("graph_version") or DEFAULT_GRAPH_VERSION
+        if not phone_id:
+            return DeliveryResult("permanent", error="Canal WhatsApp sem Phone Number ID.")
+        token = stored.secrets["access_token"]
+        text = render_text(message, cfg.get("app_base_url"))
+        template = cfg.get("template_name")
+
+        window_open = last_inbound is not None and datetime.now(timezone.utc) - _aware(last_inbound) < CUSTOMER_WINDOW
+        if window_open:
+            status, body = await self._post(token, version, phone_id, recipient.address, self._text_payload(recipient.address, text))
+            code, _ = error_info(body)
+            if code == WINDOW_CLOSED and template:  # a janela fechou no meio do caminho
+                status, body = await self._post(
+                    token, version, phone_id, recipient.address, self._template_payload(recipient.address, cfg, text)
+                )
+            return classify(status, body)
+
+        if not template:
+            return DeliveryResult(
+                "permanent",
+                error="Fora da janela de 24 h e nenhum template aprovado está configurado: "
+                "peça à pessoa que envie uma mensagem ao bot ou configure o template.",
+            )
+        status, body = await self._post(token, version, phone_id, recipient.address, self._template_payload(recipient.address, cfg, text))
+        return classify(status, body)
+
+    @staticmethod
+    def _text_payload(to: str, text: str) -> dict:
+        return {"messaging_product": "whatsapp", "to": to, "type": "text", "text": {"body": text, "preview_url": False}}
+
+    @staticmethod
+    def _template_payload(to: str, cfg: dict, text: str) -> dict:
+        return {
+            "messaging_product": "whatsapp",
+            "to": to,
+            "type": "template",
+            "template": {
+                "name": cfg["template_name"],
+                "language": {"code": cfg.get("template_language") or "pt_BR"},
+                "components": [{"type": "body", "parameters": [{"type": "text", "text": template_text(text)}]}],
+            },
+        }
+
+    @staticmethod
+    async def _post(token: str, version: str, phone_id: str, to: str, payload: dict) -> tuple[int, dict]:
+        return await graph_call(token, "POST", f"{phone_id}/messages", payload=payload, version=version)
+
+    async def health(self) -> ChannelHealth:
+        async with self._session_factory() as session:
+            stored = await load_channel(session, WHATSAPP_CHANNEL)
+        if stored is None or not stored.enabled:
+            return ChannelHealth(ok=False, detail="Desabilitado.")
+        token, phone_id = stored.secrets.get("access_token"), stored.config.get("phone_number_id")
+        if not token or not phone_id:
+            return ChannelHealth(ok=False, detail="Token ou Phone Number ID não configurados.")
+        status, body = await graph_call(
+            token, "GET", phone_id, params={"fields": "display_phone_number,verified_name"},
+            version=stored.config.get("graph_version") or DEFAULT_GRAPH_VERSION,
+        )
+        if status == 200:
+            return ChannelHealth(ok=True, detail=f"{body.get('verified_name', '')} {body.get('display_phone_number', '')}".strip())
+        _, message = error_info(body)
+        return ChannelHealth(ok=False, detail=f"{status or 'rede'}: {message}")
