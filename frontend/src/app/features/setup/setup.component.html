@@ -1,66 +1,81 @@
 <div class="setup-container mat-app-background">
   <mat-card class="setup-card">
     <mat-card-header>
-      <mat-card-title>Assistente de Instalação e Implantação</mat-card-title>
-      <mat-card-subtitle>Configure o primeiro administrador e o modo de operação inicial</mat-card-subtitle>
+      <mat-card-title>Bem-vindo! Vamos instalar</mat-card-title>
+      <mat-card-subtitle>Crie o primeiro administrador e escolha como começar</mat-card-subtitle>
     </mat-card-header>
 
     <form [formGroup]="setupForm" (ngSubmit)="onSubmit()">
       <mat-card-content>
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Modo de Inicialização do Sistema</mat-label>
-          <mat-select formControlName="setup_mode">
-            <mat-option value="CLEAN">Implantação Empresarial Limpa (Pronto para Produção)</mat-option>
-            <mat-option value="DEMO">Ambiente Demonstrativo (com Dados Fictícios de Exemplo)</mat-option>
-          </mat-select>
-          <mat-hint>Escolha 'CLEAN' para uma empresa real, ou 'DEMO' para testes e homologação</mat-hint>
-        </mat-form-field>
+        <h3 class="section">1. Como você quer começar?</h3>
+        <mat-radio-group formControlName="setup_mode" class="modes" aria-label="Modo de inicialização">
+          <mat-radio-button value="CLEAN" class="mode" data-testid="mode-clean">
+            <strong>Base limpa (uso real)</strong>
+            <span class="mode-desc">Só o essencial: setor de TI e categorias iniciais de chamados e ativos, que você ajusta depois. Ideal para quem vai usar de verdade.</span>
+          </mat-radio-button>
+          <mat-radio-button value="DEMO" class="mode" data-testid="mode-demo">
+            <strong>Modelo de exemplo</strong>
+            <span class="mode-desc">Carrega empresa, colaboradores, chamados, ativos e estoque fictícios para você conhecer o sistema. Dá para apagar tudo depois em Administração, sem tocar nos seus dados.</span>
+          </mat-radio-button>
+        </mat-radio-group>
 
-        <div *ngIf="setupForm.get('setup_mode')?.value === 'CLEAN'" style="margin-top: 10px;">
+        @if (isClean) {
+          <h3 class="section">2. Sua empresa</h3>
           <mat-form-field appearance="outline" class="full-width">
-            <mat-label>Razão Social / Nome da Empresa Contratante</mat-label>
-            <input matInput formControlName="company_name" placeholder="Ex: Acme Tecnologia Ltda">
+            <mat-label>Nome da empresa</mat-label>
+            <input matInput formControlName="company_name" placeholder="Ex: Acme Tecnologia Ltda" data-testid="company-name">
+            @if (setupForm.get('company_name')?.hasError('required')) {
+              <mat-error>Informe o nome da empresa.</mat-error>
+            }
           </mat-form-field>
 
           <mat-form-field appearance="outline" class="full-width">
-            <mat-label>CNPJ da Empresa (Opcional)</mat-label>
-            <input matInput formControlName="company_cnpj" placeholder="Ex: 00.000.000/0001-00">
+            <mat-label>CNPJ (opcional)</mat-label>
+            <input matInput formControlName="company_cnpj" placeholder="00.000.000/0001-00">
           </mat-form-field>
-        </div>
+        }
 
-        <mat-form-field appearance="outline" class="full-width" style="margin-top: 10px;">
-          <mat-label>Nome Completo do Administrador</mat-label>
-          <input matInput formControlName="name" placeholder="Ex: Administrador do Sistema">
+        <h3 class="section">{{ isClean ? '3' : '2' }}. Administrador</h3>
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>E-mail de acesso</mat-label>
+          <input matInput formControlName="email" type="email" autocomplete="username" placeholder="admin@empresa.com.br" data-testid="admin-email">
         </mat-form-field>
 
         <mat-form-field appearance="outline" class="full-width">
-          <mat-label>E-mail de Acesso</mat-label>
-          <input matInput formControlName="email" type="email" placeholder="admin@empresa.com.br">
-        </mat-form-field>
-
-        <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Senha Mestra</mat-label>
-          <input matInput [type]="hidePassword ? 'password' : 'text'" formControlName="password">
-          <button mat-icon-button matSuffix (click)="hidePassword = !hidePassword" type="button">
+          <mat-label>Senha (mínimo 8 caracteres)</mat-label>
+          <input matInput [type]="hidePassword ? 'password' : 'text'" formControlName="password" autocomplete="new-password" data-testid="admin-password">
+          <button mat-icon-button matSuffix (click)="hidePassword = !hidePassword" type="button" aria-label="Mostrar ou ocultar a senha">
             <mat-icon>{{hidePassword ? 'visibility_off' : 'visibility'}}</mat-icon>
           </button>
         </mat-form-field>
 
         <mat-form-field appearance="outline" class="full-width">
-          <mat-label>Confirmar Senha</mat-label>
-          <input matInput [type]="hideConfirm ? 'password' : 'text'" formControlName="confirmPassword">
-          <button mat-icon-button matSuffix (click)="hideConfirm = !hideConfirm" type="button">
+          <mat-label>Confirmar senha</mat-label>
+          <input matInput [type]="hideConfirm ? 'password' : 'text'" formControlName="confirmPassword" autocomplete="new-password">
+          <button mat-icon-button matSuffix (click)="hideConfirm = !hideConfirm" type="button" aria-label="Mostrar ou ocultar a confirmação">
             <mat-icon>{{hideConfirm ? 'visibility_off' : 'visibility'}}</mat-icon>
           </button>
+          @if (setupForm.hasError('mismatch') && setupForm.get('confirmPassword')?.touched) {
+            <mat-error>As senhas não conferem.</mat-error>
+          }
         </mat-form-field>
 
+        @if (error) {
+          <p class="error" role="alert" data-testid="setup-error">{{ error }}</p>
+        }
       </mat-card-content>
 
       <mat-card-actions>
-        <button mat-flat-button color="primary" type="submit" [disabled]="setupForm.invalid || isLoading" class="full-width">
-          <mat-spinner diameter="20" *ngIf="isLoading"></mat-spinner>
-          <span *ngIf="!isLoading">Concluir Instalação</span>
+        <button mat-flat-button color="primary" type="submit" [disabled]="setupForm.invalid || isLoading" class="full-width" data-testid="setup-submit">
+          @if (isLoading) {
+            <mat-spinner diameter="20"></mat-spinner>
+          } @else {
+            <span>{{ isClean ? 'Instalar com base limpa' : 'Instalar com modelo de exemplo' }}</span>
+          }
         </button>
+        @if (isLoading && !isClean) {
+          <p class="hint">Carregando os dados de exemplo; pode levar alguns segundos.</p>
+        }
       </mat-card-actions>
     </form>
   </mat-card>

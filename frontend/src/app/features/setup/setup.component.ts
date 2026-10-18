@@ -1,6 +1,5 @@
 import { Component, inject } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { AbstractControl, FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 
 import { MatCardModule } from '@angular/material/card';
@@ -8,25 +7,23 @@ import { MatInputModule } from '@angular/material/input';
 import { MatButtonModule } from '@angular/material/button';
 import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatIconModule } from '@angular/material/icon';
+import { MatRadioModule } from '@angular/material/radio';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 import { AuthService } from '../../core/auth/auth.service';
-
-import { MatSelectModule } from '@angular/material/select';
 
 @Component({
   selector: 'app-setup',
   standalone: true,
   imports: [
-    CommonModule,
     ReactiveFormsModule,
     MatCardModule,
     MatInputModule,
     MatButtonModule,
     MatProgressSpinnerModule,
     MatIconModule,
+    MatRadioModule,
     MatSnackBarModule,
-    MatSelectModule,
   ],
   templateUrl: './setup.component.html',
   styleUrls: ['./setup.component.scss']
@@ -38,42 +35,56 @@ export class SetupComponent {
   private snackBar = inject(MatSnackBar);
 
   setupForm = this.fb.group({
-    name: ['', Validators.required],
     email: ['', [Validators.required, Validators.email]],
     password: ['', [Validators.required, Validators.minLength(8)]],
     confirmPassword: ['', Validators.required],
     setup_mode: ['CLEAN', Validators.required],
-    company_name: [''],
+    company_name: ['', Validators.required],
     company_cnpj: ['']
-  }, { validators: this.passwordMatchValidator });
+  }, { validators: SetupComponent.passwordMatch });
 
   isLoading = false;
   hidePassword = true;
   hideConfirm = true;
+  error = '';
 
-  passwordMatchValidator(g: any) {
-    return g.get('password').value === g.get('confirmPassword').value
-      ? null : { mismatch: true };
+  constructor() {
+    // O nome da empresa só é exigido na base limpa; no modelo de exemplo a empresa já vem pronta.
+    this.setupForm.controls.setup_mode.valueChanges.subscribe((mode) => {
+      const company = this.setupForm.controls.company_name;
+      if (mode === 'CLEAN') company.addValidators(Validators.required);
+      else company.clearValidators();
+      company.updateValueAndValidity();
+    });
+  }
+
+  get isClean(): boolean {
+    return this.setupForm.controls.setup_mode.value === 'CLEAN';
+  }
+
+  static passwordMatch(group: AbstractControl) {
+    return group.get('password')?.value === group.get('confirmPassword')?.value ? null : { mismatch: true };
   }
 
   onSubmit() {
-    if (this.setupForm.invalid) return;
+    if (this.setupForm.invalid || this.isLoading) return;
 
     this.isLoading = true;
-    const { name, email, password, setup_mode, company_name, company_cnpj } = this.setupForm.value;
+    this.error = '';
+    const { email, password, setup_mode, company_name, company_cnpj } = this.setupForm.getRawValue();
+    const payload = this.isClean
+      ? { email, password, setup_mode, company_name: company_name?.trim(), company_cnpj: company_cnpj?.trim() || null }
+      : { email, password, setup_mode };
 
-    this.authService.setupFirstAdmin({ name, email, password, setup_mode, company_name, company_cnpj }).subscribe({
+    this.authService.setupFirstAdmin(payload).subscribe({
       next: () => {
         this.isLoading = false;
-        this.snackBar.open('Setup concluído! Bem-vindo.', 'Fechar', { duration: 3000 });
-        this.router.navigate(['/']); // Redireciona para o dashboard
+        this.snackBar.open('Instalação concluída! Bem-vindo.', 'Fechar', { duration: 3000 });
+        this.router.navigate(['/']);
       },
       error: (err: any) => {
         this.isLoading = false;
-        this.snackBar.open('Erro ao realizar o setup inicial.', 'Fechar', {
-          duration: 5000,
-          panelClass: ['error-snackbar']
-        });
+        this.error = err?.error?.error?.message ?? 'Não foi possível concluir a instalação. Tente novamente.';
       }
     });
   }
