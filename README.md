@@ -32,7 +32,7 @@ Quando terminar, abra `http://localhost` (ou a porta escolhida). O **assistente 
 | Opção | O que você recebe |
 |---|---|
 | **Base limpa** (uso real) | Nome da sua empresa, setor de TI, categorias iniciais de chamados e de ativos (editáveis). Nenhum dado fictício. |
-| **Modelo de exemplo** | Empresa, colaboradores, chamados, ativos e estoque fictícios para conhecer o sistema. Depois, em Administração, dá para apagar só os dados de exemplo (com backup automático antes). |
+| **Modelo de exemplo** | 8 colaboradores com contas de exemplo (senha `Demo@2026`: só para conhecer), 6 chamados em vários estágios, 5 ativos, 5 insumos de estoque (3 no mínimo ou abaixo) e 2 garantias perto de vencer, para ver os alertas funcionando. Depois, em Administração → Ambientes & Dados, dá para apagar só o exemplo (com backup automático antes); o catálogo inicial e a Matriz ficam. |
 
 O script nunca sobrescreve um `.env` existente e pode ser repetido. **Guarde uma cópia da `APP_ENCRYPTION_KEY` fora do servidor.**
 
