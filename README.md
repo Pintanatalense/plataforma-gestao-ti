@@ -101,6 +101,7 @@ docker compose logs -f backend
   - A entrada usa *long polling* a partir do worker: não é preciso domínio, HTTPS nem porta aberta. O servidor só precisa de saída para `api.telegram.org`.
 - **WhatsApp (Meta Cloud API, oficial):** mesmo fluxo de vínculo por código (`vincular CÓDIGO`). Dentro de 24 h da última mensagem da pessoa vai texto livre; fora disso, o template aprovado configurado. O webhook exige HTTPS público. Passo a passo em [`docs/04-configuracao-de-integracoes.md`](docs/04-configuracao-de-integracoes.md).
 - **Slack (opcional):** crie um app com os escopos `chat:write` e `im:history`, evento `message.im` e Messages Tab ligada; cole o token e o Signing Secret em Saúde dos canais → Slack e registre a Request URL mostrada ali. Exige HTTPS público. Passo a passo em [`docs/04-configuracao-de-integracoes.md`](docs/04-configuracao-de-integracoes.md) (seção 3).
+- **Pop-up no navegador (Web Push):** cada pessoa ativa em Minhas preferências e passa a receber o aviso do sistema operacional mesmo com a aba fechada. Funciona em `http://localhost` ou em HTTPS (`scripts/install.sh --https`, certificado autoassinado; veja `docs/02`, seção 7).
 - **Alertas automáticos (worker):** estoque com quantidade igual ou abaixo do mínimo (a cada 30 min) e garantias a 30 e 7 dias do vencimento (diário, 08:00) geram um resumo para administradores e Gestão, uma única vez por fato. Regras e agenda ficam em Notificações → Entregas e regras.
 
 ## Backup e restauração

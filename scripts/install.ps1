@@ -12,13 +12,25 @@
 .PARAMETER Port
   Porta HTTP publicada (padrão 80).
 
+.PARAMETER Https
+  Ativa HTTPS com certificado autoassinado (gerado em .\certs).
+
+.PARAMETER Hosts
+  Nomes ou IPs extras do certificado, separados por vírgula (ex.: "ti.local,192.168.0.10").
+
+.PARAMETER HttpsPort
+  Porta HTTPS publicada (padrão 443).
+
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\install.ps1
   powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Port 8080
 #>
 param(
   [switch]$EnvOnly,
-  [int]$Port = 0
+  [int]$Port = 0,
+  [switch]$Https,
+  [string]$Hosts = '',
+  [int]$HttpsPort = 0
 )
 
 $ErrorActionPreference = 'Stop'
@@ -57,6 +69,28 @@ function Set-EnvValue([string]$key, [string]$value, [bool]$onlyIfEmpty) {
   [System.IO.File]::WriteAllLines((Join-Path (Get-Location) '.env'), [string[]]@($out), (New-Object System.Text.UTF8Encoding($false)))
 }
 
+function New-LocalCert([string]$hostList) {
+  $san = 'DNS:localhost,IP:127.0.0.1,IP:::1'
+  $first = 'localhost'
+  foreach ($h in ($hostList -split ',')) {
+    $h = $h.Trim()
+    if ($h -eq '') { continue }
+    if ($h -match '^[0-9.]+$' -or $h.Contains(':')) { $san += ",IP:$h" } else { $san += ",DNS:$h" }
+    $first = $h
+  }
+  New-Item -ItemType Directory -Force certs | Out-Null
+  $certDir = (Resolve-Path certs).Path
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'  # o docker escreve o progresso do download em stderr; no PS 5.1 isso viraria erro fatal
+  docker run --rm -v "${certDir}:/certs" alpine/openssl req -x509 -newkey rsa:2048 -nodes -days 730 `
+    -keyout /certs/server.key -out /certs/server.crt -subj "/CN=$first" `
+    -addext "subjectAltName=$san" -addext 'basicConstraints=critical,CA:TRUE' `
+    -addext 'keyUsage=digitalSignature,keyEncipherment,keyCertSign' -addext 'extendedKeyUsage=serverAuth' *> $null
+  $ErrorActionPreference = $previous
+  if ($LASTEXITCODE -ne 0) { Fail 'Não consegui gerar o certificado (o Docker precisa conseguir baixar a imagem alpine/openssl).' }
+  Say "Certificado autoassinado criado em certs\ (válido por 2 anos; vale para: $san)."
+}
+
 # --- 1. Pré-requisitos ----------------------------------------------------------------------------
 if (-not $EnvOnly) {
   if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Fail 'Docker não encontrado. Instale o Docker Desktop: https://docs.docker.com/desktop/setup/install/windows-install/' }
@@ -82,6 +116,16 @@ if (Test-Path .env) {
 
 if ($Port -gt 0) { Set-EnvValue 'HTTP_PORT' "$Port" $false }
 
+if ($Https) {
+  if ($EnvOnly) { Fail '-Https precisa do Docker para gerar o certificado; não combine com -EnvOnly.' }
+  if ((Test-Path certs\server.crt) -and (Test-Path certs\server.key)) { Say 'Certificado em certs\ já existe: mantido (apague a pasta para gerar outro).' }
+  else { New-LocalCert $Hosts }
+  if ($HttpsPort -gt 0) { Set-EnvValue 'HTTPS_PORT' "$HttpsPort" $false }
+  elseif ((Get-EnvValue 'HTTPS_PORT') -eq '') { Set-EnvValue 'HTTPS_PORT' '443' $false }
+  Set-EnvValue 'COMPOSE_PATH_SEPARATOR' ':' $false
+  Set-EnvValue 'COMPOSE_FILE' 'docker-compose.yml:docker-compose.https.yml' $false
+}
+
 foreach ($required in 'POSTGRES_PASSWORD', 'SECRET_KEY', 'APP_ENCRYPTION_KEY') {
   if ((Get-EnvValue $required) -eq '') { Fail "$required está vazio no .env. Preencha (veja os comentários do arquivo) e rode de novo." }
 }
@@ -105,19 +149,23 @@ if ($LASTEXITCODE -ne 0) { Fail 'docker compose falhou. Veja a mensagem acima.' 
 $httpPort = Get-EnvValue 'HTTP_PORT'
 if ($httpPort -eq '') { $httpPort = '80' }
 $url = "http://localhost:$httpPort"
+$curlOpts = @('-fsS')
+if ((Get-EnvValue 'COMPOSE_FILE') -like '*https*') { $url = "https://localhost:$(Get-EnvValue 'HTTPS_PORT')"; $curlOpts = @('-fsSk') }
 Say "Aguardando o sistema responder em $url ..."
 for ($i = 0; $i -lt 90; $i++) {
-  try {
-    $r = Invoke-WebRequest -Uri "$url/api/v1/health" -UseBasicParsing -TimeoutSec 5
-    if ($r.StatusCode -eq 200) {
-      Write-Host ''
-      Say 'Sistema no ar!'
-      Write-Host "    Abra $url e siga o assistente: ele cria o administrador e deixa você escolher"
-      Write-Host '    entre uma BASE LIMPA ou um MODELO DE EXEMPLO com dados fictícios.'
-      Write-Host '    Para acompanhar:  docker compose ps   |   docker compose logs -f backend'
-      exit 0
+  curl.exe @curlOpts --max-time 5 -o NUL "$url/api/v1/health" 2>$null
+  if ($LASTEXITCODE -eq 0) {
+    Write-Host ''
+    Say 'Sistema no ar!'
+    Write-Host "    Abra $url e siga o assistente: ele cria o administrador e deixa você escolher"
+    Write-Host '    entre uma BASE LIMPA ou um MODELO DE EXEMPLO com dados fictícios.'
+    if ($curlOpts[0] -eq '-fsSk') {
+      Write-Host '    HTTPS autoassinado: o navegador avisa que o certificado não é confiável. Para o pop-up do navegador'
+      Write-Host '    funcionar, importe certs\server.crt como autoridade raiz confiável (veja docs\02, seção 7).'
     }
-  } catch { }
+    Write-Host '    Para acompanhar:  docker compose ps   |   docker compose logs -f backend'
+    exit 0
+  }
   Start-Sleep -Seconds 2
 }
 Fail 'O sistema não respondeu em 3 minutos. Veja: docker compose ps; docker compose logs --tail=80 backend'

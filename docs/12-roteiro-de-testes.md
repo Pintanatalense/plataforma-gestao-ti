@@ -104,6 +104,18 @@ Exige conta Meta for Developers, número de teste, URL HTTPS pública e, para fo
 4. Mande `menu`; abra e consulte chamados.
 5. Aguarde passar 24 h sem escrever e atribua um chamado: deve ir pelo **template**; sem template configurado, a entrega falha com explicação clara no painel.
 
+## Etapa 10b — Pop-up do navegador (Web Push)
+
+Funciona em `http://localhost` (contexto seguro) ou em HTTPS com certificado confiável (docs/02, seção 7).
+
+1. Em Minhas preferências, cartão **Pop-up no navegador** → **Ativar neste navegador** → permita as notificações.
+2. **Enviar teste**. **Esperado:** em alguns segundos aparece o pop-up do sistema operacional (com a aba em primeiro plano ele **não** aparece, de propósito: o sino já avisa; troque de aba ou minimize).
+3. **Feche a aba do sistema** (deixe o navegador aberto). Em outro navegador/janela anônima, como outro usuário, responda um chamado do primeiro. **Esperado:** pop-up no seu desktop; clicar abre o sistema no chamado.
+4. Responda várias vezes no mesmo chamado: os avisos se fundem em um só.
+5. Em Preferências, desligue o canal "Pop-up no navegador" e repita: nada chega; o sino continua.
+6. **Desativar** no cartão e conferir que o teste passa a ser recusado.
+7. Com certificado autoassinado (`-Https`): sem importar `certs/server.crt` o cartão deve avisar/falhar; depois de importar e reiniciar o navegador, funciona em `https://nome-do-certificado`.
+
 ## Etapa 11 — Atualização de uma instalação antiga (só se houver uma)
 
 Se existir instalação anterior com dados reais:

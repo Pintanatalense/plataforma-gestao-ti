@@ -1,0 +1,18 @@
+# =============================================================================
+# HTTPS opcional (certificado autoassinado ou próprio em ./certs).
+#
+# Gere o certificado e ative com:  scripts/install.sh --https [host1,host2,ip]
+#                                  scripts\install.ps1 -Https [-Hosts "host1,host2,ip"]
+# (os scripts criam ./certs/server.crt e server.key e gravam COMPOSE_FILE no .env).
+#
+# Necessário para o pop-up do navegador (Web Push) fora de localhost.
+# =============================================================================
+services:
+  nginx:
+    ports:
+      - "${HTTPS_PORT:-443}:443"
+    environment:
+      HTTPS_PORT: ${HTTPS_PORT:-443}
+    volumes:
+      - ./certs:/etc/nginx/certs:ro
+      - ./nginx/https.conf.template:/etc/nginx/templates/default.conf.template:ro

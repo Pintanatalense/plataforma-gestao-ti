@@ -88,3 +88,30 @@ scripts/install.sh
 ```
 
 Em produção, faça backup antes (veja [05-backup-e-restauracao.md](05-backup-e-restauracao.md)).
+
+---
+
+## 7. HTTPS (certificado autoassinado ou próprio)
+
+HTTPS é opcional, mas **necessário para o pop-up do navegador (Web Push) fora de `localhost`**, para WhatsApp (Meta) e Slack, e recomendado em qualquer uso fora do computador local.
+
+```bash
+scripts/install.sh --https ti.local,192.168.0.10        # nomes/IPs extras no certificado (opcional)
+scripts/install.sh --https --https-port 8443 --port 8080  # portas alternativas
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Https -Hosts "ti.local,192.168.0.10" -HttpsPort 8443
+```
+
+O que o script faz: cria `certs/server.crt` e `certs/server.key` (autoassinado, 2 anos, válido para `localhost`, `127.0.0.1` e os nomes/IPs informados; usa a imagem `alpine/openssl` via Docker), grava `HTTPS_PORT` e `COMPOSE_FILE=docker-compose.yml:docker-compose.https.yml` no `.env` e sobe o Nginx com TLS 1.2/1.3. A porta HTTP passa a redirecionar para HTTPS. Um certificado já existente em `certs/` é mantido (apague a pasta para gerar outro; **a pasta não vai para o Git**).
+
+**Navegadores não confiam num certificado autoassinado.** Sem confiar nele, o aviso de segurança aparece e o pop-up não funciona. Importe `certs/server.crt` como autoridade raiz confiável:
+
+* **Windows:** `certutil -user -addstore Root certs\server.crt` (confirme o diálogo) e reinicie o navegador.
+* **Linux (Chrome/Edge):** Configurações > Privacidade > Segurança > Gerenciar certificados > Autoridades > Importar.
+* **Firefox:** Configurações > Privacidade e segurança > Certificados > Ver certificados > Autoridades > Importar.
+
+O nome usado no navegador precisa estar na lista do certificado (`-Hosts`/`--https`); acessar por outro nome ou IP gera aviso. Para um certificado de uma autoridade real (Let's Encrypt, CA interna), coloque `server.crt` (cadeia completa) e `server.key` em `certs/` antes de rodar o script.
+
+> `localhost` é tratado como página segura pelos navegadores mesmo em HTTP: para testar o pop-up apenas neste computador, `http://localhost` já basta.
