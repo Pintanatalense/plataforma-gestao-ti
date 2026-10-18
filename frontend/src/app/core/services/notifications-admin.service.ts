@@ -95,6 +95,13 @@ export interface JobItem {
   last_error: string | null;
 }
 
+export interface TelegramConfig {
+  enabled: boolean;
+  bot_token: string;
+  bot_username: string | null;
+  app_base_url: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class NotificationsAdminService {
   private http = inject(HttpClient);
@@ -146,6 +153,14 @@ export class NotificationsAdminService {
 
   testChannel(channel: string): Observable<{ channel: string; ok: boolean; detail: string }> {
     return this.http.post<{ channel: string; ok: boolean; detail: string }>(`${this.base}/channels/${channel}/test`, {});
+  }
+
+  getTelegramConfig(): Observable<TelegramConfig> {
+    return this.http.get<TelegramConfig>('/api/v1/notifications/telegram/config');
+  }
+
+  saveTelegramConfig(config: Pick<TelegramConfig, 'enabled' | 'bot_token' | 'app_base_url'>): Observable<TelegramConfig> {
+    return this.http.put<TelegramConfig>('/api/v1/notifications/telegram/config', config);
   }
 
   listJobs(): Observable<{ items: JobItem[] }> {
