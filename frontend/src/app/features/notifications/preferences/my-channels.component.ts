@@ -33,20 +33,22 @@ export function minutesLeft(expiresAt: string, now: number = Date.now()): number
             <div><button mat-stroked-button (click)="unlink(c)" data-testid="unlink">Desvincular</button></div>
           } @else {
             @if (code(); as k) {
+              @if (codeChannel() === c.channel) {
               <div class="code-box" data-testid="code-box">
-                <p>Envie esta mensagem ao bot{{ c.bot_username ? ' @' + c.bot_username : '' }} em até {{ minutes() }} min:</p>
+                <p>Envie esta mensagem ao {{ c.channel === 'whatsapp' ? 'número' : 'bot' }}{{ c.bot_username ? ' @' + c.bot_username : '' }}{{ c.bot_name ? ' ' + c.bot_name : '' }}{{ c.channel === 'slack' ? ' (conversa direta com o app)' : '' }} em até {{ minutes() }} min:</p>
                 <code class="code" data-testid="code-command">{{ k.command }}</code>
                 @if (k.deep_link) {
                   <p><a [href]="k.deep_link" target="_blank" rel="noopener noreferrer">Ou abra o bot já com o código</a></p>
                 }
                 <p class="hint">O código vale uma vez. Depois de enviar, atualize esta página.</p>
               </div>
+              }
             }
             <div class="actions">
               <button mat-flat-button color="primary" (click)="generate(c)" data-testid="generate">
-                {{ code() ? 'Gerar outro código' : 'Gerar código de vínculo' }}
+                {{ code() && codeChannel() === c.channel ? 'Gerar outro código' : 'Gerar código de vínculo' }}
               </button>
-              @if (code()) {
+              @if (code() && codeChannel() === c.channel) {
                 <button mat-button (click)="refresh()">Já enviei</button>
               }
             </div>
@@ -78,6 +80,7 @@ export class MyChannelsComponent implements OnInit {
 
   channels = signal<ChannelLinkInfo[]>([]);
   code = signal<LinkCode | null>(null);
+  codeChannel = signal('');
   minutes = signal(0);
   error = signal('');
 
@@ -89,7 +92,7 @@ export class MyChannelsComponent implements OnInit {
     this.service.myChannels().subscribe({
       next: (res) => {
         this.channels.set(res.channels);
-        if (res.channels.some((c) => c.linked)) this.code.set(null);
+        if (res.channels.some((c) => c.linked && c.channel === this.codeChannel())) this.code.set(null);
       },
       error: () => this.error.set('Não foi possível carregar seus canais.')
     });
@@ -100,6 +103,7 @@ export class MyChannelsComponent implements OnInit {
     this.service.createLinkCode(channel.channel).subscribe({
       next: (k) => {
         this.code.set(k);
+        this.codeChannel.set(channel.channel);
         this.minutes.set(minutesLeft(k.expires_at));
       },
       error: (err) => this.error.set(err?.error?.error?.message ?? 'Não foi possível gerar o código.')

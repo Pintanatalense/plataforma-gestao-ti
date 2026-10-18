@@ -41,6 +41,7 @@ export interface ChannelLinkInfo {
   label: string;
   available: boolean;
   bot_username: string | null;
+  bot_name?: string | null;
   display_phone?: string | null;
   linked: boolean;
   linked_at: string | null;

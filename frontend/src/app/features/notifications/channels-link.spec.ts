@@ -6,6 +6,7 @@ import { NotificationsAdminService } from '../../core/services/notifications-adm
 import { MyChannelsComponent, minutesLeft } from './preferences/my-channels.component';
 import { TelegramConfigComponent } from './admin/telegram-config.component';
 import { WhatsAppConfigComponent, webhookUrl } from './admin/whatsapp-config.component';
+import { SlackConfigComponent } from './admin/slack-config.component';
 
 const TELEGRAM: ChannelLinkInfo = {
   channel: 'telegram', label: 'Telegram', available: true, bot_username: 'gti_bot', linked: false, linked_at: null
@@ -79,6 +80,20 @@ describe('MyChannelsComponent', () => {
     fixture.componentInstance.unlink(TELEGRAM);
     expect(svc.unlinkChannel).toHaveBeenCalledWith('telegram');
     confirmSpy.mockRestore();
+  });
+
+  it('shows the code only under the channel it was generated for', async () => {
+    const slack: ChannelLinkInfo = { channel: 'slack', label: 'Slack', available: true, bot_username: null, bot_name: 'gti_bot', linked: false, linked_at: null };
+    const svc = service({}, { myChannels: vi.fn().mockReturnValue(of({ channels: [TELEGRAM, slack] })) });
+    const fixture = await mount(MyChannelsComponent, provide(svc));
+    fixture.componentInstance.generate(slack);
+    fixture.detectChanges();
+
+    const boxes = fixture.nativeElement.querySelectorAll('[data-testid="code-box"]');
+    expect(boxes.length).toBe(1);
+    expect(fixture.nativeElement.querySelector('[data-testid="channel-slack"] [data-testid="code-box"]')).not.toBeNull();
+    expect(fixture.nativeElement.querySelector('[data-testid="channel-telegram"] [data-testid="code-box"]')).toBeNull();
+    expect(boxes[0].textContent).toContain('gti_bot');
   });
 
   it('shows the server message when the code cannot be generated', async () => {
@@ -178,5 +193,43 @@ describe('WhatsAppConfigComponent', () => {
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain('A Meta recusou');
     expect(fixture.componentInstance.config()).not.toBeNull();
+  });
+});
+
+describe('SlackConfigComponent', () => {
+  const CONFIG = {
+    enabled: false, bot_token: '', signing_secret: '', app_base_url: '', bot_name: null, team_name: null,
+    events_path: '/api/v1/integrations/slack/events'
+  };
+  const provide = (api: object) => [{ provide: NotificationsAdminService, useValue: api }];
+
+  it('shows the Request URL, masks secrets and saves what the admin typed', async () => {
+    const api = {
+      getSlackConfig: vi.fn().mockReturnValue(of({ ...CONFIG, bot_token: '********', signing_secret: '********', bot_name: 'gti_bot', team_name: 'Empresa' })),
+      saveSlackConfig: vi.fn().mockReturnValue(of({ ...CONFIG, enabled: true, bot_token: '********', signing_secret: '********' }))
+    };
+    const fixture = await mount(SlackConfigComponent, provide(api));
+    expect(fixture.nativeElement.textContent).toContain('gti_bot em Empresa');
+    expect(fixture.nativeElement.querySelector('[data-testid="sl-webhook"]').textContent).toContain('/api/v1/integrations/slack/events');
+    expect((fixture.nativeElement.querySelector('[data-testid="sl-token"]') as HTMLInputElement).type).toBe('password');
+
+    const c = fixture.componentInstance;
+    c.config.update((cfg) => ({ ...cfg!, enabled: true, bot_token: 'xoxb-NEW', app_base_url: ' https://ti.x ' }));
+    c.save();
+    expect(api.saveSlackConfig).toHaveBeenCalledWith({ enabled: true, bot_token: 'xoxb-NEW', signing_secret: '********', app_base_url: 'https://ti.x' });
+    expect(c.config()!.bot_token).toBe('********');
+  });
+
+  it('shows the API validation message and reports load failures', async () => {
+    const err = { error: { error: { message: 'O Slack recusou o token: invalid_auth' } } };
+    const api = { getSlackConfig: vi.fn().mockReturnValue(of(CONFIG)), saveSlackConfig: vi.fn().mockReturnValue(throwError(() => err)) };
+    const fixture = await mount(SlackConfigComponent, provide(api));
+    fixture.componentInstance.save();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain('invalid_auth');
+
+    TestBed.resetTestingModule();
+    const broken = await mount(SlackConfigComponent, provide({ getSlackConfig: vi.fn().mockReturnValue(throwError(() => new Error('x'))) }));
+    expect(broken.nativeElement.querySelector('[role="alert"]').textContent).toContain('Não foi possível carregar');
   });
 });

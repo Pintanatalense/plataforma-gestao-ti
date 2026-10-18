@@ -1,6 +1,6 @@
 # Plataforma Modular de Gestão de TI
 
-Service desk, gestão de ativos, estoque, inventário e integração com WhatsApp (Meta) e Telegram para a TI de uma empresa (single tenant).
+Service desk, gestão de ativos, estoque, inventário e integração com WhatsApp (Meta), Telegram e Slack para a TI de uma empresa (single tenant).
 Estado técnico detalhado e navegação do código: [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md). Riscos e dívida: [`docs/AUDIT.md`](docs/AUDIT.md). Decisões: [`docs/decisions/`](docs/decisions/).
 
 | Camada | Tecnologia |
@@ -76,6 +76,7 @@ docker compose logs -f backend
   4. A partir daí ela recebe avisos e pode abrir, consultar e responder chamados pelo chat, com as mesmas permissões que tem no sistema.
   - A entrada usa *long polling* a partir do worker: não é preciso domínio, HTTPS nem porta aberta. O servidor só precisa de saída para `api.telegram.org`.
 - **WhatsApp (Meta Cloud API, oficial):** mesmo fluxo de vínculo por código (`vincular CÓDIGO`). Dentro de 24 h da última mensagem da pessoa vai texto livre; fora disso, o template aprovado configurado. O webhook exige HTTPS público. Passo a passo em [`docs/04-configuracao-de-integracoes.md`](docs/04-configuracao-de-integracoes.md).
+- **Slack (opcional):** crie um app com os escopos `chat:write` e `im:history`, evento `message.im` e Messages Tab ligada; cole o token e o Signing Secret em Saúde dos canais → Slack e registre a Request URL mostrada ali. Exige HTTPS público. Passo a passo em [`docs/04-configuracao-de-integracoes.md`](docs/04-configuracao-de-integracoes.md) (seção 3).
 
 ## Backup e restauração
 
