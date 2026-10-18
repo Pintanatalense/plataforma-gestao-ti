@@ -468,3 +468,20 @@ Decisão do §14.1: **Meta Cloud API**. O adapter Evolution **não foi implement
 | Templates | "migração de templates" | `wa_templates` (respostas rápidas do técnico) **ficou**, com os mesmos endpoints; o envio "a partir do chamado" agora cria uma entrega no hub e só vai a quem **vinculou** o WhatsApp (telefone do cadastro não é endereço verificado) |
 
 Limites conhecidos: os *status* de entrega do webhook (`sent/delivered/read/failed`) são aceitos e ignorados — o resultado vem da resposta síncrona da API; mensagens não textuais (áudio, imagem) são ignoradas sem resposta; o limitador por remetente do webhook é por processo da API (4 workers), logo mais frouxo que o do Telegram; sem teste contra a Meta real (somente transporte simulado).
+
+---
+
+## 19. Registro de implementação — Fase E (Slack)
+
+| Tema | Decidido | Feito |
+|---|---|---|
+| Canal | adapter `slack` via Web API (`httpx`, sem SDK) | `channels/slack.py`: `chat.postMessage` para o id do usuário (DM do app); `auth.test` como health; config/segredos em `channel_configs` |
+| Entrada | Events API + Signing Secret | `slack_webhook.py`, `POST /integrations/slack/events`: `v0=HMAC-SHA256(secret, "v0:{ts}:{corpo bruto}")` em tempo constante, janela de **5 min** contra replay (401), `url_verification` só responde se assinado, 404 se o canal está desabilitado |
+| Escopo das mensagens | conversa | só `message.im` de pessoas: `bot_id`, `subtype` (edição, remoção) e mensagens de canal são ignorados; resposta do bot vira entrega, nunca vai no corpo |
+| Dedupe | reentrega do Slack | chave `canal:ts` em `inbound_messages`; o Slack reenvia sem 2xx em 3 s, e a reentrega não repete efeito |
+| Erros | retentativa | `ratelimited`/429 → retentável com `Retry-After`; `invalid_auth`/`token_revoked`/`missing_scope` → retentável (corrigir a config destrava); `user_not_found`/`is_archived`/`cannot_dm_bot`... → permanente |
+| Formatação | — | título em negrito (`*…*`), link no formato `<url|texto>`, limite de 3500 caracteres |
+| Vínculo | código de uso único | o mesmo dos demais; comando `vincular CÓDIGO` na DM do app |
+| UI | — | cartão "Slack" em Saúde dos canais com a Request URL pronta; "Meus canais" passou a mostrar o código **só no canal para o qual foi gerado** (antes, com 2 canais, o código aparecia em todos) |
+
+Limites conhecidos: sem Socket Mode (exige HTTPS público, como o WhatsApp); sem botões/blocos interativos; só DMs; o limitador por remetente é por processo da API; sem teste contra o Slack real (transporte simulado).

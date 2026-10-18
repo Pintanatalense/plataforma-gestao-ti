@@ -81,3 +81,22 @@ Cada pessoa vai em Notificações > Minhas preferências, gera o código do What
 
 ### 2.6. Envio a partir do chamado
 O botão "WhatsApp" do chamado (respostas rápidas com templates do sistema) cria uma entrega no hub para o solicitante, **se ele tiver vinculado o WhatsApp**; senão o sistema explica o que falta. O envio fica registrado no histórico do chamado.
+
+---
+
+## 3. Slack
+
+### 3.1. O que você precisa no Slack
+Um app em api.slack.com/apps, instalado no workspace, com:
+1. **Escopos do bot** (OAuth & Permissions): `chat:write` e `im:history`. Copie o *Bot User OAuth Token* (`xoxb-…`).
+2. **App Home → Messages Tab** ligada e "Allow users to send Slash commands and messages from the messages tab" marcada (sem isso as pessoas não conseguem conversar com o app).
+3. **Event Subscriptions** ligado, com o evento de bot `message.im`. O *Signing Secret* está em Basic Information.
+
+### 3.2. Configuração no sistema
+Notificações > Entregas e regras > Saúde dos canais > Slack: cole o token e o Signing Secret, informe o endereço público do sistema e salve. O sistema valida o token em `auth.test` antes de gravar. Segredos ficam cifrados e nunca voltam pela API.
+
+### 3.3. Request URL (exige HTTPS público)
+No Slack, em Event Subscriptions, informe `https://SEU-DOMINIO/api/v1/integrations/slack/events`. O Slack envia um `url_verification`; o sistema só responde se a assinatura for válida (por isso salve e **habilite** o canal antes). Requisições sem assinatura válida ou com mais de 5 minutos recebem 401.
+
+### 3.4. Vínculo das pessoas
+Cada pessoa gera o código em Notificações > Minhas preferências e envia `vincular CÓDIGO` em **conversa direta com o app** no Slack. O endereço guardado é o id do usuário Slack (`U…`). Mensagens de canais, de bots e edições são ignoradas.

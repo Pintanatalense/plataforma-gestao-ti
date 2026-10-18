@@ -20,6 +20,8 @@ from app.core.dependencies import get_current_user_id, require_permission
 from app.core.exceptions import BusinessRuleException
 from app.database import get_db
 from app.notifications.channel_store import StoredChannel, load_channel, save_channel
+from app.notifications.channels.slack import SLACK_CHANNEL
+from app.notifications.channels.slack import api_call as slack_api_call
 from app.notifications.channels.telegram import TELEGRAM_CHANNEL, api_call
 from app.notifications.channels.whatsapp import DEFAULT_GRAPH_VERSION, WHATSAPP_CHANNEL, error_info, graph_call
 from app.notifications.linking import create_link_code, unlink
@@ -32,7 +34,7 @@ CurrentUser = Annotated[uuid.UUID, Depends(get_current_user_id)]
 Manage = Depends(require_permission("notifications.manage"))
 MASKED = "********"
 
-LABELS = {TELEGRAM_CHANNEL: "Telegram", WHATSAPP_CHANNEL: "WhatsApp"}
+LABELS = {TELEGRAM_CHANNEL: "Telegram", WHATSAPP_CHANNEL: "WhatsApp", SLACK_CHANNEL: "Slack"}
 
 
 def is_ready(channel: str, stored: StoredChannel | None) -> bool:
@@ -41,6 +43,8 @@ def is_ready(channel: str, stored: StoredChannel | None) -> bool:
         return False
     if channel == TELEGRAM_CHANNEL:
         return bool(stored.secrets.get("bot_token"))
+    if channel == SLACK_CHANNEL:
+        return bool(stored.secrets.get("bot_token") and stored.secrets.get("signing_secret"))
     return bool(
         stored.secrets.get("access_token") and stored.secrets.get("app_secret") and stored.config.get("phone_number_id")
     )
@@ -73,6 +77,7 @@ async def my_channels(db: DB, user_id: CurrentUser):
                 "label": label,
                 "available": is_ready(channel, stored),
                 "bot_username": stored.config.get("bot_username") if stored and channel == TELEGRAM_CHANNEL else None,
+                "bot_name": stored.config.get("bot_name") if stored and channel == SLACK_CHANNEL else None,
                 "display_phone": stored.config.get("display_phone") if stored and channel == WHATSAPP_CHANNEL else None,
                 "linked": bool(address and address.verified_at),
                 "linked_at": address.verified_at if address else None,
@@ -273,3 +278,71 @@ async def update_whatsapp_config(body: WhatsAppConfigIn, db: DB, user_id: Curren
     await _audit_config(db, WHATSAPP_CHANNEL, body.enabled, user_id)
     await db.commit()
     return _whatsapp_out(await load_channel(db, WHATSAPP_CHANNEL))
+
+
+# --- Slack (administração) ------------------------------------------------------------------------
+
+
+class SlackConfigIn(BaseModel):
+    enabled: bool = False
+    bot_token: str = Field("", max_length=300)  # vazio ou mascarado = manter o atual
+    signing_secret: str = Field("", max_length=200)  # idem
+    app_base_url: str = Field("", max_length=255)
+
+
+class SlackConfigOut(BaseModel):
+    enabled: bool
+    bot_token: str
+    signing_secret: str
+    app_base_url: str
+    bot_name: str | None
+    team_name: str | None
+    events_path: str = "/api/v1/integrations/slack/events"
+
+
+def _slack_out(stored: StoredChannel | None) -> SlackConfigOut:
+    cfg = stored.config if stored else {}
+    secrets_ = stored.secrets if stored else {}
+    return SlackConfigOut(
+        enabled=bool(stored and stored.enabled),
+        bot_token=MASKED if secrets_.get("bot_token") else "",
+        signing_secret=MASKED if secrets_.get("signing_secret") else "",
+        app_base_url=cfg.get("app_base_url", ""),
+        bot_name=cfg.get("bot_name"),
+        team_name=cfg.get("team_name"),
+    )
+
+
+@router.get("/slack/config", response_model=SlackConfigOut, dependencies=[Manage])
+async def get_slack_config(db: DB):
+    return _slack_out(await load_channel(db, SLACK_CHANNEL))
+
+
+@router.put("/slack/config", response_model=SlackConfigOut, dependencies=[Manage])
+async def update_slack_config(body: SlackConfigIn, db: DB, user_id: CurrentUser):
+    current = await load_channel(db, SLACK_CHANNEL)
+    old = current.secrets if current else {}
+
+    def keep(new: str, key: str) -> str:
+        new = new.strip()
+        return old.get(key, "") if (not new or new == MASKED) else new
+
+    token, signing = keep(body.bot_token, "bot_token"), keep(body.signing_secret, "signing_secret")
+    if body.enabled and not (token and signing):
+        raise BusinessRuleException("Para habilitar o Slack informe o token do bot e o Signing Secret.")
+
+    cfg = dict(current.config) if current else {}
+    if token and token != old.get("bot_token"):
+        # Token novo: valida em auth.test antes de gravar e descobre o nome do app e do workspace.
+        status, resp = await slack_api_call(token, "auth.test")
+        if status != 200 or not resp.get("ok"):
+            raise BusinessRuleException(f"O Slack recusou o token: {resp.get('error', 'sem resposta')}")
+        cfg["bot_name"] = resp.get("user")
+        cfg["team_name"] = resp.get("team")
+
+    cfg["app_base_url"] = body.app_base_url.strip()
+    secrets_ = {k: v for k, v in {"bot_token": token, "signing_secret": signing}.items() if v}
+    await save_channel(db, SLACK_CHANNEL, body.enabled, cfg, secrets_)
+    await _audit_config(db, SLACK_CHANNEL, body.enabled, user_id)
+    await db.commit()
+    return _slack_out(await load_channel(db, SLACK_CHANNEL))

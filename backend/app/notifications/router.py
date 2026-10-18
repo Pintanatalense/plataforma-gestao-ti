@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/notifications", tags=["Notificações"])
 
 WS_TICKET_TTL = timedelta(seconds=60)
-EXTERNAL_CHANNELS = ("email", "telegram", "whatsapp")
+EXTERNAL_CHANNELS = ("email", "telegram", "whatsapp", "slack")
 
 
 def get_notification_service(db: Annotated[AsyncSession, Depends(get_db)]) -> NotificationService:

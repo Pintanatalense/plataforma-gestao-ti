@@ -117,6 +117,18 @@ export interface WhatsAppConfig {
   webhook_path: string;
 }
 
+export interface SlackConfig {
+  enabled: boolean;
+  bot_token: string;
+  signing_secret: string;
+  app_base_url: string;
+  bot_name: string | null;
+  team_name: string | null;
+  events_path: string;
+}
+
+export type SlackConfigInput = Pick<SlackConfig, 'enabled' | 'bot_token' | 'signing_secret' | 'app_base_url'>;
+
 export type WhatsAppConfigInput = Omit<WhatsAppConfig, 'display_phone' | 'verified_name' | 'verify_token' | 'webhook_path'>;
 
 @Injectable({ providedIn: 'root' })
@@ -186,6 +198,14 @@ export class NotificationsAdminService {
 
   saveWhatsAppConfig(config: WhatsAppConfigInput): Observable<WhatsAppConfig> {
     return this.http.put<WhatsAppConfig>('/api/v1/notifications/whatsapp/config', config);
+  }
+
+  getSlackConfig(): Observable<SlackConfig> {
+    return this.http.get<SlackConfig>('/api/v1/notifications/slack/config');
+  }
+
+  saveSlackConfig(config: SlackConfigInput): Observable<SlackConfig> {
+    return this.http.put<SlackConfig>('/api/v1/notifications/slack/config', config);
   }
 
   listJobs(): Observable<{ items: JobItem[] }> {
