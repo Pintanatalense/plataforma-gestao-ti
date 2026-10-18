@@ -13,7 +13,7 @@ DEFAULT_RULES: list[dict] = [
         "name": "Novo chamado → atendentes do setor responsável",
         "event_type": "ticket.created",
         "audience": ["sector_attendants"],
-        "channels": ["in_app", "email"],
+        "channels": ["in_app", "email", "preferred"],
         "template_code": "ticket.created.staff",
     },
     {
@@ -22,7 +22,7 @@ DEFAULT_RULES: list[dict] = [
         "event_type": "ticket.created",
         "condition": {"exclude_actor": False},
         "audience": ["requester"],
-        "channels": ["in_app", "email"],
+        "channels": ["in_app", "email", "preferred"],
         "template_code": "ticket.created.requester",
     },
     {
@@ -30,7 +30,7 @@ DEFAULT_RULES: list[dict] = [
         "name": "Chamado atribuído → atendente designado",
         "event_type": "ticket.assigned",
         "audience": ["assignee"],
-        "channels": ["in_app", "email"],
+        "channels": ["in_app", "email", "preferred"],
         "template_code": "ticket.assigned",
     },
     {
@@ -38,7 +38,7 @@ DEFAULT_RULES: list[dict] = [
         "name": "Chamado atribuído → solicitante",
         "event_type": "ticket.assigned",
         "audience": ["requester"],
-        "channels": ["in_app"],
+        "channels": ["in_app", "preferred"],
         "template_code": "ticket.assigned",
     },
     {
@@ -46,7 +46,7 @@ DEFAULT_RULES: list[dict] = [
         "name": "Mudança de status → solicitante e atendente",
         "event_type": "ticket.status_changed",
         "audience": ["requester", "assignee"],
-        "channels": ["in_app"],
+        "channels": ["in_app", "preferred"],
         "template_code": "ticket.status_changed",
     },
     {
@@ -54,7 +54,7 @@ DEFAULT_RULES: list[dict] = [
         "name": "Nova interação → outro lado do atendimento (nota interna só equipe)",
         "event_type": "ticket.interaction_added",
         "audience": ["counterpart"],
-        "channels": ["in_app", "email"],
+        "channels": ["in_app", "email", "preferred"],
         "template_code": "ticket.interaction_added",
     },
     {

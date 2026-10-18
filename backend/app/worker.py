@@ -23,6 +23,7 @@ from app.notifications.jobs import ensure_default_jobs, run_due_jobs
 from app.notifications.models import WorkerHeartbeat
 from app.notifications.outbox import OUTBOX_CHANNEL
 from app.notifications.rules_seed import seed_notification_rules
+from app.notifications.telegram_poller import poll_forever
 
 logger = logging.getLogger("worker")
 
@@ -88,6 +89,8 @@ async def run(stop: asyncio.Event) -> None:
     listener = None
     if engine.dialect.name == "postgresql":
         listener = asyncio.create_task(listen_for_wakeups(wake, stop))
+    # Entrada do Telegram (long polling): fica ociosa enquanto o canal está desabilitado.
+    poller = asyncio.create_task(poll_forever(AsyncSessionLocal, stop, wake))
 
     last_beat = datetime.min.replace(tzinfo=timezone.utc)
     last_recover = last_beat
@@ -125,6 +128,7 @@ async def run(stop: asyncio.Event) -> None:
     finally:
         if listener:
             listener.cancel()
+        poller.cancel()
 
 
 async def healthcheck() -> int:

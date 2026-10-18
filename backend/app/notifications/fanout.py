@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.notifications.audience import resolve_audience
 from app.notifications.channels import ADAPTERS
+from app.notifications.linking import load_addresses
 from app.notifications.models import ChannelConfig, Delivery, DomainEvent, NotificationRule
 from app.notifications.outbox import PRIORITY_RANK
 from app.notifications.prefs import Prefs, allows, load_prefs, quiet_until
@@ -21,6 +22,8 @@ from app.notifications.templates import render
 logger = logging.getLogger(__name__)
 
 ALWAYS_ENABLED_CHANNELS = {"in_app"}
+# Pseudo-canal de regra: expande para cada canal externo VERIFICADO da pessoa (ex.: Telegram vinculado).
+PREFERRED = "preferred"
 
 
 def rule_matches_event(rule: NotificationRule, event: DomainEvent) -> bool:
@@ -55,6 +58,7 @@ class PlannedDelivery:
     rule: NotificationRule
     user_id: object
     email: str
+    address: str
     channel: str
     message: dict
     next_attempt_at: datetime
@@ -73,10 +77,15 @@ async def plan_event(
         exclude_actor = (rule.condition or {}).get("exclude_actor", True)
         audience = await resolve_audience(session, event, list(rule.audience or []), exclude_actor)
         message = render(rule.template_code, event.payload or {}, event.priority).to_dict()
-        prefs_by_user = await load_prefs(session, {m.user_id for m in audience})
+        member_ids = {m.user_id for m in audience}
+        prefs_by_user = await load_prefs(session, member_ids)
+        linked = await load_addresses(session, member_ids) if PREFERRED in (rule.channels or []) else {}
         for member in audience:
             prefs = prefs_by_user.get(member.user_id, Prefs())
-            for channel in rule.channels or []:
+            external = linked.get(member.user_id, {})
+            wanted = [c for c in rule.channels or [] if c != PREFERRED]
+            wanted += [c for c in external if c not in wanted] if PREFERRED in (rule.channels or []) else []
+            for channel in wanted:
                 if channel not in ADAPTERS or channel not in channels_on:
                     logger.debug("Canal %s indisponível; regra %s ignorada para %s", channel, rule.name, member.user_id)
                     continue
@@ -87,9 +96,17 @@ async def plan_event(
                 seen.add((str(member.user_id), channel))
                 # Fora do horário de silêncio o e-mail espera o fim da janela; in-app é imediato.
                 when = now if channel == "in_app" else (quiet_until(prefs, now, event.priority) or now)
+                if channel == "email":
+                    address = member.email
+                elif channel == "in_app":
+                    address = str(member.user_id)
+                elif channel in external:
+                    address = external[channel]
+                else:
+                    continue  # canal externo sem endereço verificado para esta pessoa
                 planned.append(
                     PlannedDelivery(
-                        rule, member.user_id, member.email, channel, message, when,
+                        rule, member.user_id, member.email, address, channel, message, when,
                         make_idempotency_key(event.id, rule.id, member.user_id, channel),
                     )
                 )
@@ -130,7 +147,7 @@ async def fan_out_batch(session: AsyncSession, limit: int = 50) -> int:
                     rule_id=plan.rule.id,
                     recipient_user_id=plan.user_id,
                     channel=plan.channel,
-                    address=plan.email if plan.channel == "email" else str(plan.user_id),
+                    address=plan.address,
                     priority=event.priority,
                     message=plan.message,
                     next_attempt_at=plan.next_attempt_at,

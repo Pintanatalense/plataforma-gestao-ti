@@ -236,9 +236,9 @@ class RuleIn(BaseModel):
     @field_validator("channels")
     @classmethod
     def _channels(cls, value: list[str]) -> list[str]:
-        invalid = [c for c in value if c not in ADAPTERS]
+        invalid = [c for c in value if c not in ADAPTERS and c != "preferred"]
         if invalid:
-            raise ValueError(f"Canais desconhecidos: {invalid}. Disponíveis: {sorted(ADAPTERS)}")
+            raise ValueError(f"Canais desconhecidos: {invalid}. Disponíveis: {sorted(ADAPTERS)} e 'preferred'")
         return value
 
     @field_validator("template_code")
@@ -277,7 +277,7 @@ async def list_rules(db: DB):
     return {
         "items": [_rule_out(r) for r in rules],
         "options": {
-            "channels": sorted(ADAPTERS),
+            "channels": [*sorted(ADAPTERS), "preferred"],
             "templates": ["generic", *sorted(TEMPLATES)],
             "selectors": [*sorted(FIXED_SELECTORS), "role:<perfil>", "user:<id>"],
         },
