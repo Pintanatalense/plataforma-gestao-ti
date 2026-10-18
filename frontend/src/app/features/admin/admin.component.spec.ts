@@ -31,9 +31,16 @@ describe('AdminComponent', () => {
 
   it('should start on tab 0 and initialize default configs', () => {
     expect(component.activeTabIndex).toBe(0);
-    expect(component.waConfig.provider).toBe('EVOLUTION_API');
+    expect(component.waActiveSubTab).toBe('templates'); // o canal WhatsApp saiu daqui (ADR-013 fase D)
     expect(component.importStep).toBe(1);
     expect(component.exportEntity).toBe('tickets');
+  });
+
+  it('no longer carries the legacy WhatsApp bot, anti-ban or outbox state', () => {
+    const legacy = ['waConfig', 'outboxItems', 'outboxStats', 'qrData', 'waIntegrationStatus', 'togglingKillSwitch'];
+    for (const key of legacy) {
+      expect(key in component).toBe(false);
+    }
   });
 
   it('should format bytes cleanly', () => {

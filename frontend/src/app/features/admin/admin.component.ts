@@ -16,20 +16,14 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 
 import {
   AdminService,
-  WhatsAppConfig,
-  WhatsAppConfigUpdate,
   WhatsAppTemplate,
-  WhatsAppOutboxItem,
-  WhatsAppOutboxStats,
   CsvAnalysisResponse,
   CsvImportResult,
   DbBackup,
   CsvExportRequest,
   DemoStatus,
   DemoCleanPreview,
-  SmtpConfig,
-  WhatsAppIntegrationStatus,
-  WhatsAppQrCodeResponse
+  SmtpConfig
 } from '../../core/services/admin.service';
 
 
@@ -63,33 +57,8 @@ export class AdminComponent implements OnInit {
   activeTabIndex = 0;
   currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
 
-  // --- WhatsApp State ---
-  waActiveSubTab: 'gateway' | 'antiban' | 'templates' | 'outbox' = 'gateway';
-  loadingWaConfig = false;
-  waConfig: WhatsAppConfig = {
-    provider: 'EVOLUTION_API',
-    is_enabled: true,
-    api_url: 'http://evolution-api:8080',
-    instance_name: 'gestao_ti',
-    welcome_message: 'Olá! Bem-vindo ao atendimento de TI via WhatsApp.',
-    anti_ban_enabled: true,
-    min_delay_seconds: 4,
-    max_delay_seconds: 10,
-    simulate_typing: true,
-    typing_duration_seconds: 2,
-    max_messages_per_minute: 12,
-    cooldown_per_recipient_seconds: 15,
-    emergency_pause: false
-  };
-  waApiKeyInput = '';
-  waWebhookSecretInput = '';
-  testPhone = '';
-  testMessage = 'Olá! Esta é uma mensagem de teste da Plataforma de Gestão de TI.';
-  testingSend = false;
-  testFeedback: { success: boolean; message: string } | null = null;
-  togglingKillSwitch = false;
-
-  // --- WhatsApp Templates State ---
+  // --- WhatsApp: respostas rápidas (o canal em si fica em Notificações > Entregas e regras) ---
+  waActiveSubTab: 'templates' = 'templates';
   templates: WhatsAppTemplate[] = [];
   loadingTemplates = false;
   showTemplateModal = false;
@@ -117,14 +86,6 @@ export class AdminComponent implements OnInit {
     { tag: '{{hora}}', desc: 'Hora atual (HH:MM)' }
   ];
   savingTemplate = false;
-
-  // --- WhatsApp Outbox State ---
-  outboxItems: WhatsAppOutboxItem[] = [];
-  outboxStats: WhatsAppOutboxStats | null = null;
-  loadingOutbox = false;
-  outboxStatusFilter = '';
-  processingOutbox = false;
-
 
   // --- CSV Import State ---
   importStep = 1;
@@ -178,19 +139,8 @@ export class AdminComponent implements OnInit {
   testingSmtp = false;
   smtpTestFeedback: { success: boolean; message: string } | null = null;
 
-  // --- WhatsApp Status & QR Code (Evolution API) ---
-  waIntegrationStatus: WhatsAppIntegrationStatus | null = null;
-  loadingWaStatus = false;
-  showQrModal = false;
-  qrData: WhatsAppQrCodeResponse | null = null;
-  loadingQr = false;
-
   ngOnInit(): void {
-    this.loadWaConfig();
-    this.loadWaStatus();
     this.loadTemplates();
-    this.loadOutboxStats();
-    this.loadOutbox();
     this.loadBackups();
     this.loadDemoStatus();
     this.loadSmtpConfig();
@@ -199,108 +149,6 @@ export class AdminComponent implements OnInit {
   // ==========================================
   // WHATSAPP METHODS
   // ==========================================
-  loadWaConfig(): void {
-    this.loadingWaConfig = true;
-    this.adminService.getWhatsAppConfig().subscribe({
-      next: (cfg) => {
-        this.waConfig = cfg;
-        this.loadingWaConfig = false;
-        this.cdr.markForCheck();
-      },
-      error: () => {
-        this.loadingWaConfig = false;
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  saveWaConfig(): void {
-    this.loadingWaConfig = true;
-    const updateData: WhatsAppConfigUpdate = {
-      is_enabled: this.waConfig.is_enabled,
-      provider: this.waConfig.provider,
-      api_url: this.waConfig.api_url || '',
-      instance_name: this.waConfig.instance_name || '',
-      welcome_message: this.waConfig.welcome_message || '',
-      anti_ban_enabled: this.waConfig.anti_ban_enabled,
-      min_delay_seconds: this.waConfig.min_delay_seconds,
-      max_delay_seconds: this.waConfig.max_delay_seconds,
-      simulate_typing: this.waConfig.simulate_typing,
-      typing_duration_seconds: this.waConfig.typing_duration_seconds,
-      max_messages_per_minute: this.waConfig.max_messages_per_minute,
-      cooldown_per_recipient_seconds: this.waConfig.cooldown_per_recipient_seconds,
-      emergency_pause: this.waConfig.emergency_pause
-    };
-
-    if (this.waApiKeyInput) {
-      updateData.api_key = this.waApiKeyInput;
-    }
-    if (this.waWebhookSecretInput) {
-      updateData.webhook_secret = this.waWebhookSecretInput;
-    }
-
-    this.adminService.updateWhatsAppConfig(updateData).subscribe({
-      next: (saved) => {
-        this.waConfig = saved;
-        this.waApiKeyInput = '';
-        this.waWebhookSecretInput = '';
-        this.loadingWaConfig = false;
-        this.snackBar.open('Configurações e parâmetros Anti-Ban salvos com sucesso!', 'Fechar', { duration: 3500 });
-        this.loadOutboxStats();
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.loadingWaConfig = false;
-        const msg = err.error?.detail || 'Erro ao salvar configurações do WhatsApp';
-        this.snackBar.open(msg, 'Fechar', { duration: 4000 });
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  toggleEmergencyPause(): void {
-    this.togglingKillSwitch = true;
-    this.adminService.toggleEmergencyPause().subscribe({
-      next: (res) => {
-        this.waConfig.emergency_pause = res.emergency_pause;
-        this.togglingKillSwitch = false;
-        const msg = res.emergency_pause
-          ? 'KILL SWITCH ATIVADO: Todos os disparos da fila foram suspensos preventivamente.'
-          : 'Pausa emergencial desativada: Disparos da fila liberados com proteção anti-ban.';
-        this.snackBar.open(msg, 'OK', { duration: 4500 });
-        this.loadOutboxStats();
-        this.cdr.markForCheck();
-      },
-      error: () => {
-        this.togglingKillSwitch = false;
-        this.snackBar.open('Erro ao alternar o Kill Switch.', 'Fechar', { duration: 3000 });
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  sendTestWhatsApp(): void {
-    if (!this.testPhone) return;
-    this.testingSend = true;
-    this.testFeedback = null;
-
-    this.adminService.testSendWhatsApp(this.testPhone, this.testMessage).subscribe({
-      next: (res) => {
-        this.testingSend = false;
-        this.testFeedback = { success: true, message: `Mensagem enviada com sucesso para ${res.to_phone}!` };
-        this.snackBar.open('Mensagem de teste disparada!', 'OK', { duration: 3500 });
-        this.cdr.markForCheck();
-      },
-      error: (err) => {
-        this.testingSend = false;
-        const detail = err.error?.detail || err.message || 'Falha ao conectar com o gateway do WhatsApp';
-        this.testFeedback = { success: false, message: `Erro no envio: ${detail}` };
-        this.snackBar.open(`Falha: ${detail}`, 'Fechar', { duration: 4500 });
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
   // --- Templates Methods ---
   loadTemplates(): void {
     this.loadingTemplates = true;
@@ -423,75 +271,6 @@ export class AdminComponent implements OnInit {
     }
     return sample;
   }
-
-  // --- Outbox Queue Methods ---
-  loadOutbox(): void {
-    this.loadingOutbox = true;
-    this.adminService.getWhatsAppOutbox(this.outboxStatusFilter || undefined).subscribe({
-      next: (items) => {
-        this.outboxItems = items;
-        this.loadingOutbox = false;
-        this.cdr.markForCheck();
-      },
-      error: () => {
-        this.loadingOutbox = false;
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  loadOutboxStats(): void {
-    this.adminService.getWhatsAppOutboxStats().subscribe({
-      next: (stats) => {
-        this.outboxStats = stats;
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  processOutboxNow(): void {
-    this.processingOutbox = true;
-    this.adminService.processWhatsAppOutbox(15).subscribe({
-      next: (res) => {
-        this.processingOutbox = false;
-        this.snackBar.open(res.message, 'OK', { duration: 4000 });
-        this.loadOutbox();
-        this.loadOutboxStats();
-      },
-      error: (err) => {
-        this.processingOutbox = false;
-        this.snackBar.open(err.error?.detail || 'Erro ao processar fila.', 'Fechar', { duration: 3500 });
-        this.cdr.markForCheck();
-      }
-    });
-  }
-
-  cancelOutboxItem(id: string): void {
-    this.adminService.cancelWhatsAppOutboxItem(id).subscribe({
-      next: () => {
-        this.snackBar.open('Envio cancelado.', 'OK', { duration: 2500 });
-        this.loadOutbox();
-        this.loadOutboxStats();
-      },
-      error: () => {
-        this.snackBar.open('Não foi possível cancelar este item.', 'Fechar', { duration: 3000 });
-      }
-    });
-  }
-
-  retryOutboxItem(id: string): void {
-    this.adminService.retryWhatsAppOutboxItem(id).subscribe({
-      next: () => {
-        this.snackBar.open('Item reagendado na fila!', 'OK', { duration: 2500 });
-        this.loadOutbox();
-        this.loadOutboxStats();
-      },
-      error: () => {
-        this.snackBar.open('Não foi possível reagendar este item.', 'Fechar', { duration: 3000 });
-      }
-    });
-  }
-
 
   // ==========================================
   // CSV IMPORT WIZARD METHODS
@@ -829,46 +608,6 @@ export class AdminComponent implements OnInit {
         this.smtpTestFeedback = { success: false, message: msg };
       }
     });
-  }
-
-  // ==========================================
-  // WHATSAPP STATUS & QR CODE (EVOLUTION API)
-  // ==========================================
-  loadWaStatus(): void {
-    this.loadingWaStatus = true;
-    this.adminService.getWhatsAppIntegrationStatus().subscribe({
-      next: (status) => {
-        this.waIntegrationStatus = status;
-        this.loadingWaStatus = false;
-        this.cdr.detectChanges();
-      },
-      error: () => {
-        this.loadingWaStatus = false;
-      }
-    });
-  }
-
-  openQrModal(): void {
-    this.showQrModal = true;
-    this.loadingQr = true;
-    this.qrData = null;
-    this.adminService.getWhatsAppQrCode().subscribe({
-      next: (res) => {
-        this.qrData = res;
-        this.loadingQr = false;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.loadingQr = false;
-        const msg = err.error?.detail || 'Falha ao buscar QR Code da Evolution API.';
-        this.snackBar.open(msg, 'Fechar', { duration: 4000 });
-      }
-    });
-  }
-
-  closeQrModal(): void {
-    this.showQrModal = false;
-    this.loadWaStatus();
   }
 
   // ==========================================

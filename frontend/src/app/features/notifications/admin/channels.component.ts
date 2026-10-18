@@ -8,7 +8,7 @@ import { HealthResponse, JobItem, NotificationsAdminService } from '../../../cor
 
 const REFRESH_MS = 15_000;
 
-export const CHANNEL_NAMES: Record<string, string> = { in_app: 'Caixa de entrada', email: 'E-mail' };
+export const CHANNEL_NAMES: Record<string, string> = { in_app: 'Caixa de entrada', email: 'E-mail', telegram: 'Telegram', whatsapp: 'WhatsApp' };
 export const WORKER_LABELS: Record<string, string> = {
   healthy: 'Funcionando',
   stale: 'Sem sinal (parado há mais de 1 min)',

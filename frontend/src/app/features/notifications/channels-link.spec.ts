@@ -5,6 +5,7 @@ import { ChannelLinkInfo, NotificationsService } from '../../core/services/notif
 import { NotificationsAdminService } from '../../core/services/notifications-admin.service';
 import { MyChannelsComponent, minutesLeft } from './preferences/my-channels.component';
 import { TelegramConfigComponent } from './admin/telegram-config.component';
+import { WhatsAppConfigComponent, webhookUrl } from './admin/whatsapp-config.component';
 
 const TELEGRAM: ChannelLinkInfo = {
   channel: 'telegram', label: 'Telegram', available: true, bot_username: 'gti_bot', linked: false, linked_at: null
@@ -127,5 +128,55 @@ describe('TelegramConfigComponent', () => {
     const api = { getTelegramConfig: vi.fn().mockReturnValue(throwError(() => new Error('x'))) };
     const fixture = await mount(TelegramConfigComponent, [{ provide: NotificationsAdminService, useValue: api }]);
     expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain('Não foi possível carregar');
+  });
+});
+
+describe('WhatsAppConfigComponent', () => {
+  const CONFIG = {
+    enabled: false, access_token: '', app_secret: '', phone_number_id: '', graph_version: 'v21.0', template_name: '',
+    template_language: 'pt_BR', app_base_url: '', display_phone: null, verified_name: null,
+    verify_token: 'tok-123', webhook_path: '/api/v1/integrations/whatsapp/webhook'
+  };
+  const provide = (api: object) => [{ provide: NotificationsAdminService, useValue: api }];
+
+  it('builds the webhook URL from the current origin', () => {
+    expect(webhookUrl('/api/v1/integrations/whatsapp/webhook', 'https://ti.x/')).toBe('https://ti.x/api/v1/integrations/whatsapp/webhook');
+  });
+
+  it('shows what to register at Meta (callback URL, verify token, signed field)', async () => {
+    const api = { getWhatsAppConfig: vi.fn().mockReturnValue(of(CONFIG)) };
+    const fixture = await mount(WhatsAppConfigComponent, provide(api));
+    const box = fixture.nativeElement.querySelector('[data-testid="wa-webhook"]').textContent;
+    expect(box).toContain('/api/v1/integrations/whatsapp/webhook');
+    expect(box).toContain('tok-123');
+    expect(box).toContain('messages');
+  });
+
+  it('keeps secrets as password fields and sends what the admin typed, trimmed', async () => {
+    const api = {
+      getWhatsAppConfig: vi.fn().mockReturnValue(of({ ...CONFIG, access_token: '********', app_secret: '********' })),
+      saveWhatsAppConfig: vi.fn().mockReturnValue(of({ ...CONFIG, enabled: true, access_token: '********', app_secret: '********' }))
+    };
+    const fixture = await mount(WhatsAppConfigComponent, provide(api));
+    expect((fixture.nativeElement.querySelector('[data-testid="wa-token"]') as HTMLInputElement).type).toBe('password');
+    expect((fixture.nativeElement.querySelector('[data-testid="wa-secret"]') as HTMLInputElement).type).toBe('password');
+
+    const c = fixture.componentInstance;
+    c.config.update((cfg) => ({ ...cfg!, enabled: true, phone_number_id: ' 1055 ', template_name: ' aviso_ti ' }));
+    c.save();
+    expect(api.saveWhatsAppConfig).toHaveBeenCalledWith({
+      enabled: true, access_token: '********', app_secret: '********', phone_number_id: '1055', graph_version: 'v21.0',
+      template_name: 'aviso_ti', template_language: 'pt_BR', app_base_url: ''
+    });
+  });
+
+  it('shows the Meta refusal and keeps the form', async () => {
+    const err = { error: { error: { message: 'A Meta recusou o token ou o Phone Number ID: Invalid OAuth access token' } } };
+    const api = { getWhatsAppConfig: vi.fn().mockReturnValue(of(CONFIG)), saveWhatsAppConfig: vi.fn().mockReturnValue(throwError(() => err)) };
+    const fixture = await mount(WhatsAppConfigComponent, provide(api));
+    fixture.componentInstance.save();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[role="alert"]').textContent).toContain('A Meta recusou');
+    expect(fixture.componentInstance.config()).not.toBeNull();
   });
 });
