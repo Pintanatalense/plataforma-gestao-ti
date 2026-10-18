@@ -431,3 +431,23 @@ Detalhes que valem registro:
 - **Jobs:** `backup.daily` (`daily:02:00`) e `retention.cleanup` (`daily:03:30`, 90 dias para eventos/entregas, 180 para notificações lidas). A próxima execução é gravada **antes** de rodar: um job que trava não repete em loop.
 - **Backup:** falha → `backup.failed` crítico para administradores (sino + e-mail); sucesso gera `backup.completed`, cuja regra nasce **desativada**. O dump continua só do banco.
 - **Testes:** SQLite cobre regras, audiência, DEC-012, backoff, circuito e jobs; PostgreSQL (`-m pg`) cobre dois dispatchers sem duplicar (`SKIP LOCKED`), dois fan-outs concorrentes, `NOTIFY` só após `COMMIT` e a migration com a senha SMTP legada.
+
+---
+
+## 17. Registro de implementação — Fase B e Fase C
+
+**Fase B (painel):** `notifications.manage`; API administrativa (entregas, reenvio/cancelamento, regras + simulador, saúde, agenda) e telas Angular (caixa de entrada, preferências, administração). Preferências por usuário com horário de silêncio (20h–07h, `critical` ignora) valem **só para canais externos**: a caixa de entrada nunca é suprimida nem adiada. O WebSocket passou a usar ticket de 60 s (`typ=ws`), rejeitado como token de API.
+
+**Fase C (Telegram):**
+
+| Tema | Decidido no ADR | Feito |
+|---|---|---|
+| Entrada | long polling (§14.6) | `telegram_poller.py` dentro do worker; offset recuperado de `inbound_messages`; **sem webhook** (a verificação por `X-Telegram-Bot-Api-Secret-Token` do §7.2 só será necessária se o modo webhook for adotado) |
+| Camada conversacional | `ConversationEngine` independente do transporte | `notifications/conversation/engine.py`; age **como o usuário vinculado** com as permissões atuais do banco; nota interna não existe pelo chat |
+| Vínculo | código de uso único, hash, 10 min, 5 tentativas | HMAC-SHA256 com `SECRET_KEY` (não SHA simples: o espaço de 6 caracteres cai em força bruta se o banco vazar); 5 gerações/hora/usuário; **5 tentativas erradas por remetente** bloqueiam 15 min; troca de chat exige novo código; chat de outra conta não é tomado |
+| Respostas do bot | `deliveries` do canal de origem | evento `conversation.reply` já expandido + entrega `high` sem silêncio; o conteúdo da conversa **não** fica no evento |
+| Notificação de saída | "canal preferido" | pseudo-canal `preferred` nas regras: expande para cada canal externo **verificado** da pessoa; a migration `l2a3b4c5d6e7` o acrescenta às regras padrão ainda existentes (edições do admin que já o tenham não duplicam) |
+| Dedupe | `inbound_messages (canal, id)` único | `update_id` do Telegram; reprocessar não repete efeito |
+| Limite por remetente | 20 msg/min | em memória no worker (1 processo, §4.5) |
+
+Fora do escopo desta fase: WhatsApp (Fase D, substitui `wa_*`), Slack (E), automações (F); grupos do Telegram são ignorados de propósito.

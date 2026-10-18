@@ -57,6 +57,17 @@ docker compose logs -f backend
 - **Chamados:** atendentes passam a ver apenas chamados do próprio setor, atribuídos a eles ou abertos por eles (quem precisa ver todos recebe `service_desk.tickets.read_all`).
 - **WhatsApp:** o webhook exige o cabeçalho `X-Webhook-Secret` igual ao segredo cadastrado em Administração; o vínculo de número por matrícula foi removido (cadastre o telefone no colaborador).
 
+## Notificações e Telegram
+
+- **Caixa de entrada e preferências:** menu Notificações. Avisos por e-mail respeitam o horário de silêncio de cada pessoa (padrão 20h–07h); falhas críticas (ex.: backup) ignoram o silêncio.
+- **Administração** (`notifications.manage`): Notificações → Entregas e regras — entregas com reenvio, regras com simulador, saúde dos canais e agenda do worker.
+- **Telegram (opcional, gratuito):**
+  1. No Telegram, converse com o `@BotFather`, crie o bot e copie o token.
+  2. Em Entregas e regras → Saúde dos canais → Telegram: cole o token, habilite e salve. O sistema valida o token e descobre o `@` do bot.
+  3. Cada pessoa vai em Notificações → Minhas preferências, gera o código e envia `/vincular CÓDIGO` ao bot.
+  4. A partir daí ela recebe avisos e pode abrir, consultar e responder chamados pelo chat, com as mesmas permissões que tem no sistema.
+  - A entrada usa *long polling* a partir do worker: não é preciso domínio, HTTPS nem porta aberta. O servidor só precisa de saída para `api.telegram.org`.
+
 ## Backup e restauração
 
 - Gerar: tela **Administração → Backups** (ou `POST /api/v1/system/backups/generate`). Cada arquivo `.sql.gz` tem SHA-256 registrado.
