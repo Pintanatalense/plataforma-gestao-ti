@@ -1,6 +1,6 @@
 import { Component, EventEmitter, OnInit, Output, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { MatToolbarModule } from '@angular/material/toolbar';
 import { MatIconModule } from '@angular/material/icon';
 import { MatButtonModule } from '@angular/material/button';
@@ -12,6 +12,7 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { HttpClient } from '@angular/common/http';
 import { AuthService } from '../../auth/auth.service';
 import { Notification, NotificationsService } from '../../services/notifications.service';
+import { notificationLink } from '../../../features/notifications/inbox/inbox.component';
 
 @Component({
   selector: 'app-header',
@@ -70,6 +71,8 @@ import { Notification, NotificationsService } from '../../services/notifications
             <p>Nenhuma notificação no momento</p>
           </div>
         </div>
+        <mat-divider></mat-divider>
+        <a mat-button class="see-all" routerLink="/notifications" data-testid="see-all">Ver todas</a>
       </mat-menu>
       
       <!-- User Profile Menu -->
@@ -352,6 +355,7 @@ export class HeaderComponent implements OnInit {
   authService = inject(AuthService);
   private notificationsService = inject(NotificationsService);
   private http = inject(HttpClient);
+  private router = inject(Router);
 
   notifications: Notification[] = [];
   unreadCount: number = 0;
@@ -362,8 +366,10 @@ export class HeaderComponent implements OnInit {
     this.checkDemoStatus();
     this.notificationsService.newNotification$.subscribe((notif) => {
       this.notifications.unshift(notif);
-      this.calculateUnread();
+      this.refreshUnread();
     });
+    // Após (re)conectar o WebSocket pode ter havido notificações perdidas: a REST é a fonte da verdade.
+    this.notificationsService.reconnected$.subscribe(() => this.loadNotifications());
   }
 
   checkDemoStatus(): void {
@@ -381,29 +387,35 @@ export class HeaderComponent implements OnInit {
     this.notificationsService.getNotifications(10).subscribe({
       next: (list) => {
         this.notifications = list;
-        this.calculateUnread();
+        this.refreshUnread();
       },
       error: () => {}
     });
   }
 
-  calculateUnread(): void {
-    this.unreadCount = this.notifications.filter((n) => !n.is_read).length;
+  /** O contador vem do servidor: a lista do menu tem só as 10 mais recentes. */
+  refreshUnread(): void {
+    this.notificationsService.unreadCount().subscribe({
+      next: (r) => (this.unreadCount = r.count),
+      error: () => (this.unreadCount = this.notifications.filter((n) => !n.is_read).length)
+    });
   }
 
   onNotificationClick(notif: Notification): void {
     if (!notif.is_read) {
       this.notificationsService.markAsRead(notif.id).subscribe(() => {
         notif.is_read = true;
-        this.calculateUnread();
+        this.refreshUnread();
       });
     }
+    const target = notificationLink(notif);
+    if (target) this.router.navigate(target);
   }
 
   markAllAsRead(): void {
     this.notificationsService.markAllAsRead().subscribe(() => {
       this.notifications.forEach((n) => (n.is_read = true));
-      this.calculateUnread();
+      this.refreshUnread();
     });
   }
 

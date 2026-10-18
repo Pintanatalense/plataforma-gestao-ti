@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.core.dependencies import require_permission
+from app.core.dependencies import require_any_permission
 from app.notifications.email_service import EmailService, SmtpConfigSchema, SmtpTestEmailRequest
 
 router = APIRouter(prefix="/notifications/email", tags=["Notificações — E-mail & SMTP"])
@@ -19,7 +19,7 @@ router = APIRouter(prefix="/notifications/email", tags=["Notificações — E-ma
     "/config",
     response_model=SmtpConfigSchema,
     summary="Obtém as configurações atuais de SMTP do sistema",
-    dependencies=[Depends(require_permission("system.backup.manage"))]
+    dependencies=[Depends(require_any_permission("notifications.manage", "system.backup.manage"))]
 )
 async def get_smtp_config(
     session: Annotated[AsyncSession, Depends(get_db)]
@@ -37,7 +37,7 @@ async def get_smtp_config(
     "/config",
     response_model=SmtpConfigSchema,
     summary="Atualiza as configurações de SMTP do sistema",
-    dependencies=[Depends(require_permission("system.backup.manage"))]
+    dependencies=[Depends(require_any_permission("notifications.manage", "system.backup.manage"))]
 )
 async def update_smtp_config(
     body: SmtpConfigSchema,
@@ -54,7 +54,7 @@ async def update_smtp_config(
 @router.post(
     "/test",
     summary="Testa a conectividade e realiza envio de validação para o e-mail informado",
-    dependencies=[Depends(require_permission("system.backup.manage"))]
+    dependencies=[Depends(require_any_permission("notifications.manage", "system.backup.manage"))]
 )
 async def test_smtp_connection(
     body: SmtpTestEmailRequest,

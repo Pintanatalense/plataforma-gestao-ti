@@ -27,7 +27,7 @@ DEFAULT_JOBS: dict[str, str] = {
 }
 
 
-def _timezone():
+def local_timezone():
     name = get_settings().APP_TIMEZONE
     try:
         return ZoneInfo(name)
@@ -43,7 +43,7 @@ def compute_next_run(schedule: str, now: datetime) -> datetime:
         return now + timedelta(minutes=max(int(arg), 1))
     if kind == "daily":
         hour, minute = (int(part) for part in arg.split(":"))
-        local_now = now.astimezone(_timezone())
+        local_now = now.astimezone(local_timezone())
         candidate = local_now.replace(hour=hour, minute=minute, second=0, microsecond=0)
         if candidate <= local_now:
             candidate += timedelta(days=1)

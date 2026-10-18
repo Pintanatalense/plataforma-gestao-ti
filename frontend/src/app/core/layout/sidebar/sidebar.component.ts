@@ -193,6 +193,14 @@ export class SidebarComponent implements OnInit {
       ]
     },
     {
+      title: 'Notificações',
+      items: [
+        { icon: 'notifications', label: 'Caixa de entrada', route: '/notifications' },
+        { icon: 'tune', label: 'Minhas preferências', route: '/notifications/preferences' },
+        { icon: 'send', label: 'Entregas e regras', route: '/notifications/admin', permission: 'notifications.manage' }
+      ]
+    },
+    {
       title: 'Service Desk',
       items: [
         { icon: 'forum', label: 'Chamados', route: '/service-desk' },

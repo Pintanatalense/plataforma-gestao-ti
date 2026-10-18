@@ -8,6 +8,7 @@ Os handlers convertem exceções em respostas HTTP padronizadas.
 from typing import Any
 
 from fastapi import FastAPI, Request, HTTPException, status
+from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -187,7 +188,8 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             "error": {
                 "code": "VALIDATION_ERROR",
                 "message": "Erro de validação nos dados enviados",
-                "details": exc.errors()
+                # ctx pode conter a exceção original (ValueError de field_validator): não é serializável.
+                "details": jsonable_encoder(exc.errors(), custom_encoder={Exception: str})
             }
         },
     )
