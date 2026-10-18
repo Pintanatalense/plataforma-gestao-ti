@@ -2,6 +2,7 @@
 # Makefile — Plataforma de Gestão de TI
 #
 # Comandos disponíveis:
+#   make install     - Instalação guiada (gera o .env, sobe e espera ficar pronto)
 #   make up          - Inicia todos os containers
 #   make down        - Para todos os containers
 #   make logs        - Mostra logs em tempo real
@@ -16,60 +17,63 @@
 #   make restore     - Restaura backup .sql.gz com a API parada (FILE="arquivo.sql.gz")
 # =============================================================================
 
-.PHONY: up down logs migrate migration seed test lint shell db-shell backup restore
+install:
+	@scripts/install.sh
+
+.PHONY: install up down logs migrate migration seed test lint shell db-shell backup restore
 
 # --- Docker ---
 up:
-	docker-compose up -d
+	docker compose up -d
 
 down:
-	docker-compose down
+	docker compose down
 
 logs:
-	docker-compose logs -f
+	docker compose logs -f
 
 rebuild:
-	docker-compose up -d --build
+	docker compose up -d --build
 
 # --- Banco de Dados ---
 migrate:
-	docker-compose exec backend alembic upgrade head
+	docker compose exec backend alembic upgrade head
 
 migration:
-	docker-compose exec backend alembic revision --autogenerate -m "$(MSG)"
+	docker compose exec backend alembic revision --autogenerate -m "$(MSG)"
 
 rollback:
-	docker-compose exec backend alembic downgrade -1
+	docker compose exec backend alembic downgrade -1
 
 db-shell:
-	docker-compose exec postgres psql -U postgres -d gestao_ti
+	docker compose exec postgres psql -U postgres -d gestao_ti
 
 # --- Seed ---
 seed:
-	docker-compose exec backend python -m app.seed
+	docker compose exec backend python -m app.seed
 
 seed-demo:
-	docker-compose exec backend python -m app.seed_demo --no-reset
+	docker compose exec backend python -m app.seed_demo --no-reset
 
 seed-reset:
-	docker-compose exec backend python -m app.seed_demo --reset
+	docker compose exec backend python -m app.seed_demo --reset
 
 seed-test:
-	docker-compose exec backend python -m app.seed_test
+	docker compose exec backend python -m app.seed_test
 
 seed-test-reset:
-	docker-compose exec backend python -m app.seed_test --reset
+	docker compose exec backend python -m app.seed_test --reset
 
 # --- Base de Testes e Homologação (Porta 55432 / gti_test) ---
 test-db-up:
-	docker-compose -f docker-compose.test.yml up -d
+	docker compose -f docker-compose.test.yml up -d
 
 test-db-down:
-	docker-compose -f docker-compose.test.yml down -v
+	docker compose -f docker-compose.test.yml down -v
 
 test-db-reset:
-	docker-compose -f docker-compose.test.yml down -v
-	docker-compose -f docker-compose.test.yml up -d
+	docker compose -f docker-compose.test.yml down -v
+	docker compose -f docker-compose.test.yml up -d
 
 # --- Testes ---
 test:
@@ -93,13 +97,13 @@ format:
 
 # --- Shell ---
 shell:
-	docker-compose exec backend /bin/bash
+	docker compose exec backend /bin/bash
 
 # --- Backup ---
 backup:
 	@echo "Gerando backup..."
 	@mkdir -p backups
-	docker-compose exec postgres pg_dump -U postgres gestao_ti > backups/backup_$$(date +%Y%m%d_%H%M%S).sql
+	docker compose exec postgres pg_dump -U postgres gestao_ti > backups/backup_$$(date +%Y%m%d_%H%M%S).sql
 	@echo "Backup concluído."
 
 restore:
