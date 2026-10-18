@@ -106,7 +106,7 @@ export class TicketDetailComponent implements OnInit {
   selectedAssetForAction: TicketAssetBrief | null = null;
   assetActionType: 'reserve' | 'deliver' | 'return' | 'inspect' | null = null;
 
-  // WhatsApp Quick Send & Anti-Ban
+  // WhatsApp: envio rápido ao solicitante (via hub de notificações)
   waTemplates: WhatsAppTemplate[] = [];
   selectedWaTemplateId: string = '';
   waCustomMessage: string = '';
@@ -551,7 +551,7 @@ export class TicketDetailComponent implements OnInit {
     }
   }
 
-  // --- WhatsApp Quick Send & Anti-Ban Methods ---
+  // --- WhatsApp: envio rápido ---
   openWhatsAppModal() {
     this.showWhatsAppModal = true;
     this.waObservacao = '';
@@ -641,10 +641,6 @@ export class TicketDetailComponent implements OnInit {
 
   sendWhatsAppToRequester() {
     if (!this.ticket) return;
-    if (!this.ticket.requester_phone) {
-      this.snackBar.open('Este solicitante não possui telefone cadastrado.', 'Fechar', { duration: 4000 });
-      return;
-    }
     if (!this.waCustomMessage.trim()) {
       this.snackBar.open('Por favor, informe a mensagem a ser enviada.', 'Fechar', { duration: 3000 });
       return;
@@ -657,13 +653,13 @@ export class TicketDetailComponent implements OnInit {
       observacao: this.waObservacao.trim() || undefined
     }).subscribe({
       next: () => {
-        this.snackBar.open('✅ Mensagem enviada para a fila segura do WhatsApp com sucesso!', 'Fechar', { duration: 4000 });
+        this.snackBar.open('✅ Mensagem enfileirada para o WhatsApp. Acompanhe em Notificações > Entregas.', 'Fechar', { duration: 4000 });
         this.closeWhatsAppModal();
         this.loadTicket(this.ticket!.id);
       },
       error: (err) => {
         console.error('Erro ao enviar WhatsApp:', err);
-        const msg = err?.error?.detail || 'Erro ao enfileirar mensagem de WhatsApp.';
+        const msg = err?.error?.error?.message || err?.error?.detail || 'Erro ao enfileirar mensagem de WhatsApp.';
         this.snackBar.open(msg, 'Fechar', { duration: 5000 });
         this.sendingWhatsApp = false;
         this.cdr.markForCheck();

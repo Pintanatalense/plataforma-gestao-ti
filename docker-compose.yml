@@ -100,30 +100,8 @@ services:
       backend:
         condition: service_healthy
 
-  # Evolution API (opcional, não oficial): docker compose --profile evolution up -d
-  evolution-api:
-    image: atendai/evolution-api:v2.1.2
-    profiles:
-      - evolution
-    restart: unless-stopped
-    environment:
-      SERVER_URL: ${EVOLUTION_SERVER_URL:-http://localhost:8084}
-      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-}
-      AUTHENTICATION_EXPOSE_IN_FETCH_INSTANCES: "false"
-      DATABASE_ENABLED: "true"
-      DATABASE_PROVIDER: "postgresql"
-      DATABASE_CONNECTION_URI: "postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-}@postgres:5432/${POSTGRES_DB:-gestao_ti}?schema=evolution"
-      LOG_LEVEL: "ERROR,WARN,INFO"
-      DEL_INSTANCE: "false"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    volumes:
-      - evolution_instances:/evolution/instances
-
 volumes:
   postgres_data:
   attachments_data:
   backups_data:
   static_data:
-  evolution_instances:

@@ -12,7 +12,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { NotificationPrefs, NotificationsService } from '../../../core/services/notifications.service';
 import { MyChannelsComponent } from './my-channels.component';
 
-export const CHANNEL_LABELS: Record<string, string> = { email: 'E-mail', telegram: 'Telegram' };
+export const CHANNEL_LABELS: Record<string, string> = { email: 'E-mail', telegram: 'Telegram', whatsapp: 'WhatsApp' };
 export const CATEGORY_LABELS: Record<string, string> = {
   ticket: 'Chamados',
   asset: 'Ativos',

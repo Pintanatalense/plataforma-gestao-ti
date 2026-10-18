@@ -204,10 +204,8 @@ class DemoManagementService:
             att_ids = [a.id for a in demo_attachments]
             await self.session.execute(delete(Attachment).where(Attachment.id.in_(att_ids)))
 
-        # Desvincular admin de colaborador demo e limpar sessões do WhatsApp
-        from app.whatsapp.models import WhatsAppSession
+        # Desvincular admin de colaborador demo
         await self.session.execute(update(UserAccount).where(UserAccount.id == admin_user_id).values(employee_id=None))
-        await self.session.execute(update(WhatsAppSession).values(employee_id=None, current_ticket_id=None, current_category_id=None))
         await self.session.execute(update(TicketCategory).values(default_sector_id=None))
         await self.session.execute(update(Employee).values(manager_id=None))
 

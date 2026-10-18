@@ -102,6 +102,23 @@ export interface TelegramConfig {
   app_base_url: string;
 }
 
+export interface WhatsAppConfig {
+  enabled: boolean;
+  access_token: string;
+  app_secret: string;
+  phone_number_id: string;
+  graph_version: string;
+  template_name: string;
+  template_language: string;
+  app_base_url: string;
+  display_phone: string | null;
+  verified_name: string | null;
+  verify_token: string | null;
+  webhook_path: string;
+}
+
+export type WhatsAppConfigInput = Omit<WhatsAppConfig, 'display_phone' | 'verified_name' | 'verify_token' | 'webhook_path'>;
+
 @Injectable({ providedIn: 'root' })
 export class NotificationsAdminService {
   private http = inject(HttpClient);
@@ -161,6 +178,14 @@ export class NotificationsAdminService {
 
   saveTelegramConfig(config: Pick<TelegramConfig, 'enabled' | 'bot_token' | 'app_base_url'>): Observable<TelegramConfig> {
     return this.http.put<TelegramConfig>('/api/v1/notifications/telegram/config', config);
+  }
+
+  getWhatsAppConfig(): Observable<WhatsAppConfig> {
+    return this.http.get<WhatsAppConfig>('/api/v1/notifications/whatsapp/config');
+  }
+
+  saveWhatsAppConfig(config: WhatsAppConfigInput): Observable<WhatsAppConfig> {
+    return this.http.put<WhatsAppConfig>('/api/v1/notifications/whatsapp/config', config);
   }
 
   listJobs(): Observable<{ items: JobItem[] }> {

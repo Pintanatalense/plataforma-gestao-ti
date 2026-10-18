@@ -84,7 +84,7 @@
         class="action-btn wa-header-btn"
         (click)="openWhatsAppModal()"
         *ngIf="isTechnician"
-        matTooltip="Enviar WhatsApp com Templates e Proteção Anti-Ban"
+        matTooltip="Enviar WhatsApp com templates (canal oficial da Meta)"
       >
         <mat-icon>chat</mat-icon> WhatsApp
       </button>
@@ -121,17 +121,14 @@
 
       <div class="modal-body">
         <!-- Destinatário Info -->
-        <div class="wa-recipient-banner" [class.no-phone]="!ticket.requester_phone">
+        <div class="wa-recipient-banner">
           <div class="recipient-info">
             <span class="label">Destinatário:</span>
             <span class="name">{{ ticket.requester_name || 'Solicitante' }}</span>
-            <span class="phone-chip" *ngIf="ticket.requester_phone">
-              <mat-icon>call</mat-icon> {{ ticket.requester_phone }}
-            </span>
           </div>
-          <div class="no-phone-warning" *ngIf="!ticket.requester_phone">
-            <mat-icon>warning</mat-icon>
-            <span>Este solicitante não possui telefone cadastrado no perfil de colaborador. Cadastre um número antes do disparo.</span>
+          <div class="no-phone-warning">
+            <mat-icon>info</mat-icon>
+            <span>Só chega a quem vinculou o próprio WhatsApp (Notificações &gt; Minhas preferências). Telefone do cadastro não é usado.</span>
           </div>
         </div>
 
@@ -178,12 +175,12 @@
           </div>
         </div>
 
-        <!-- Badge de Proteção Anti-Ban -->
+        <!-- Como o envio acontece -->
         <div class="antiban-shield-box">
           <mat-icon class="shield-icon">verified_user</mat-icon>
           <div class="shield-text">
-            <strong>Proteção Anti-Ban Robusta:</strong>
-            <span> Disparo com fila Outbox, atraso randômico humanizado, presença "digitando..." e cooldown por contato ativo.</span>
+            <strong>Canal oficial da Meta:</strong>
+            <span> Dentro de 24 h da última mensagem da pessoa vai texto livre; fora disso, o template aprovado configurado pela administração. Acompanhe em Notificações &gt; Entregas.</span>
           </div>
         </div>
       </div>
@@ -196,7 +193,7 @@
           mat-flat-button
           class="wa-submit-btn"
           (click)="sendWhatsAppToRequester()"
-          [disabled]="sendingWhatsApp || !ticket.requester_phone || !waCustomMessage.trim()"
+          [disabled]="sendingWhatsApp || !waCustomMessage.trim()"
         >
           <mat-spinner diameter="18" *ngIf="sendingWhatsApp"></mat-spinner>
           <mat-icon *ngIf="!sendingWhatsApp">send</mat-icon>

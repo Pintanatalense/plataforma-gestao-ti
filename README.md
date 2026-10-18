@@ -1,6 +1,6 @@
 # Plataforma Modular de Gestão de TI
 
-Service desk, gestão de ativos, estoque, inventário e integração com WhatsApp para a TI de uma empresa (single tenant).
+Service desk, gestão de ativos, estoque, inventário e integração com WhatsApp (Meta) e Telegram para a TI de uma empresa (single tenant).
 Estado técnico detalhado e navegação do código: [`docs/PROJECT_MAP.md`](docs/PROJECT_MAP.md). Riscos e dívida: [`docs/AUDIT.md`](docs/AUDIT.md). Decisões: [`docs/decisions/`](docs/decisions/).
 
 | Camada | Tecnologia |
@@ -38,6 +38,14 @@ docker compose up -d --build
 docker compose logs -f backend
 ```
 
+### Ao migrar de uma versão anterior à Fase D (WhatsApp pela Meta)
+
+- **O bot antigo foi removido** (Evolution API, Mock, QR Code, "anti-ban", fila `wa_outbox`, sessões `wa_sessions`, configuração `wa_configs`). A migration `m3b4c5d6e7f8` apaga essas três tabelas — **é irreversível**; faça backup antes. As respostas rápidas (`wa_templates`) continuam.
+- **Serviço `evolution-api` saiu do Compose** (e o volume `evolution_instances`). Se você usava o perfil `evolution`, ele deixa de existir.
+- **O webhook mudou de contrato:** agora é o da Meta (`GET` handshake + `POST` assinado com `X-Hub-Signature-256`). O formato antigo `{phone, message}` com `X-Webhook-Secret` não funciona mais.
+- **Para voltar a usar WhatsApp:** configure a Meta Cloud API em Notificações → Entregas e regras → Saúde dos canais (ver [`docs/04-configuracao-de-integracoes.md`](docs/04-configuracao-de-integracoes.md)). Cada pessoa precisa **vincular** o próprio WhatsApp por código; telefone do cadastro do colaborador não vincula nada.
+- **Exige HTTPS público** para o webhook da Meta (diferente do Telegram, que usa long polling).
+
 ### Ao migrar de uma versão anterior à Fase A (hub de notificações)
 
 - **`.env`:** defina `APP_ENCRYPTION_KEY` (veja a instalação). O Compose não sobe sem ela.
@@ -55,7 +63,7 @@ docker compose logs -f backend
 - **Banco já migrado:** a nova migration de união (`88d09e47595a`) e a de bloqueio de login (`i9d0e1f2a3b4`) são aplicadas automaticamente.
 - **Perfis:** o seed não sobrescreve mais as permissões dos perfis existentes.
 - **Chamados:** atendentes passam a ver apenas chamados do próprio setor, atribuídos a eles ou abertos por eles (quem precisa ver todos recebe `service_desk.tickets.read_all`).
-- **WhatsApp:** o webhook exige o cabeçalho `X-Webhook-Secret` igual ao segredo cadastrado em Administração; o vínculo de número por matrícula foi removido (cadastre o telefone no colaborador).
+- **WhatsApp:** _(substituído na Fase D — veja a seção acima)_ o vínculo de número por matrícula foi removido.
 
 ## Notificações e Telegram
 
@@ -67,6 +75,7 @@ docker compose logs -f backend
   3. Cada pessoa vai em Notificações → Minhas preferências, gera o código e envia `/vincular CÓDIGO` ao bot.
   4. A partir daí ela recebe avisos e pode abrir, consultar e responder chamados pelo chat, com as mesmas permissões que tem no sistema.
   - A entrada usa *long polling* a partir do worker: não é preciso domínio, HTTPS nem porta aberta. O servidor só precisa de saída para `api.telegram.org`.
+- **WhatsApp (Meta Cloud API, oficial):** mesmo fluxo de vínculo por código (`vincular CÓDIGO`). Dentro de 24 h da última mensagem da pessoa vai texto livre; fora disso, o template aprovado configurado. O webhook exige HTTPS público. Passo a passo em [`docs/04-configuracao-de-integracoes.md`](docs/04-configuracao-de-integracoes.md).
 
 ## Backup e restauração
 

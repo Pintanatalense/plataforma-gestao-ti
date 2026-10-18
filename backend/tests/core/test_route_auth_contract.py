@@ -20,7 +20,8 @@ PUBLIC = {
     ("post", "/api/v1/identity/setup"),  # só funciona com 0 usuários
     ("post", "/api/v1/identity/login"),
     ("get", "/api/v1/organization/company/public"),  # nome/logo para a tela de login
-    ("post", "/api/v1/integrations/whatsapp/webhook"),  # autenticado por segredo compartilhado
+    # Webhook da Meta: GET = handshake com verify_token; POST = assinatura HMAC (X-Hub-Signature-256).
+    # Ficam fora do OpenAPI (include_in_schema=False) e são exercitados em test_whatsapp_meta.py.
 }
 DOCS = {"/api/v1/docs", "/api/v1/redoc", "/api/v1/openapi.json", "/docs/oauth2-redirect"}
 

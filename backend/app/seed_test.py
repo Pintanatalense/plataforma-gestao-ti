@@ -36,7 +36,7 @@ from app.notifications.models import Notification
 from app.organization.models import Company, Employee, Sector, Unit
 from app.service_desk.models import Ticket, TicketCategory, TicketInteraction, TicketMaterial, ticket_assets
 from app.stock.models import StockCategory, StockItem, StockMovement
-from app.whatsapp.models import WhatsAppConfig, WhatsAppOutbox, WhatsAppSession, WhatsAppTemplate
+from app.whatsapp.models import WhatsAppTemplate
 
 
 TEST_PASSWORD = "Teste@2026"
@@ -103,8 +103,10 @@ async def clean_test_database(session: AsyncSession) -> None:
     """Limpa tabelas de teste e transações de forma controlada."""
     print("--> [QA/Test] Limpando dados de teste existentes...")
 
-    await session.execute(delete(WhatsAppOutbox))
-    await session.execute(delete(WhatsAppSession))
+    from app.notifications.models import ConversationSession, Delivery, DeliveryAttempt, DomainEvent, InboundMessage
+
+    for model in (DeliveryAttempt, Delivery, DomainEvent, InboundMessage, ConversationSession):
+        await session.execute(delete(model))
     await session.execute(delete(Notification))
     await session.execute(delete(AuditLog))
     await session.execute(delete(Attachment))

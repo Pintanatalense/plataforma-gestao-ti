@@ -103,8 +103,12 @@ class ConversationEngine:
 
         command, _, argument = message.partition(" ")
         command = command.lower().split("@")[0]  # "/start@MeuBot" no Telegram em grupos
+        word = command.lstrip("/")
+        # No WhatsApp não há "/comando": "vincular ABC234" também vale — mas só fora de um diálogo em
+        # andamento, senão o título de um chamado que comece com "vincular" viraria tentativa de vínculo.
+        is_command = command.startswith("/") or conv.state == "IDLE" or conv.user_id is None
 
-        if command in ("/vincular", "/start") and argument.strip():
+        if is_command and word in ("vincular", "start") and argument.strip():
             return await self._link(conv, channel, external_id, argument.strip())
 
         ctx = await load_user_ctx(self.session, conv.user_id) if conv.user_id else None
@@ -116,13 +120,13 @@ class ConversationEngine:
         if ctx is None:
             return [UNLINKED_REPLY], None
 
-        if command == "/desvincular":
+        if is_command and word == "desvincular":
             await unlink(self.session, ctx.user_id, channel)
             conv.user_id = None
             self._reset(conv)
             return ["Canal desvinculado. Você não receberá mais avisos por aqui."], None
 
-        if lowered in MENU_WORDS or command == "/start":
+        if lowered in MENU_WORDS or (is_command and word == "start"):
             self._reset(conv)
             return [self._menu(ctx)], ctx.user_id
 

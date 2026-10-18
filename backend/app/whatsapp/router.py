@@ -1,267 +1,46 @@
 """
-MOD-15 — WhatsApp Integration (Router)
+MOD-15 — WhatsApp (Router)
 
-Endpoints REST para:
-- Webhook do bot e autoatendimento
-- Configuração administrativa e proteção Anti-Ban (delays, jitter, typing, kill switch)
-- Gestão de Templates pré-definidos (Respostas Rápidas)
-- Fila de Envios (Outbox Monitor, reprocessamento e cancelamento)
-- Disparo de WhatsApp vinculado a chamados do Service Desk
+Respostas rápidas (templates) e envio a partir de um chamado. O canal em si — Meta Cloud API, webhook,
+vínculo por código, fila e retentativa — vive no hub de notificações (`app.notifications`, ADR-013).
 """
 
-import hmac
 import re
-from typing import Annotated, Sequence
 import uuid
-from fastapi import APIRouter, Depends, Header, Query, status, HTTPException
-from sqlalchemy import select, and_
+from typing import Annotated
+
+from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy import and_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
+from app.core.dependencies import require_any_permission, require_permission
 from app.database import get_db
-from app.core.dependencies import require_permission, require_any_permission, get_current_user_id
 from app.identity.models import UserAccount
-
+from app.notifications.channel_store import load_channel
+from app.notifications.channels.whatsapp import WHATSAPP_CHANNEL
+from app.notifications.channels_router import is_ready
+from app.notifications.direct import enqueue_direct_message
+from app.notifications.linking import load_addresses
 from app.organization.models import Company
 from app.service_desk.models import Ticket, TicketInteraction
 from app.service_desk.router import get_user_context
 from app.service_desk.services import ServiceDeskService
-from app.whatsapp.models import WhatsAppConfig, WhatsAppTemplate, WhatsAppOutbox
+from app.whatsapp.models import WhatsAppTemplate
 from app.whatsapp.schemas import (
-    WhatsAppWebhookPayload,
-    WhatsAppConfigResponse,
-    WhatsAppConfigUpdate,
-    WhatsAppTestMessageRequest,
-    WhatsAppTemplateCreate,
-    WhatsAppTemplateUpdate,
-    WhatsAppTemplateResponse,
     WhatsAppPreviewTemplateRequest,
     WhatsAppPreviewTemplateResponse,
-    WhatsAppOutboxResponse,
-    WhatsAppOutboxStatsResponse,
     WhatsAppSendTicketRequest,
+    WhatsAppTemplateCreate,
+    WhatsAppTemplateResponse,
+    WhatsAppTemplateUpdate,
 )
-from app.whatsapp.conversation_service import WhatsAppConversationService
-from app.whatsapp.queue_service import WhatsAppQueueService
 from app.whatsapp.template_service import render_template
-from app.whatsapp.adapter import get_whatsapp_adapter
 
 router = APIRouter(prefix="/integrations/whatsapp", tags=["Integração WhatsApp"])
 
-
-# ==============================================================================
-# Webhook & Recepção
-# ==============================================================================
-
-@router.post(
-    "/webhook",
-    summary="Webhook para recepção e processamento de mensagens do WhatsApp",
-)
-async def whatsapp_webhook(
-    payload: WhatsAppWebhookPayload,
-    session: Annotated[AsyncSession, Depends(get_db)],
-    x_webhook_secret: Annotated[str | None, Header()] = None,
-):
-    # Autenticação do webhook: segredo compartilhado configurado no provedor (cabeçalho X-Webhook-Secret).
-    config = await WhatsAppConversationService(session).get_config()
-    expected = config.webhook_secret or ""
-    if not expected or not x_webhook_secret or not hmac.compare_digest(
-        x_webhook_secret.encode(), expected.encode()
-    ):
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Webhook não autorizado.")
-
-    phone = payload.phone
-    message_text = payload.message
-
-    # Parser para payloads do Evolution API (ex: key.remoteJid e message.conversation)
-    if not phone and payload.data:
-        data = payload.data
-        key = data.get("key", {})
-        remote_jid = key.get("remoteJid", "")
-        if "@" in remote_jid:
-            phone = remote_jid.split("@")[0]
-
-        msg_obj = data.get("message", {})
-        message_text = msg_obj.get("conversation") or msg_obj.get("extendedTextMessage", {}).get("text")
-
-    if not phone or not message_text:
-        return {"status": "ignored", "reason": "No valid phone or message content identified"}
-
-    service = WhatsAppConversationService(session)
-    await service.process_incoming_message(from_phone=phone, text=message_text)
-    # A resposta ao usuário segue pelo provedor; o corpo HTTP nunca carrega o texto do bot.
-    return {"status": "accepted"}
-
-
-# ==============================================================================
-# Configurações & Proteção Anti-Ban
-# ==============================================================================
-
-@router.get(
-    "/config",
-    response_model=WhatsAppConfigResponse,
-    summary="Recupera as configurações e status da integração com WhatsApp",
-    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
-)
-async def get_whatsapp_config(
-    session: Annotated[AsyncSession, Depends(get_db)]
-):
-    service = WhatsAppConversationService(session)
-    config = await service.get_config()
-    return WhatsAppConfigResponse.model_validate(config)
-
-
-@router.get(
-    "/status",
-    summary="Obtém o estado detalhado da integração (NOT_CONFIGURED, CONNECTED, DISCONNECTED, FAILED)",
-    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
-)
-async def get_whatsapp_integration_status(
-    session: Annotated[AsyncSession, Depends(get_db)]
-):
-    service = WhatsAppConversationService(session)
-    config = await service.get_config()
-    if not config or not config.is_enabled:
-        return {
-            "status": "NOT_CONFIGURED",
-            "provider": config.provider if config else "NONE",
-            "instance_name": config.instance_name if config else "",
-            "message": "Integração desativada ou não configurada"
-        }
-
-    adapter = get_whatsapp_adapter(config)
-    state_res = await adapter.check_connection_state()
-    state = state_res.get("state", "unknown")
-
-    if state in ("open", "connected"):
-        final_status = "CONNECTED"
-        msg = f"Conectado com sucesso ao WhatsApp via {config.provider}"
-    elif state in ("close", "connecting", "not_found"):
-        final_status = "DISCONNECTED"
-        msg = f"Instância aguardando conexão/pareamento via QR Code ({state})"
-    elif state in ("unreachable", "error"):
-        final_status = "FAILED"
-        msg = f"Falha de comunicação com o serviço: {state_res.get('error', state_res.get('message', 'Erro'))}"
-    else:
-        final_status = "CONFIGURED"
-        msg = f"Configurado (estado do provedor: {state})"
-
-    return {
-        "status": final_status,
-        "provider": config.provider,
-        "instance_name": config.instance_name,
-        "api_url": config.api_url,
-        "message": msg,
-        "details": state_res
-    }
-
-
-@router.get(
-    "/qrcode",
-    summary="Obtém o QR Code para pareamento com WhatsApp via Evolution API",
-    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
-)
-async def get_whatsapp_qrcode(
-    session: Annotated[AsyncSession, Depends(get_db)]
-):
-    service = WhatsAppConversationService(session)
-    config = await service.get_config()
-    if not config or not config.is_enabled:
-        raise HTTPException(status_code=400, detail="Integração do WhatsApp está desativada.")
-
-    adapter = get_whatsapp_adapter(config)
-    return await adapter.get_qr_code()
-
-
-@router.patch(
-    "/config",
-    response_model=WhatsAppConfigResponse,
-    summary="Atualiza provedor, tokens e parâmetros anti-ban do WhatsApp",
-    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
-)
-async def update_whatsapp_config(
-    body: WhatsAppConfigUpdate,
-    session: Annotated[AsyncSession, Depends(get_db)]
-):
-    service = WhatsAppConversationService(session)
-    config = await service.get_config()
-
-    if body.provider is not None:
-        config.provider = body.provider
-    if body.is_enabled is not None:
-        config.is_enabled = body.is_enabled
-    if body.api_url is not None:
-        config.api_url = body.api_url
-    if body.api_key is not None:
-        config.api_key = body.api_key
-    if body.instance_name is not None:
-        config.instance_name = body.instance_name
-    if body.webhook_secret is not None:
-        config.webhook_secret = body.webhook_secret
-    if body.welcome_message is not None:
-        config.welcome_message = body.welcome_message
-
-    # Anti-ban fields
-    if body.anti_ban_enabled is not None:
-        config.anti_ban_enabled = body.anti_ban_enabled
-    if body.min_delay_seconds is not None:
-        config.min_delay_seconds = body.min_delay_seconds
-    if body.max_delay_seconds is not None:
-        config.max_delay_seconds = body.max_delay_seconds
-    if body.simulate_typing is not None:
-        config.simulate_typing = body.simulate_typing
-    if body.typing_duration_seconds is not None:
-        config.typing_duration_seconds = body.typing_duration_seconds
-    if body.max_messages_per_minute is not None:
-        config.max_messages_per_minute = body.max_messages_per_minute
-    if body.cooldown_per_recipient_seconds is not None:
-        config.cooldown_per_recipient_seconds = body.cooldown_per_recipient_seconds
-    if body.emergency_pause is not None:
-        config.emergency_pause = body.emergency_pause
-
-    await session.commit()
-    return WhatsAppConfigResponse.model_validate(config)
-
-
-@router.post(
-    "/emergency-pause",
-    summary="Kill Switch: Alterna a pausa de emergência imediata de todos os disparos da fila",
-    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
-)
-async def toggle_emergency_pause(
-    session: Annotated[AsyncSession, Depends(get_db)]
-):
-    service = WhatsAppConversationService(session)
-    config = await service.get_config()
-    config.emergency_pause = not config.emergency_pause
-    await session.commit()
-    return {
-        "emergency_pause": config.emergency_pause,
-        "message": "Pausa de emergência ATIVADA. Nenhum disparo será efetuado." if config.emergency_pause else "Pausa de emergência DESATIVADA. Disparos liberados."
-    }
-
-
-@router.post(
-    "/test-send",
-    summary="Dispara mensagem de teste para validação de conectividade com o provedor",
-    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
-)
-async def test_send_message(
-    body: WhatsAppTestMessageRequest,
-    session: Annotated[AsyncSession, Depends(get_db)]
-):
-    service = WhatsAppConversationService(session)
-    config = await service.get_config()
-    adapter = get_whatsapp_adapter(config)
-
-    success = await adapter.send_message(body.to_phone, body.message)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_502_BAD_GATEWAY,
-            detail="Não foi possível enviar a mensagem através do provedor configurado."
-        )
-
-    return {"message": "Mensagem de teste enviada com sucesso!", "to_phone": body.to_phone}
+PRIORITY_BY_NUMBER = {1: "high", 2: "normal", 3: "low"}
+MANAGE_OR_ATTEND = require_any_permission("integrations.whatsapp.manage", "service_desk.tickets.manage")
 
 
 # ==============================================================================
@@ -272,12 +51,12 @@ async def test_send_message(
     "/templates",
     response_model=list[WhatsAppTemplateResponse],
     summary="Lista todos os templates pré-definidos de mensagens",
-    dependencies=[Depends(require_any_permission("integrations.whatsapp.manage", "service_desk.tickets.manage"))],
+    dependencies=[Depends(MANAGE_OR_ATTEND)],
 )
 async def list_templates(
     session: Annotated[AsyncSession, Depends(get_db)],
     category: str | None = Query(None, description="Filtrar por categoria"),
-    active_only: bool = Query(False, description="Apenas templates ativos")
+    active_only: bool = Query(False, description="Apenas templates ativos"),
 ):
     query = select(WhatsAppTemplate)
     conditions = []
@@ -285,7 +64,6 @@ async def list_templates(
         conditions.append(WhatsAppTemplate.category == category)
     if active_only:
         conditions.append(WhatsAppTemplate.is_active.is_(True))
-
     if conditions:
         query = query.where(and_(*conditions))
 
@@ -299,27 +77,18 @@ async def list_templates(
     response_model=WhatsAppTemplateResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Cadastra um novo template de resposta rápida",
-    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
+    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))],
 )
-async def create_template(
-    body: WhatsAppTemplateCreate,
-    session: Annotated[AsyncSession, Depends(get_db)]
-):
-    # Verifica duplicidade de código
-    stmt = select(WhatsAppTemplate).where(WhatsAppTemplate.code == body.code)
-    existing = (await session.execute(stmt)).scalar_one_or_none()
+async def create_template(body: WhatsAppTemplateCreate, session: Annotated[AsyncSession, Depends(get_db)]):
+    existing = (await session.execute(select(WhatsAppTemplate).where(WhatsAppTemplate.code == body.code))).scalar_one_or_none()
     if existing:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Já existe um template cadastrado com o código '{body.code}'."
+            detail=f"Já existe um template cadastrado com o código '{body.code}'.",
         )
 
     template = WhatsAppTemplate(
-        name=body.name,
-        code=body.code,
-        category=body.category,
-        content=body.content,
-        is_active=body.is_active
+        name=body.name, code=body.code, category=body.category, content=body.content, is_active=body.is_active
     )
     session.add(template)
     await session.commit()
@@ -327,31 +96,27 @@ async def create_template(
     return WhatsAppTemplateResponse.model_validate(template)
 
 
+async def _get_template(session: AsyncSession, template_id: uuid.UUID) -> WhatsAppTemplate:
+    template = (await session.execute(select(WhatsAppTemplate).where(WhatsAppTemplate.id == template_id))).scalar_one_or_none()
+    if not template:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template não encontrado.")
+    return template
+
+
 @router.put(
     "/templates/{template_id}",
     response_model=WhatsAppTemplateResponse,
     summary="Atualiza um template existente",
-    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
+    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))],
 )
 async def update_template(
-    template_id: uuid.UUID,
-    body: WhatsAppTemplateUpdate,
-    session: Annotated[AsyncSession, Depends(get_db)]
+    template_id: uuid.UUID, body: WhatsAppTemplateUpdate, session: Annotated[AsyncSession, Depends(get_db)]
 ):
-    stmt = select(WhatsAppTemplate).where(WhatsAppTemplate.id == template_id)
-    template = (await session.execute(stmt)).scalar_one_or_none()
-    if not template:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template não encontrado.")
-
-    if body.name is not None:
-        template.name = body.name
-    if body.category is not None:
-        template.category = body.category
-    if body.content is not None:
-        template.content = body.content
-    if body.is_active is not None:
-        template.is_active = body.is_active
-
+    template = await _get_template(session, template_id)
+    for field in ("name", "category", "content", "is_active"):
+        value = getattr(body, field)
+        if value is not None:
+            setattr(template, field, value)
     await session.commit()
     await session.refresh(template)
     return WhatsAppTemplateResponse.model_validate(template)
@@ -361,186 +126,65 @@ async def update_template(
     "/templates/{template_id}",
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Remove um template de mensagem",
-    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
+    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))],
 )
-async def delete_template(
-    template_id: uuid.UUID,
-    session: Annotated[AsyncSession, Depends(get_db)]
-):
-    stmt = select(WhatsAppTemplate).where(WhatsAppTemplate.id == template_id)
-    template = (await session.execute(stmt)).scalar_one_or_none()
-    if not template:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template não encontrado.")
-
-    await session.delete(template)
+async def delete_template(template_id: uuid.UUID, session: Annotated[AsyncSession, Depends(get_db)]):
+    await session.delete(await _get_template(session, template_id))
     await session.commit()
-    return None
+
+
+async def _company_name(session: AsyncSession) -> str:
+    company = (await session.execute(select(Company).limit(1))).scalar_one_or_none()
+    return company.name if company else "Gestão de TI"
 
 
 @router.post(
     "/templates/{template_id}/preview",
     response_model=WhatsAppPreviewTemplateResponse,
     summary="Gera pré-visualização interpolada do template com dados do chamado",
-    dependencies=[Depends(require_any_permission("integrations.whatsapp.manage", "service_desk.tickets.manage"))],
+    dependencies=[Depends(MANAGE_OR_ATTEND)],
 )
 async def preview_template(
-    template_id: uuid.UUID,
-    body: WhatsAppPreviewTemplateRequest,
-    session: Annotated[AsyncSession, Depends(get_db)]
+    template_id: uuid.UUID, body: WhatsAppPreviewTemplateRequest, session: Annotated[AsyncSession, Depends(get_db)]
 ):
-    stmt = select(WhatsAppTemplate).where(WhatsAppTemplate.id == template_id)
-    template = (await session.execute(stmt)).scalar_one_or_none()
-    if not template:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template não encontrado.")
-
+    template = await _get_template(session, template_id)
     content = body.template_content or template.content
 
     ticket = None
     if body.ticket_id:
-        stmt_t = (
-            select(Ticket)
-            .options(
-                selectinload(Ticket.requester),
-                selectinload(Ticket.assignee),
+        ticket = (
+            await session.execute(
+                select(Ticket)
+                .options(selectinload(Ticket.requester), selectinload(Ticket.assignee))
+                .where(Ticket.id == body.ticket_id)
             )
-            .where(Ticket.id == body.ticket_id)
-        )
-
-        ticket = (await session.execute(stmt_t)).scalar_one_or_none()
-
-    # Busca nome da empresa
-    stmt_comp = select(Company).limit(1)
-    company = (await session.execute(stmt_comp)).scalar_one_or_none()
-    comp_name = company.name if company else "Gestão de TI"
+        ).scalar_one_or_none()
 
     rendered = render_template(
-        template_content=content,
-        ticket=ticket,
-        company_name=comp_name,
-        observacao=body.observacao or ""
+        template_content=content, ticket=ticket, company_name=await _company_name(session), observacao=body.observacao or ""
     )
-
-    detected = re.findall(r"\{\{([^}]+)\}\}", content)
-    unique_vars = sorted(list(set(v.strip().lower() for v in detected)))
-
-    return WhatsAppPreviewTemplateResponse(
-        rendered_message=rendered,
-        variables_detected=unique_vars
-    )
+    variables = sorted({v.strip().lower() for v in re.findall(r"\{\{([^}]+)\}\}", content)})
+    return WhatsAppPreviewTemplateResponse(rendered_message=rendered, variables_detected=variables)
 
 
 # ==============================================================================
-# Fila de Envios (Outbox Monitor & Controle)
-# ==============================================================================
-
-@router.get(
-    "/outbox",
-    response_model=list[WhatsAppOutboxResponse],
-    summary="Lista as mensagens na fila de saída do WhatsApp com status e filtros",
-    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
-)
-async def list_outbox(
-    session: Annotated[AsyncSession, Depends(get_db)],
-    status_filter: str | None = Query(None, description="Filtrar por status: PENDING, SENT, FAILED, CANCELLED"),
-    limit: int = Query(50, ge=1, le=200)
-):
-    query = select(WhatsAppOutbox)
-    if status_filter:
-        query = query.where(WhatsAppOutbox.status == status_filter)
-
-    query = query.order_by(WhatsAppOutbox.created_at.desc()).limit(limit)
-    items = (await session.execute(query)).scalars().all()
-    return [WhatsAppOutboxResponse.model_validate(it) for it in items]
-
-
-@router.get(
-    "/outbox/stats",
-    response_model=WhatsAppOutboxStatsResponse,
-    summary="Recupera métricas e contadores da fila de saída e proteção anti-ban",
-    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
-)
-async def get_outbox_stats(
-    session: Annotated[AsyncSession, Depends(get_db)]
-):
-    queue_service = WhatsAppQueueService(session)
-    stats = await queue_service.get_stats()
-    return WhatsAppOutboxStatsResponse.model_validate(stats)
-
-
-@router.post(
-    "/outbox/process",
-    summary="Força a execução imediata de um lote da fila de saída respeitando anti-ban",
-    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
-)
-async def process_outbox_now(
-    session: Annotated[AsyncSession, Depends(get_db)],
-    max_batch: int = Query(10, ge=1, le=50)
-):
-    queue_service = WhatsAppQueueService(session)
-    res = await queue_service.process_outbox(max_batch=max_batch, skip_sleep=True)
-    return res
-
-
-@router.post(
-    "/outbox/{item_id}/cancel",
-    summary="Cancela o envio de uma mensagem pendente na fila",
-    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
-)
-async def cancel_outbox_message(
-    item_id: uuid.UUID,
-    session: Annotated[AsyncSession, Depends(get_db)]
-):
-    queue_service = WhatsAppQueueService(session)
-    success = await queue_service.cancel_item(item_id)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Item não encontrado ou não está mais com status PENDENTE."
-        )
-    return {"message": "Envio cancelado com sucesso."}
-
-
-@router.post(
-    "/outbox/{item_id}/retry",
-    summary="Reagenda para reenvio uma mensagem que falhou",
-    dependencies=[Depends(require_permission("integrations.whatsapp.manage"))]
-)
-async def retry_outbox_message(
-    item_id: uuid.UUID,
-    session: Annotated[AsyncSession, Depends(get_db)]
-):
-    queue_service = WhatsAppQueueService(session)
-    success = await queue_service.retry_item(item_id)
-    if not success:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="Item não encontrado."
-        )
-    return {"message": "Item reagendado para novo envio."}
-
-
-# ==============================================================================
-# Disparo Direto de Template a partir do Chamado (Service Desk)
+# Envio a partir do chamado (pelo hub)
 # ==============================================================================
 
 @router.post(
     "/tickets/{ticket_id}/send",
-    summary="Dispara mensagem ou template pré-definido para o solicitante do chamado via WhatsApp",
-    dependencies=[Depends(require_any_permission("integrations.whatsapp.manage", "service_desk.tickets.manage"))],
+    summary="Envia mensagem ou template pré-definido ao solicitante do chamado via WhatsApp",
+    dependencies=[Depends(MANAGE_OR_ATTEND)],
 )
 async def send_whatsapp_ticket_message(
     ticket_id: uuid.UUID,
     body: WhatsAppSendTicketRequest,
     ctx: Annotated[dict, Depends(get_user_context)],
-    session: Annotated[AsyncSession, Depends(get_db)]
+    session: Annotated[AsyncSession, Depends(get_db)],
 ):
-    current_user_id = ctx["user_id"]
     """
-    Envia uma mensagem segura para o WhatsApp do solicitante do chamado:
-    1. Valida se o solicitante possui telefone cadastrado.
-    2. Interpola o template selecionado com as variáveis do chamado.
-    3. Enfileira na fila com proteção Anti-Ban e controle de taxa.
-    4. Registra automaticamente no chat/interações do chamado.
+    Envia pelo canal WhatsApp do hub à pessoa solicitante, se ela VINCULOU o próprio WhatsApp por código.
+    Telefone digitado no cadastro do colaborador não é endereço verificado e não recebe mensagens.
     """
     # Mesma regra de visibilidade da API de chamados (setor responsável / atribuído / gestão).
     ticket = await ServiceDeskService(session).get_ticket_for_user(
@@ -552,73 +196,59 @@ async def send_whatsapp_ticket_message(
         sector_id=ctx["sector_id"],
     )
 
-    if not ticket.requester or not ticket.requester.phone:
+    if not is_ready(WHATSAPP_CHANNEL, await load_channel(session, WHATSAPP_CHANNEL)):
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "O canal WhatsApp não está habilitado pela administração.")
+
+    requester_user = (
+        await session.execute(
+            select(UserAccount).where(UserAccount.employee_id == ticket.requester_id, UserAccount.is_active.is_(True))
+        )
+    ).scalar_one_or_none()
+    address = (await load_addresses(session, {requester_user.id})).get(requester_user.id, {}).get(WHATSAPP_CHANNEL) if requester_user else None
+    if not requester_user or not address:
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="O colaborador solicitante não possui número de WhatsApp cadastrado em seu perfil funcional."
+            status.HTTP_400_BAD_REQUEST,
+            "O solicitante ainda não vinculou o WhatsApp. Peça a ele para gerar o código em Notificações > Minhas "
+            "preferências e enviá-lo ao número da empresa.",
         )
 
-    # Determina o texto final a enviar
-    final_message = ""
     template = None
     if body.template_id:
-        stmt_tpl = select(WhatsAppTemplate).where(WhatsAppTemplate.id == body.template_id)
-        template = (await session.execute(stmt_tpl)).scalar_one_or_none()
-        if not template:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Template não encontrado.")
-
-        # Busca nome da empresa
-        stmt_comp = select(Company).limit(1)
-        company = (await session.execute(stmt_comp)).scalar_one_or_none()
-        comp_name = company.name if company else "Gestão de TI"
-
+        template = await _get_template(session, body.template_id)
         final_message = render_template(
             template_content=template.content,
             ticket=ticket,
-            company_name=comp_name,
-            observacao=body.observacao or ""
+            company_name=await _company_name(session),
+            observacao=body.observacao or "",
         )
     elif body.custom_message and body.custom_message.strip():
         final_message = body.custom_message.strip()
     else:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Informe um template pré-definido ou digite uma mensagem personalizada."
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "Informe um template pré-definido ou digite uma mensagem personalizada.")
+
+    delivery = await enqueue_direct_message(
+        session,
+        channel=WHATSAPP_CHANNEL,
+        address=address,
+        recipient_user_id=requester_user.id,
+        text=final_message,
+        actor_user_id=ctx["user_id"],
+        entity_type="ticket",
+        entity_id=ticket.id,
+        priority=PRIORITY_BY_NUMBER[body.priority],
+    )
+    # Fica registrado no histórico do chamado para a equipe.
+    session.add(
+        TicketInteraction(
+            ticket_id=ticket.id,
+            author_id=ctx["user_id"],
+            message=f"📱 [WhatsApp enviado]\n\n{final_message}",
+            is_internal=False,
         )
-
-    # 1. Enfileira na fila outbox segura (com Anti-Ban)
-    queue_service = WhatsAppQueueService(session)
-    outbox_item = await queue_service.enqueue_message(
-        to_phone=ticket.requester.phone,
-        message=final_message,
-        priority=body.priority,
-        ticket_id=ticket.id,
-        template_id=template.id if template else None,
-        metadata={"author_id": str(current_user_id), "template_code": template.code if template else None}
     )
-
-    # 2. Registra como interação pública no chamado para constar no histórico da equipe
-    author_id = current_user_id
-    interaction_msg = f"📱 *[WhatsApp Enviado]*\n\n{final_message}"
-    interaction = TicketInteraction(
-        ticket_id=ticket.id,
-        author_id=author_id,
-        message=interaction_msg,
-        is_internal=False
-    )
-
-    session.add(interaction)
     await session.commit()
-
-    # 3. Dispara processamento em background (sem aguardar delays para responder a UI)
-    try:
-        await queue_service.process_outbox(max_batch=5, skip_sleep=True)
-    except Exception:
-        pass
-
     return {
         "status": "queued",
-        "outbox_id": outbox_item.id,
-        "to_phone": ticket.requester.phone,
-        "message": "Mensagem enfileirada e enviada para processamento com proteção Anti-Ban!"
+        "delivery_id": delivery.id,
+        "message": "Mensagem enfileirada; acompanhe o envio em Notificações > Entregas.",
     }
