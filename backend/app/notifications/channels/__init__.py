@@ -6,6 +6,7 @@ from app.notifications.channels.email import EmailAdapter
 from app.notifications.channels.in_app import InAppAdapter
 from app.notifications.channels.slack import SlackAdapter
 from app.notifications.channels.telegram import TelegramAdapter
+from app.notifications.channels.webpush import WebPushAdapter
 from app.notifications.channels.whatsapp import WhatsAppAdapter
 
 ADAPTERS: dict[str, type] = {
@@ -14,6 +15,7 @@ ADAPTERS: dict[str, type] = {
     TelegramAdapter.channel: TelegramAdapter,
     WhatsAppAdapter.channel: WhatsAppAdapter,
     SlackAdapter.channel: SlackAdapter,
+    WebPushAdapter.channel: WebPushAdapter,
 }
 
 

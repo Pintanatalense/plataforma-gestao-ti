@@ -11,8 +11,9 @@ import { MatInputModule } from '@angular/material/input';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { NotificationPrefs, NotificationsService } from '../../../core/services/notifications.service';
 import { MyChannelsComponent } from './my-channels.component';
+import { PushSettingsComponent } from './push-settings.component';
 
-export const CHANNEL_LABELS: Record<string, string> = { email: 'E-mail', telegram: 'Telegram', whatsapp: 'WhatsApp', slack: 'Slack' };
+export const CHANNEL_LABELS: Record<string, string> = { email: 'E-mail', telegram: 'Telegram', whatsapp: 'WhatsApp', slack: 'Slack', webpush: 'Pop-up no navegador' };
 export const CATEGORY_LABELS: Record<string, string> = {
   ticket: 'Chamados',
   asset: 'Ativos',
@@ -34,7 +35,7 @@ export function toggleDisabled(list: string[], item: string, enabled: boolean): 
   imports: [
     CommonModule, FormsModule, RouterLink,
     MatButtonModule, MatIconModule, MatSlideToggleModule, MatCheckboxModule,
-    MatFormFieldModule, MatInputModule, MatSnackBarModule, MyChannelsComponent
+    MatFormFieldModule, MatInputModule, MatSnackBarModule, MyChannelsComponent, PushSettingsComponent
   ],
   template: `
     <div class="page">
@@ -46,6 +47,7 @@ export function toggleDisabled(list: string[], item: string, enabled: boolean): 
         <a mat-stroked-button routerLink="/notifications"><mat-icon>arrow_back</mat-icon> Caixa de entrada</a>
       </header>
 
+      <app-push-settings />
       <app-my-channels />
 
       @if (prefs(); as p) {

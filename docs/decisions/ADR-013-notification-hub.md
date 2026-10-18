@@ -505,3 +505,24 @@ Decisões de desenho:
 - **Acoplamento (ADR-004):** `automations.py` lê `StockItem` e `Asset` diretamente, só leitura. É o único ponto do hub que consulta tabelas de outro módulo, deliberadamente concentrado num arquivo.
 
 **Adiadas** (dependem de dado que não existe): #3 SLA (prazos por prioridade ainda não decididos, §14.3), #5 termo não assinado (não há modelo de termo) e #6 divergência de inventário (o inventário não calcula divergência). Cada uma vira um job novo + uma regra quando o dado existir.
+
+---
+
+## 21. Registro de implementação — Fase G (pop-up do navegador / Web Push)
+
+Pedido durante os testes da Fase F: avisar com pop-up do sistema operacional quando o sistema não está aberto numa aba.
+
+| Tema | Decidido | Feito |
+|---|---|---|
+| Tecnologia | Web Push (RFC 8030/8291) com VAPID (RFC 8292) | dependência nova `pywebpush` (traz `py-vapid`); sem conta em serviço de terceiros: o aviso trafega pelo serviço de push do próprio navegador (FCM, Mozilla, WNS, Apple) |
+| Canal | adapter `webpush`, mesmo contrato dos demais | `channels/webpush.py`; entra no pseudo-canal `preferred`, respeita preferências (`channels_disabled`), categorias e horário de silêncio; `critical` ignora o silêncio como nos outros |
+| Chaves | VAPID geradas pelo sistema | par P-256 gerado na primeira chamada de `GET /notifications/push/public-key`; privada cifrada (Fernet) em `channel_configs['webpush']`; `sub` = e-mail do primeiro administrador |
+| Aparelhos | vários por pessoa | tabela `push_subscriptions` (migration `o5d6e7f8a9b0`), até 10 por conta; o endpoint identifica o aparelho: se outra conta usar o mesmo navegador, a inscrição muda de dono |
+| Endereço no hub | um por usuário | `user_channel_addresses` com `webpush:<user_id>`, verificado enquanto houver aparelho; sumindo o último, o endereço sai |
+| Segurança (SSRF) | o servidor faz POST na URL informada pelo navegador | **só HTTPS e só hosts de serviços de push conhecidos** (`fcm.googleapis.com`, `push.services.mozilla.com`, `notify.windows.com`, `push.apple.com`, `android.googleapis.com`); testado com IP de metadados, `localhost`, sufixo enganoso e credencial na URL |
+| Limpeza | inscrições mortas | 404/410 do serviço de push apagam a inscrição; 429, 5xx e falha de rede são retentáveis; demais 4xx são permanentes sem apagar |
+| Pop-up | não duplicar o sino | o service worker (`/push-sw.js`) não mostra o pop-up quando há janela do sistema visível; vários avisos do mesmo chamado se fundem (`tag`); o clique abre/foca o sistema no chamado |
+| Interface | opt-in por aparelho | cartão "Pop-up no navegador" em Minhas preferências: ativar, enviar teste (passa pelo worker) e desativar; explica quando falta HTTPS, quando o navegador não suporta e quando a permissão está negada |
+| HTTPS | exigência do navegador (contexto seguro) | `docker-compose.https.yml` + `nginx/https.conf.template` + `scripts/install.* --https` (certificado autoassinado); `localhost` dispensa HTTPS. Blocos de rota do Nginx foram para `nginx/app-locations.conf`, compartilhados pelos dois modos |
+
+Limites conhecidos: o navegador precisa estar em execução (no Chrome/Edge, o processo em segundo plano basta); iOS só aceita Web Push em PWA instalada na tela inicial; o conteúdo trafega cifrado até o navegador, mas o serviço de push enxerga metadados (aparelho e horário); sem teste contra FCM/Mozilla reais no CI (transporte HTTP simulado; a criptografia e a assinatura VAPID são reais).
