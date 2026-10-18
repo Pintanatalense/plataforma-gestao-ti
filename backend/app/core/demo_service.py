@@ -10,7 +10,7 @@ Gerenciamento seguro de ciclo de vida de dados demonstrativos:
 
 import logging
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 from sqlalchemy import and_, delete, func, or_, select, update
@@ -207,10 +207,15 @@ class DemoManagementService:
 
         # Desvincular admin de colaborador demo
         await self.session.execute(update(UserAccount).where(UserAccount.id == admin_user_id).values(employee_id=None))
-        # Só categorias que apontam para setor de exemplo (as do catálogo inicial apontam para o setor de TI real).
+        # Categorias que apontavam para setores de exemplo voltam ao setor de TI real (catálogo inicial), se existir.
+        from app.core.starter_catalog import TI_SECTOR_CODE
+
+        real_ti_id = (
+            await self.session.execute(select(Sector.id).where(Sector.code == TI_SECTOR_CODE, Sector.is_demo == False))
+        ).scalar_one_or_none()
         demo_sector_ids = select(Sector.id).where(Sector.is_demo == True)
         await self.session.execute(
-            update(TicketCategory).where(TicketCategory.default_sector_id.in_(demo_sector_ids)).values(default_sector_id=None)
+            update(TicketCategory).where(TicketCategory.default_sector_id.in_(demo_sector_ids)).values(default_sector_id=real_ti_id)
         )
         await self.session.execute(update(Employee).values(manager_id=None))
 
@@ -224,8 +229,10 @@ class DemoManagementService:
         # Excluir setores demo
         await self.session.execute(delete(Sector).where(Sector.is_demo == True))
 
-        # Excluir unidades demo
-        await self.session.execute(delete(Unit).where(Unit.is_demo == True))
+        # Excluir unidades demo (menos as que ainda abrigam setores reais, como o de TI do catálogo inicial)
+        await self.session.execute(
+            delete(Unit).where(Unit.is_demo == True, Unit.id.not_in(select(Sector.unit_id)))
+        )
 
         # Excluir empresas demo
         await self.session.execute(delete(Company).where(Company.is_demo == True))
@@ -304,8 +311,7 @@ class DemoManagementService:
             )
             self.session.add(matriz)
             await self.session.flush()
-        else:
-            matriz.is_demo = True
+        # A Matriz criada na instalação é a unidade real da empresa: continua sendo após limpar o exemplo.
 
         stmt_f = select(Unit).where(Unit.code == "FIL-01")
         filial = (await self.session.execute(stmt_f)).scalar_one_or_none()
@@ -357,9 +363,12 @@ class DemoManagementService:
         sec_man = sectors["MAN-02"]
         sec_com = sectors["COM-01"]
 
+        from app.core.starter_catalog import TI_SECTOR_CODE
+
+        real_ti_id = (await self.session.execute(select(Sector.id).where(Sector.code == TI_SECTOR_CODE))).scalar_one_or_none()
         categories = list((await self.session.execute(select(TicketCategory))).scalars().all())
         for cat in categories:
-            if not cat.default_sector_id:
+            if not cat.default_sector_id or cat.default_sector_id == real_ti_id:
                 c_low = cat.name.lower()
                 if "finan" in c_low:
                     cat.default_sector_id = sec_fin.id
@@ -393,6 +402,7 @@ class DemoManagementService:
         ]
 
         created_employees = []
+        created_users: list[UserAccount] = []
         for idx, (u_name, u_email, s_code, u_pos, u_role) in enumerate(demo_users_data, 1):
             sec = sectors[s_code]
             reg_num = f"DEMO-{idx:03d}"
@@ -435,6 +445,7 @@ class DemoManagementService:
                 usr.is_demo = True
                 usr.employee_id = emp.id
             created_employees.append(emp)
+            created_users.append(usr)
 
         await self.session.flush()
 
@@ -474,6 +485,7 @@ class DemoManagementService:
             ("PAT-0004", "Dell Latitude 3420 - RH", cat_note.id, matriz.id, created_employees[3].id),
             ("PAT-0005", "HP ProBook 440 G8 - TI", cat_note.id, filial.id, created_employees[7].id),
         ]
+        warranty_days = {"PAT-0001": 20, "PAT-0002": 5, "PAT-0003": 400, "PAT-0004": 200, "PAT-0005": 90}
         for tag, name, cat_id, u_id, emp_id in assets_sample:
             stmt_a = select(Asset).where(Asset.tag == tag)
             ast = (await self.session.execute(stmt_a)).scalar_one_or_none()
@@ -493,6 +505,12 @@ class DemoManagementService:
                 ast.is_demo = True
                 ast.unit_id = u_id
                 ast.employee_id = emp_id
+            # Duas garantias perto de vencer mostram o alerta automático do worker.
+            ast.warranty_expires = date.today() + timedelta(days=warranty_days[tag])
+
+        await self.session.flush()
+        await self._seed_demo_stock(matriz.id)
+        await self._seed_demo_tickets(sec_ti, created_employees, created_users, adm_usr)
 
         # 6. Atualizar modo para DEMO
         await self.set_system_mode("DEMO")
@@ -517,3 +535,60 @@ class DemoManagementService:
             "company": company.name,
             "users_count": len(demo_users_data),
         }
+
+
+    async def _seed_demo_stock(self, unit_id: uuid.UUID) -> None:
+        """Insumos de exemplo; três ficam no mínimo ou abaixo, para ver o alerta de estoque baixo."""
+        categories = {c.name: c.id for c in (await self.session.execute(select(StockCategory))).scalars()}
+        sample = [
+            ("Toner HP 85A (preto)", 2, 5, "Toners & Suprimentos"),
+            ("Cabo HDMI 2 m", 15, 5, "Cabos & Conectores"),
+            ("Mouse USB", 3, 10, "Periféricos & Acessórios"),
+            ("SSD 480 GB", 8, 3, "Componentes & Peças"),
+            ("Cabo de rede Cat6 5 m", 10, 10, "Cabos & Conectores"),
+        ]
+        for name, quantity, minimum, category in sample:
+            exists = (
+                await self.session.execute(select(StockItem.id).where(StockItem.name == name, StockItem.is_demo == True))
+            ).first()
+            if not exists:
+                self.session.add(
+                    StockItem(
+                        name=name, unit_id=unit_id, quantity=quantity, min_quantity=minimum,
+                        category_id=categories.get(category), technical_specs={}, is_demo=True,
+                    )
+                )
+
+    async def _seed_demo_tickets(
+        self, sector_ti: Sector, employees: list[Employee], users: list[UserAccount], admin: UserAccount | None
+    ) -> None:
+        """Chamados de exemplo em vários estágios, gravados direto (não disparam notificações)."""
+        if not employees or not users:
+            return
+        categories = {c.name: c.id for c in (await self.session.execute(select(TicketCategory))).scalars()}
+        technician = users[-1]  # "Gabriel TI", perfil Atendente
+        sample = [
+            ("Notebook não liga após atualização", "Depois da atualização de ontem o equipamento não inicia.", "HIGH", "IN_PROGRESS", 0, technician, "Hardware e equipamentos"),
+            ("Sem acesso à pasta compartilhada do financeiro", "Aparece acesso negado ao abrir a pasta Financeiro.", "MEDIUM", "OPENED", 1, None, "Acessos e contas"),
+            ("Impressora do RH com papel enroscando", "Trava a cada 3 ou 4 folhas.", "LOW", "PENDING", 3, technician, "Impressão"),
+            ("Instalar o Office na máquina nova", "Preciso do pacote Office licenciado.", "LOW", "RESOLVED", 2, technician, "Software e sistemas"),
+            ("Wi-Fi caindo na sala de reuniões", "Cai várias vezes durante as videochamadas.", "CRITICAL", "OPENED", 4, None, "Rede e internet"),
+            ("Solicitação de mouse sem fio", "O atual está com o botão falhando.", "LOW", "CLOSED", 5, admin, "Outros"),
+        ]
+        for title, description, priority, status, requester_idx, assignee, category in sample:
+            requester = employees[requester_idx]
+            ticket = Ticket(
+                title=title, description=description, priority=priority, status=status, custom_fields={},
+                requester_id=requester.id, assignee_id=assignee.id if assignee else None,
+                origin_unit_id=requester.unit_id, origin_sector_id=requester.sector_id,
+                responsible_sector_id=sector_ti.id, category_id=categories.get(category), is_demo=True,
+            )
+            self.session.add(ticket)
+            await self.session.flush()
+            if assignee:
+                self.session.add(
+                    TicketInteraction(
+                        ticket_id=ticket.id, author_id=assignee.id, message="Recebi o chamado e já estou verificando.", is_internal=False
+                    )
+                )
+        await self.session.flush()

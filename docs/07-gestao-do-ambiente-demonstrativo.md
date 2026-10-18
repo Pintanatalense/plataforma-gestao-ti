@@ -58,12 +58,13 @@ Caso a empresa queira utilizar o sistema para treinar novos técnicos ou realiza
 
 1. Acesse **Administração > Ambientes & Dados**.
 2. Clique no botão **Recarregar Dados Demonstrativos**.
-3. O serviço injeta um conjunto coeso e consistente contendo:
-   * 1 Empresa Modelo (`Empresa Modelo Demonstração S.A.`);
-   * 2 Unidades operacionais (Matriz Curitiba e Filial São Paulo);
-   * 8 Setores organizacionais (TI, RH, Financeiro, Vendas, etc.);
-   * 8 Contas de usuários e colaboradores com cargos e ramais fictícios;
-   * 16 Categorias de chamados com formulários dinâmicos;
-   * 10 Ativos de hardware (notebooks, desktops, switches) com números de série e notas fiscais simuladas;
-   * 10 Chamados em diferentes estágios (Aberto, Em Atendimento, Pendente, Resolvido).
-4. A carga é **idempotente**: executá-la repetidas vezes atualiza os registros existentes sem gerar duplicidades ou conflitos de chave primária.
+3. O serviço injeta um conjunto de exemplo (todos marcados `is_demo`):
+   * 1 empresa de exemplo (`TechCorp Soluções Empresariais Ltda.`) e a unidade "Filial Operacional - RN"; a **Matriz** criada na instalação é a unidade real e não é marcada como exemplo;
+   * 8 setores de exemplo (Financeiro, Comercial, Diretoria, RH, Administrativo, Operacional, Manutenção, TI);
+   * 8 colaboradores com contas de exemplo (senha `Demo@2026`; só para conhecer) e o colaborador do administrador;
+   * 5 ativos (notebooks) com garantias variadas, duas perto de vencer;
+   * 5 insumos de estoque, três no mínimo ou abaixo (alimentam o alerta de estoque baixo);
+   * 6 chamados em vários estágios (aberto, em atendimento, pendente, resolvido, encerrado) para o setor de TI de exemplo.
+   Os chamados são gravados direto, sem disparar notificações.
+4. Recarregar apaga o exemplo anterior (com a mesma proteção de backup da limpeza) e cria de novo, sem duplicar.
+5. O **catálogo inicial** (setor de TI e categorias de chamado e de ativo, criado no assistente) nunca é tratado como exemplo: ao limpar, as categorias voltam a apontar para o setor de TI real.
