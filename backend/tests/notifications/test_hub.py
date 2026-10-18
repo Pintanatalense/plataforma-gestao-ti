@@ -479,7 +479,7 @@ async def test_compute_next_run_daily_uses_system_timezone():
 
 async def test_default_jobs_created_once():
     async with TestSessionLocal() as s:
-        assert await ensure_default_jobs(s) == 2
+        assert await ensure_default_jobs(s) == 4
         await s.commit()
     async with TestSessionLocal() as s:
         assert await ensure_default_jobs(s) == 0

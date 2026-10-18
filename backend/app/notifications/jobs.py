@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
 from app.notifications.channels.base import SessionFactory
+from app.notifications.automations import job_stock_low_check, job_warranty_check
 from app.notifications.models import Delivery, DomainEvent, Notification, ScheduledJob
 from app.notifications.outbox import emit_event
 
@@ -24,6 +25,8 @@ READ_NOTIFICATION_RETENTION_DAYS = 180
 DEFAULT_JOBS: dict[str, str] = {
     "backup.daily": "daily:02:00",
     "retention.cleanup": "daily:03:30",
+    "stock.low_check": "every:30",
+    "assets.warranty_check": "daily:08:00",
 }
 
 
@@ -118,6 +121,8 @@ async def job_retention_cleanup(session_factory: SessionFactory) -> None:
 JOBS: dict[str, Callable[[SessionFactory], Awaitable[None]]] = {
     "backup.daily": job_backup,
     "retention.cleanup": job_retention_cleanup,
+    "stock.low_check": job_stock_low_check,
+    "assets.warranty_check": job_warranty_check,
 }
 
 
