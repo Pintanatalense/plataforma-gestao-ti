@@ -294,3 +294,9 @@ Os roteiros de API usados (login por perfil, anexos, estoque concorrente, webhoo
 - **WebSocket com JWT na URL:** corrigido (ticket de 60 s).
 - **Erro de validação com `field_validator` customizado devolvia 500:** corrigido no handler global.
 - **Não validado numa stack Docker real nas Fases B e C** (Docker Desktop indisponível na máquina de desenvolvimento): cobertura por testes automatizados (backend com `httpx.MockTransport` para a Bot API) e CI; falta exercitar um bot real e o WebSocket via Nginx.
+
+## Nota — Fase D
+
+- **P0-5 (webhook do WhatsApp) / P1-14 (fila WhatsApp sem worker) / P1-16:** **resolvidos de vez** — o bot, a fila e o webhook antigos foram removidos; o canal agora é a Meta Cloud API no hub, com assinatura HMAC, vínculo por código, fila com retentativa e painel.
+- Código morto removido: `whatsapp/{adapter,conversation_service,queue_service,notification_dispatcher}.py`, serviço `evolution-api` do Compose, ~600 linhas de UI de "anti-ban/outbox" no painel administrativo.
+- **Não validado contra a Meta real** nem em stack Docker (Docker Desktop indisponível); coberto por testes com a Graph API simulada.

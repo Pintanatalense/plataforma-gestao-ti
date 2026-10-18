@@ -1,6 +1,6 @@
 # 04. Configuração de Integrações (WhatsApp & E-mail SMTP)
 
-Este documento detalha o funcionamento, parametrização segura e testes de conectividade das duas principais integrações da plataforma: **Evolution API (WhatsApp)** e **Notificações por E-mail (SMTP)**.
+Este documento detalha o funcionamento, parametrização segura e testes de conectividade das duas principais integrações da plataforma: **WhatsApp (Meta Cloud API)**, **Telegram** e **Notificações por E-mail (SMTP)**.
 
 ---
 
@@ -37,56 +37,47 @@ A plataforma implementa a política de privacidade **DEC-012**:
 
 ---
 
-## 2. Integração com Evolution API (WhatsApp)
+## 2. WhatsApp — Meta Cloud API (oficial)
 
-A plataforma se comunica com a **Evolution API v1/v2** para disponibilizar atendimento automatizado, abertura de chamados e consulta de status via WhatsApp.
+O canal WhatsApp faz parte do hub de notificações (ADR-013). Usa **somente a API oficial da Meta**: não há mais Evolution, QR Code, "anti-ban" nem fila própria — a Meta limita a taxa e o hub faz retentativa, circuito e painel de entregas.
 
-### 2.1. Arquitetura da Integração
+### 2.1. O que você precisa na Meta
+1. Uma conta **Meta Business** e um app com o produto **WhatsApp** (Cloud API).
+2. Um número de telefone cadastrado no app (o *Phone Number ID* aparece em WhatsApp > Configuração da API).
+3. Um **token de acesso permanente** (usuário do sistema), o **App Secret** (Configurações do app > Básico) e, para falar com a equipe fora da janela de 24 h, um **template aprovado** (ver 2.3).
 
-```mermaid
-sequenceDiagram
-    autonumber
-    actor Cliente as Colaborador
-    participant WhatsApp as Rede WhatsApp
-    participant Evo as Evolution API
-    participant Proxy as Nginx Proxy
-    participant Backend as API Gestão de TI
+### 2.2. Configuração no sistema
+Notificações > **Entregas e regras** > aba **Saúde dos canais** > card **WhatsApp**:
 
-    Cliente->>WhatsApp: Envia mensagem (ex: "Status do meu chamado")
-    WhatsApp->>Evo: Encaminha evento (MESSAGES_UPSERT)
-    Evo->>Proxy: Webhook POST /api/v1/integrations/whatsapp/webhook
-    Proxy->>Backend: Roteamento interno
-    Backend->>Backend: Processa menu de atendimento ou consulta chamado
-    Backend->>Evo: POST /message/sendText/{instancia} (Com delay Anti-ban)
-    Evo->>WhatsApp: Dispara resposta no chat do colaborador
-    WhatsApp->>Cliente: Exibe resposta do assistente
-```
+| Campo | Para quê |
+|---|---|
+| Token de acesso | envia mensagens (cifrado; nunca é exibido de volta) |
+| App Secret | valida a assinatura `X-Hub-Signature-256` dos webhooks (cifrado) |
+| Phone Number ID | identifica o número remetente |
+| Versão da Graph API | padrão `v21.0` |
+| Template / idioma | mensagem aprovada usada **fora** da janela de 24 h |
+| Endereço do sistema | prefixo dos links enviados nas mensagens |
 
-### 2.2. Configuração da Instância
-1. Acesse **Administração > WhatsApp & Anti-Ban > Conexão & Gateway**.
-2. Selecione o provedor: `Evolution API (Recomendado)`.
-3. Preencha os campos:
-   * **URL Base da API:** `http://gestao-ti-evolution:8084` (na rede Docker interna) ou `https://wa.empresa.com.br`.
-   * **Nome da Instância:** Identificador criado para a empresa (Ex: `suporte_ti`).
-   * **Chave de API (API Key):** Token secreto configurado na Evolution API.
-4. Clique em **Salvar Configurações**.
+Ao salvar, o sistema valida o token na Graph API e descobre o número exibido. O campo **Token de verificação** é gerado pelo sistema.
 
-### 2.3. Pareamento com QR Code
-1. Clique no botão **Conectar WhatsApp (QR Code)** disponível no banner de status da conexão.
-2. O sistema consultará a Evolution API (`GET /instance/connect/{instancia}`) e renderizará o QR Code em tela.
-3. No smartphone com o número do WhatsApp corporativo:
-   * Abra o WhatsApp > **Aparelhos conectados** > **Conectar um aparelho**.
-   * Aponte a câmera para o QR Code na tela.
-4. Após o pareamento, o status no painel passará para **CONNECTED**.
+### 2.3. Janela de 24 h e templates
+A Meta só permite texto livre até 24 h depois da última mensagem **da pessoa**. O sistema decide sozinho:
+* janela aberta → texto livre;
+* janela fechada → o **template** configurado, com **uma variável** (`{{1}}`) que recebe o texto da notificação (quebras de linha viram ` | `, exigência da Meta);
+* janela fechada e sem template → a entrega falha de forma definitiva com a explicação, visível no painel.
 
-### 2.4. Configuração do Webhook na Evolution API
-No painel ou API da Evolution API, cadastre a URL de webhook do sistema:
-* **Webhook URL:** `http://SEU_DOMINIO/api/v1/integrations/whatsapp/webhook`
-* **Eventos Habilitados:** `MESSAGES_UPSERT`
+Sugestão de corpo do template (categoria *Utility*, idioma `pt_BR`): `Aviso do TI: {{1}}`.
 
-### 2.5. Escudo de Proteção Anti-Ban
-Para proteger o número corporativo de bloqueios acidentais pela Meta:
-* **Delays Dinâmicos:** Intervalo configurável entre 4s e 10s entre envios sucessivos com jitter aleatório.
-* **Simulação de Digitação (`presence: composing`):** Envia indicador visual de "digitando..." antes do texto final.
-* **Taxa Limite:** Máximo de mensagens por minuto por destinatário.
-* **Kill Switch de Emergência:** Pausa imediatamente todas as mensagens da fila de saída caso ocorra qualquer anomalia.
+### 2.4. Webhook (exige HTTPS público)
+Em WhatsApp > Configuração > Webhook:
+* **URL de callback:** `https://SEU_DOMINIO/api/v1/integrations/whatsapp/webhook`
+* **Token de verificação:** o exibido no card do WhatsApp
+* **Campo assinado:** `messages`
+
+O endpoint só aceita corpo com assinatura HMAC válida (`401` caso contrário). Diferente do Telegram, que usa long polling, o WhatsApp **precisa** de um endereço HTTPS acessível pela Meta.
+
+### 2.5. Vínculo das pessoas
+Cada pessoa vai em Notificações > Minhas preferências, gera o código do WhatsApp e envia `vincular CÓDIGO` ao número da empresa (ou usa o link `wa.me`). Só então recebe avisos e usa o menu (abrir, consultar e responder chamados). Telefone digitado no cadastro do colaborador **não** vincula nada.
+
+### 2.6. Envio a partir do chamado
+O botão "WhatsApp" do chamado (respostas rápidas com templates do sistema) cria uma entrega no hub para o solicitante, **se ele tiver vinculado o WhatsApp**; senão o sistema explica o que falta. O envio fica registrado no histórico do chamado.

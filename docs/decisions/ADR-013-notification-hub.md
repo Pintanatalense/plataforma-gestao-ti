@@ -451,3 +451,20 @@ Detalhes que valem registro:
 | Limite por remetente | 20 msg/min | em memória no worker (1 processo, §4.5) |
 
 Fora do escopo desta fase: WhatsApp (Fase D, substitui `wa_*`), Slack (E), automações (F); grupos do Telegram são ignorados de propósito.
+
+---
+
+## 18. Registro de implementação — Fase D (WhatsApp)
+
+Decisão do §14.1: **Meta Cloud API**. O adapter Evolution **não foi implementado** (o registro de canais permite acrescentá-lo depois como um arquivo, se a decisão mudar).
+
+| Tema | Decidido | Feito |
+|---|---|---|
+| Canal | adapter `whatsapp` (Meta) | `channels/whatsapp.py`; config e segredos em `channel_configs` (token, App Secret, token de verificação do webhook) |
+| Janela de 24 h | previsto (`needs_template_window`) | o adapter usa `conversation_sessions.last_interaction_at` (última mensagem DA PESSOA): aberta → texto livre; fechada → template configurado (1 variável; quebras de linha viram ` \| `); fechada e sem template → falha **permanente** que explica o motivo; erro 131047 no meio do caminho → refaz com template |
+| Webhook | `X-Hub-Signature-256` + `hub.verify_token` | `GET` handshake (comparação em tempo constante) e `POST` com HMAC do **corpo bruto**; sem assinatura válida → 401 sem corpo; o bot responde por **entrega**, nunca no corpo; reentrega do mesmo `wamid` não repete efeito |
+| Vínculo | código de uso único | o mesmo do Telegram; no WhatsApp o comando é `vincular CÓDIGO` (sem barra), aceito só fora de um diálogo em andamento, para um título de chamado começando com "vincular" não virar tentativa de vínculo |
+| Remoção do legado | `wa_outbox`, `wa_sessions`, webhook antigo | removidos junto com `wa_configs`, `conversation_service`, `queue_service`, `notification_dispatcher`, o adapter antigo (Evolution/Mock/Meta), QR Code, anti-ban e kill switch; migration `m3b4c5d6e7f8` (irreversível); serviço `evolution-api` saiu do Compose |
+| Templates | "migração de templates" | `wa_templates` (respostas rápidas do técnico) **ficou**, com os mesmos endpoints; o envio "a partir do chamado" agora cria uma entrega no hub e só vai a quem **vinculou** o WhatsApp (telefone do cadastro não é endereço verificado) |
+
+Limites conhecidos: os *status* de entrega do webhook (`sent/delivered/read/failed`) são aceitos e ignorados — o resultado vem da resposta síncrona da API; mensagens não textuais (áudio, imagem) são ignoradas sem resposta; o limitador por remetente do webhook é por processo da API (4 workers), logo mais frouxo que o do Telegram; sem teste contra a Meta real (somente transporte simulado).
