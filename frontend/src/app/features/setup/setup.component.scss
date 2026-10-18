@@ -1,17 +1,19 @@
 .setup-container {
   display: flex;
   justify-content: center;
-  align-items: center;
-  height: 100vh;
+  align-items: flex-start;
+  min-height: 100vh;
+  padding: 24px 16px;
+  box-sizing: border-box;
 }
 
 .setup-card {
   width: 100%;
-  max-width: 450px;
+  max-width: 520px;
   padding: 16px;
 
   mat-card-header {
-    margin-bottom: 24px;
+    margin-bottom: 16px;
     text-align: center;
     display: flex;
     flex-direction: column;
@@ -26,5 +28,49 @@
   .full-width {
     width: 100%;
     margin-bottom: 8px;
+  }
+
+  .section {
+    margin: 16px 0 8px;
+    font-size: 15px;
+    font-weight: 600;
+  }
+
+  .modes {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+
+  .mode {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 8px 12px 8px 4px;
+
+    &.mat-mdc-radio-checked {
+      border-color: #2563eb;
+      background: #eff6ff;
+    }
+
+    .mode-desc {
+      display: block;
+      font-size: 13px;
+      color: #64748b;
+      white-space: normal;
+      margin-top: 2px;
+    }
+  }
+
+  .error {
+    color: #dc2626;
+    margin: 4px 0 0;
+  }
+
+  .hint {
+    color: #64748b;
+    font-size: 13px;
+    text-align: center;
+    margin: 8px 0 0;
   }
 }

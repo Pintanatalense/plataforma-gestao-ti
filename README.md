@@ -12,7 +12,31 @@ Estado técnico detalhado e navegação do código: [`docs/PROJECT_MAP.md`](docs
 
 ## Instalação
 
-Pré-requisito: Docker com Compose v2.
+Pré-requisito: Docker com Compose v2 (no Windows, Docker Desktop).
+
+### Instalação guiada (recomendado)
+
+Um comando gera o `.env` com senhas aleatórias, sobe o sistema e espera ele responder:
+
+```bash
+git clone <url-do-repositorio> plataforma-gestao-ti && cd plataforma-gestao-ti
+scripts/install.sh                 # Linux, macOS, WSL, Git Bash   (opção: --port 8080)
+```
+
+```powershell
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1      # Windows   (opção: -Port 8080)
+```
+
+Quando terminar, abra `http://localhost` (ou a porta escolhida). O **assistente de primeiro acesso** pede só o administrador e uma escolha:
+
+| Opção | O que você recebe |
+|---|---|
+| **Base limpa** (uso real) | Nome da sua empresa, setor de TI, categorias iniciais de chamados e de ativos (editáveis). Nenhum dado fictício. |
+| **Modelo de exemplo** | Empresa, colaboradores, chamados, ativos e estoque fictícios para conhecer o sistema. Depois, em Administração, dá para apagar só os dados de exemplo (com backup automático antes). |
+
+O script nunca sobrescreve um `.env` existente e pode ser repetido. **Guarde uma cópia da `APP_ENCRYPTION_KEY` fora do servidor.**
+
+### Instalação manual
 
 ```bash
 cp .env.example .env
@@ -23,7 +47,7 @@ cp .env.example .env
 docker compose up -d --build
 ```
 
-Abra `http://<servidor>` (porta `HTTP_PORT`, padrão 80). No primeiro acesso a tela de **configuração inicial** cria o administrador.
+Abra `http://<servidor>` (porta `HTTP_PORT`, padrão 80). No primeiro acesso o assistente cria o administrador (veja acima).
 O Nginx é a única porta publicada; banco e API ficam na rede interna do Compose. O build do frontend acontece dentro da imagem do Nginx.
 
 O serviço **`worker`** (mesma imagem, 1 réplica) envia as notificações (sino e e-mail), executa o **backup diário às 02:00** (fuso `APP_TIMEZONE`, padrão America/Fortaleza) e a limpeza de dados antigos às 03:30. Saúde: `docker compose ps` (healthcheck por heartbeat) e `components.worker` em `/api/v1/health`.
