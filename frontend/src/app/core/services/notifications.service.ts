@@ -36,6 +36,22 @@ export interface NotificationPrefs {
   available_categories?: string[];
 }
 
+export interface ChannelLinkInfo {
+  channel: string;
+  label: string;
+  available: boolean;
+  bot_username: string | null;
+  linked: boolean;
+  linked_at: string | null;
+}
+
+export interface LinkCode {
+  code: string;
+  expires_at: string;
+  command: string;
+  deep_link: string | null;
+}
+
 const RECONNECT_MIN_MS = 2_000;
 const RECONNECT_MAX_MS = 60_000;
 
@@ -160,6 +176,18 @@ export class NotificationsService {
 
   markAllAsRead(): Observable<any> {
     return this.http.post(`${this.apiUrl}/read-all`, {});
+  }
+
+  myChannels(): Observable<{ channels: ChannelLinkInfo[] }> {
+    return this.http.get<{ channels: ChannelLinkInfo[] }>(`${this.apiUrl}/channels`);
+  }
+
+  createLinkCode(channel: string): Observable<LinkCode> {
+    return this.http.post<LinkCode>(`${this.apiUrl}/channels/${channel}/link-code`, {});
+  }
+
+  unlinkChannel(channel: string): Observable<void> {
+    return this.http.delete<void>(`${this.apiUrl}/channels/${channel}`);
   }
 
   getPrefs(): Observable<NotificationPrefs> {

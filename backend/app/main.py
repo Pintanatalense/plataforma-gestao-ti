@@ -179,6 +179,9 @@ def _mount_routers(app: FastAPI) -> None:
     from app.notifications.router import router as notifications_router
     app.include_router(notifications_router, prefix=prefix)
 
+    from app.notifications.channels_router import router as notifications_channels_router
+    app.include_router(notifications_channels_router, prefix=prefix)
+
     from app.notifications.admin_router import router as notifications_admin_router
     app.include_router(notifications_admin_router, prefix=prefix)
 

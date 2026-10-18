@@ -4,10 +4,12 @@ Registro dos canais. Adicionar um canal = um arquivo em `channels/` + uma linha 
 from app.notifications.channels.base import AdapterContext, ChannelAdapter
 from app.notifications.channels.email import EmailAdapter
 from app.notifications.channels.in_app import InAppAdapter
+from app.notifications.channels.telegram import TelegramAdapter
 
 ADAPTERS: dict[str, type] = {
     InAppAdapter.channel: InAppAdapter,
     EmailAdapter.channel: EmailAdapter,
+    TelegramAdapter.channel: TelegramAdapter,
 }
 
 

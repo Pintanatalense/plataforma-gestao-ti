@@ -29,10 +29,11 @@ describe('toggleDisabled', () => {
 describe('PreferencesComponent', () => {
   let fixture: ComponentFixture<PreferencesComponent>;
   let component: PreferencesComponent;
-  let service: { getPrefs: ReturnType<typeof vi.fn>; savePrefs: ReturnType<typeof vi.fn> };
+  let service: { myChannels: ReturnType<typeof vi.fn>; getPrefs: ReturnType<typeof vi.fn>; savePrefs: ReturnType<typeof vi.fn> };
 
   async function create(getResult = of({ ...PREFS })) {
     service = {
+      myChannels: vi.fn().mockReturnValue(of({ channels: [] })),
       getPrefs: vi.fn().mockReturnValue(getResult),
       savePrefs: vi.fn().mockImplementation((p: NotificationPrefs) => of(p))
     };

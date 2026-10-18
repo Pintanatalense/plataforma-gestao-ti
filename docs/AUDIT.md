@@ -285,3 +285,12 @@ echo SECRET_KEY=CHANGE-ME-IN-PRODUCTION > .env
 docker compose -p gtiaudit up -d --build               # backend entra em loop: "Multiple head revisions"
 ```
 Os roteiros de API usados (login por perfil, anexos, estoque concorrente, webhook, backup/restore) ficaram no scratchpad da sessão e podem ser convertidos nos testes da seção 3.2 quando você aprovar as correções.
+
+---
+
+## Nota — Fases B e C
+
+- **P0-5 / vínculo por matrícula (WhatsApp):** o novo fluxo seguro existe para o Telegram (código de uso único). O WhatsApp só ganha o mesmo vínculo na Fase D.
+- **WebSocket com JWT na URL:** corrigido (ticket de 60 s).
+- **Erro de validação com `field_validator` customizado devolvia 500:** corrigido no handler global.
+- **Não validado numa stack Docker real nas Fases B e C** (Docker Desktop indisponível na máquina de desenvolvimento): cobertura por testes automatizados (backend com `httpx.MockTransport` para a Bot API) e CI; falta exercitar um bot real e o WebSocket via Nginx.

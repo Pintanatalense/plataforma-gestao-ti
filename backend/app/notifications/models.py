@@ -7,7 +7,7 @@ entregas com retentativa, regras de roteamento, configuração de canais e agend
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -155,6 +155,64 @@ class UserNotificationPref(Base, TimestampMixin):
     quiet_start: Mapped[str] = mapped_column(String(5), nullable=False, default="20:00")
     quiet_end: Mapped[str] = mapped_column(String(5), nullable=False, default="07:00")
     critical_bypass: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+
+
+class UserChannelAddress(Base, TimestampMixin):
+    """Endereço do usuário num canal externo (ex.: chat id do Telegram), válido só após o vínculo por código."""
+
+    __tablename__ = "user_channel_addresses"
+    __table_args__ = (
+        UniqueConstraint("channel", "address", name="uq_channel_address"),
+        UniqueConstraint("user_id", "channel", name="uq_user_channel"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(30), nullable=False)
+    address: Mapped[str] = mapped_column(String(255), nullable=False)
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ChannelLinkCode(Base):
+    """Código de uso único para vincular a conta a um canal. Guarda só o HMAC, nunca o código."""
+
+    __tablename__ = "channel_link_codes"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True)
+    channel: Mapped[str] = mapped_column(String(30), nullable=False)
+    code_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+
+class ConversationSession(Base):
+    """Estado da conversa com um remetente externo (independe do transporte)."""
+
+    __tablename__ = "conversation_sessions"
+    __table_args__ = (UniqueConstraint("channel", "external_id", name="uq_conversation_sender"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    channel: Mapped[str] = mapped_column(String(30), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True)
+    state: Mapped[str] = mapped_column(String(40), nullable=False, default="IDLE")
+    context: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    last_interaction_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
+
+
+class InboundMessage(Base):
+    """Mensagem recebida já processada: a unicidade (canal, id) impede executar duas vezes numa reentrega."""
+
+    __tablename__ = "inbound_messages"
+    __table_args__ = (UniqueConstraint("channel", "message_id", name="uq_inbound_message"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    channel: Mapped[str] = mapped_column(String(30), nullable=False)
+    message_id: Mapped[str] = mapped_column(String(100), nullable=False)
+    external_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    received_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
 
 
 class WorkerHeartbeat(Base):

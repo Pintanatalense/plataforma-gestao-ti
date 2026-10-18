@@ -10,8 +10,9 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { NotificationPrefs, NotificationsService } from '../../../core/services/notifications.service';
+import { MyChannelsComponent } from './my-channels.component';
 
-export const CHANNEL_LABELS: Record<string, string> = { email: 'E-mail' };
+export const CHANNEL_LABELS: Record<string, string> = { email: 'E-mail', telegram: 'Telegram' };
 export const CATEGORY_LABELS: Record<string, string> = {
   ticket: 'Chamados',
   asset: 'Ativos',
@@ -33,7 +34,7 @@ export function toggleDisabled(list: string[], item: string, enabled: boolean): 
   imports: [
     CommonModule, FormsModule, RouterLink,
     MatButtonModule, MatIconModule, MatSlideToggleModule, MatCheckboxModule,
-    MatFormFieldModule, MatInputModule, MatSnackBarModule
+    MatFormFieldModule, MatInputModule, MatSnackBarModule, MyChannelsComponent
   ],
   template: `
     <div class="page">
@@ -45,9 +46,11 @@ export function toggleDisabled(list: string[], item: string, enabled: boolean): 
         <a mat-stroked-button routerLink="/notifications"><mat-icon>arrow_back</mat-icon> Caixa de entrada</a>
       </header>
 
+      <app-my-channels />
+
       @if (prefs(); as p) {
         <section class="card">
-          <h2>Canais</h2>
+          <h2>Quais canais usar</h2>
           @for (channel of p.available_channels ?? []; track channel) {
             <mat-slide-toggle
               [checked]="!p.channels_disabled.includes(channel)"
