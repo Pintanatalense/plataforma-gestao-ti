@@ -110,6 +110,11 @@ export const routes: Routes = [
         loadComponent: () => import('./features/assets/asset-create/asset-create.component').then(m => m.AssetCreateComponent)
       },
       {
+        path: 'assets/import-glpi',
+        canActivate: [permissionGuard('assets.write')],
+        loadComponent: () => import('./features/assets/asset-glpi-import/asset-glpi-import.component').then(m => m.AssetGlpiImportComponent)
+      },
+      {
         path: 'assets/:id',
         canActivate: [permissionGuard('assets.read')],
         loadComponent: () => import('./features/assets/asset-detail/asset-detail.component').then(m => m.AssetDetailComponent)

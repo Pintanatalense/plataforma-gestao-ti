@@ -9,6 +9,7 @@
         <div class="title-row">
           <h1>{{ asset.name }}</h1>
           <span class="tag-badge">#{{ asset.tag }}</span>
+          <span class="tag-badge" *ngIf="asset.serial_number" matTooltip="Número de série">SN: {{ asset.serial_number }}</span>
           <span class="category-pill" *ngIf="asset.category">
             <mat-icon>devices</mat-icon>
             {{ asset.category.name }}

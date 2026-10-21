@@ -289,7 +289,10 @@ export class AssetDetailComponent implements OnInit {
       velocidade: 'Velocidade de Impressão',
       cor: 'Cor / Acabamento',
       voltagem: 'Tensão / Voltagem',
-      potencia: 'Potência / Consumo'
+      potencia: 'Potência / Consumo',
+      mac_address: 'Endereço MAC',
+      hostname: 'Nome de Rede (Hostname)',
+      last_logged_user: 'Último Usuário Conectado'
     };
     return map[key.toLowerCase()] || key.replace(/_/g, ' ').toUpperCase();
   }
@@ -302,6 +305,8 @@ export class AssetDetailComponent implements OnInit {
     if (k.includes('os') || k.includes('sistema')) return 'terminal';
     if (k.includes('tela') || k.includes('screen') || k.includes('display')) return 'laptop';
     if (k.includes('imei') || k.includes('serial')) return 'fingerprint';
+    if (k.includes('mac') || k.includes('hostname') || k.includes('rede')) return 'lan';
+    if (k.includes('usuario') || k.includes('user')) return 'person';
     if (k.includes('conex') || k.includes('porta') || k.includes('usb')) return 'cable';
     if (k.includes('tipo') || k.includes('print')) return 'print';
     if (k.includes('resol')) return 'aspect_ratio';

@@ -42,6 +42,7 @@ export interface AssetEmployeeSimple {
 export interface Asset {
   id: string;
   tag: string;
+  serial_number?: string | null;
   name: string;
   category_id: string;
   category?: AssetCategory;
@@ -54,6 +55,73 @@ export interface Asset {
   employee_id?: string | null;
   unit?: AssetUnitSimple | null;
   employee?: AssetEmployeeSimple | null;
+}
+
+// --- Importação de inventário GLPI Agent (XML) ---
+
+export type GlpiRowStatus = 'MATCHED' | 'NEW' | 'ERROR';
+export type GlpiRowAction = 'update' | 'create' | 'skip';
+export type GlpiRowOutcome = 'created' | 'updated' | 'skipped' | 'error';
+
+export interface GlpiParsedInventory {
+  device_id?: string | null;
+  hostname?: string | null;
+  chassis_type?: string | null;
+  cpu_name?: string | null;
+  cpu_cores?: string | null;
+  cpu_threads?: string | null;
+  ram_mb?: number | null;
+  storage?: { model?: string; serial?: string; size_mb?: number; type?: string; interface?: string }[];
+  os_name?: string | null;
+  os_version?: string | null;
+  os_arch?: string | null;
+  bios?: { manufacturer?: string | null; model?: string | null };
+  network?: { mac?: string | null; ip?: string | null; type?: string | null } | null;
+  monitors?: { caption?: string; manufacturer?: string; serial?: string }[];
+  software_count?: number;
+  inventory_collected_at?: string | null;
+  last_logged_user?: string | null;
+}
+
+export interface GlpiImportRow {
+  filename: string;
+  status: GlpiRowStatus;
+  parsed?: GlpiParsedInventory | null;
+  serial_number?: string | null;
+  suggested_name?: string | null;
+  matched_asset_id?: string | null;
+  matched_asset_tag?: string | null;
+  matched_asset_name?: string | null;
+  error_message?: string | null;
+}
+
+export interface GlpiImportAnalyzeResponse {
+  rows: GlpiImportRow[];
+}
+
+export interface GlpiImportDecision {
+  filename: string;
+  action: GlpiRowAction;
+  asset_id?: string | null;
+  tag?: string | null;
+  name?: string | null;
+  category_id?: string | null;
+  unit_id?: string | null;
+}
+
+export interface GlpiImportExecuteResult {
+  filename: string;
+  outcome: GlpiRowOutcome;
+  asset_id?: string | null;
+  error_message?: string | null;
+}
+
+export interface GlpiImportExecuteResponse {
+  results: GlpiImportExecuteResult[];
+  created_count: number;
+  updated_count: number;
+  skipped_count: number;
+  error_count: number;
 }
 
 @Injectable({
@@ -137,6 +205,20 @@ export class AssetService {
 
   inspectAsset(assetId: string, data: { approved: boolean; send_to_maintenance?: boolean; notes?: string }): Observable<AssetMovement> {
     return this.http.post<AssetMovement>(`${this.movementsUrl}/${assetId}/inspect`, data);
+  }
+
+  // Importação de inventário GLPI Agent (XML)
+  analyzeGlpiImport(files: File[]): Observable<GlpiImportAnalyzeResponse> {
+    const formData = new FormData();
+    files.forEach((f) => formData.append('files', f));
+    return this.http.post<GlpiImportAnalyzeResponse>(`${this.assetsUrl}/glpi-import/analyze`, formData);
+  }
+
+  executeGlpiImport(files: File[], decisions: GlpiImportDecision[]): Observable<GlpiImportExecuteResponse> {
+    const formData = new FormData();
+    files.forEach((f) => formData.append('files', f));
+    formData.append('decisions', JSON.stringify(decisions));
+    return this.http.post<GlpiImportExecuteResponse>(`${this.assetsUrl}/glpi-import/execute`, formData);
   }
 
   // Responsibility Statement

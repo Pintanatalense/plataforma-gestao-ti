@@ -29,6 +29,7 @@ export interface AssetQuickViewData {
           <div class="title-row">
             <h2>{{ asset.name }}</h2>
             <span class="tag-badge">#{{ asset.tag }}</span>
+            <span class="tag-badge" *ngIf="asset.serial_number">SN: {{ asset.serial_number }}</span>
           </div>
           <span class="category-name">{{ asset.category?.name || 'Sem categoria' }}</span>
         </div>
@@ -516,7 +517,10 @@ export class AssetQuickViewDialogComponent {
       tipo: 'Tecnologia / Tipo',
       conexao: 'Conexão',
       resolucao: 'Resolução',
-      cor: 'Cor / Acabamento'
+      cor: 'Cor / Acabamento',
+      mac_address: 'Endereço MAC',
+      hostname: 'Nome de Rede (Hostname)',
+      last_logged_user: 'Último Usuário Conectado'
     };
     return map[key.toLowerCase()] || key.replace(/_/g, ' ').toUpperCase();
   }
@@ -529,6 +533,8 @@ export class AssetQuickViewDialogComponent {
     if (k.includes('os') || k.includes('sistema')) return 'terminal';
     if (k.includes('tela') || k.includes('screen') || k.includes('display')) return 'laptop';
     if (k.includes('imei') || k.includes('serial')) return 'fingerprint';
+    if (k.includes('mac') || k.includes('hostname') || k.includes('rede')) return 'lan';
+    if (k.includes('usuario') || k.includes('user')) return 'person';
     if (k.includes('conex') || k.includes('porta') || k.includes('usb')) return 'cable';
     if (k.includes('tipo') || k.includes('print')) return 'print';
     if (k.includes('resol')) return 'aspect_ratio';

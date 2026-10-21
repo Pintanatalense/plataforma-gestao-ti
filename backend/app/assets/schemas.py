@@ -29,6 +29,7 @@ class AssetCategoryResponse(AssetCategoryBase):
 
 class AssetBase(BaseModel):
     tag: str = Field(..., max_length=50)
+    serial_number: str | None = Field(None, max_length=100)
     name: str = Field(..., max_length=255)
     category_id: uuid.UUID
     status: AssetStatus = Field(default=AssetStatus.IN_STOCK)

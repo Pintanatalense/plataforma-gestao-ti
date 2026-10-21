@@ -1,0 +1,174 @@
+<div class="page-container">
+  <div class="page-header">
+    <div class="header-content">
+      <button mat-icon-button class="back-btn" routerLink="/assets">
+        <mat-icon>arrow_back</mat-icon>
+      </button>
+      <h1>Importar Inventário do GLPI Agent</h1>
+    </div>
+  </div>
+
+  <div class="form-container">
+    <div class="wizard-steps-indicator">
+      <div class="step-badge" [class.active]="importStep === 1" [class.completed]="importStep > 1">1. Arquivos</div>
+      <div class="step-divider"></div>
+      <div class="step-badge" [class.active]="importStep === 2" [class.completed]="importStep > 2">2. Revisão</div>
+      <div class="step-divider"></div>
+      <div class="step-badge" [class.active]="importStep === 3" [class.completed]="importStep > 3">3. Resultado</div>
+    </div>
+
+    <!-- PASSO 1: Upload -->
+    <div *ngIf="importStep === 1" class="wizard-panel">
+      <div class="file-upload-box">
+        <input type="file" #fileInput multiple accept=".xml" (change)="onFilesSelected($event)" style="display: none">
+        <button mat-stroked-button (click)="fileInput.click()" type="button">
+          <mat-icon>attach_file</mat-icon> Selecionar Arquivo(s) .XML
+        </button>
+      </div>
+
+      <div class="guidelines-box">
+        <h4><mat-icon>info</mat-icon> Sobre o inventário do GLPI Agent</h4>
+        <ul>
+          <li>Envie os arquivos gerados pelo GLPI Agent (geralmente em <code>C:\Program Files\GLPI-Agent\DOC\*.xml</code>).</li>
+          <li>Até 20 arquivos por vez, 5 MB cada.</li>
+          <li>Equipamentos já cadastrados são encontrados pelo número de série e têm as especificações técnicas atualizadas.</li>
+          <li>Equipamentos novos exigem Categoria, Unidade e Patrimônio preenchidos manualmente antes de importar.</li>
+        </ul>
+      </div>
+
+      <div class="selected-files-list" *ngIf="selectedFiles.length > 0">
+        <div class="selected-file-chip" *ngFor="let file of selectedFiles">
+          <mat-icon>description</mat-icon>
+          <span>{{ file.name }}</span>
+          <small>({{ formatBytes(file.size) }})</small>
+          <button mat-icon-button (click)="removeFile(file)" type="button" aria-label="Remover arquivo">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+      </div>
+
+      <div class="action-row">
+        <button mat-flat-button color="primary" [disabled]="selectedFiles.length === 0 || analyzing" (click)="analyzeFiles()">
+          <mat-icon>search</mat-icon> Analisar Arquivos
+        </button>
+      </div>
+    </div>
+
+    <!-- PASSO 2: Revisão -->
+    <div *ngIf="importStep === 2" class="wizard-panel">
+      <div class="import-row-card" *ngFor="let row of rows">
+        <div class="import-row-header">
+          <div class="import-row-title">
+            <mat-icon>{{ row.status === 'ERROR' ? 'error_outline' : 'laptop' }}</mat-icon>
+            <strong>{{ row.hostname || row.filename }}</strong>
+            <span class="filename-hint">{{ row.filename }}</span>
+          </div>
+          <span class="status-badge" [ngClass]="row.status.toLowerCase()">
+            <ng-container [ngSwitch]="row.status">
+              <span *ngSwitchCase="'MATCHED'">Encontrado: {{ row.matchedAssetTag }}</span>
+              <span *ngSwitchCase="'NEW'">Novo ativo</span>
+              <span *ngSwitchCase="'ERROR'">Erro ao ler arquivo</span>
+            </ng-container>
+          </span>
+        </div>
+
+        <div class="import-row-error" *ngIf="row.status === 'ERROR'">{{ row.errorMessage }}</div>
+
+        <div class="import-row-specs" *ngIf="row.status !== 'ERROR'">
+          <span *ngIf="row.serialNumber"><strong>Série:</strong> {{ row.serialNumber }}</span>
+          <span *ngIf="row.cpuName"><strong>CPU:</strong> {{ row.cpuName }}</span>
+          <span *ngIf="row.ramMb"><strong>RAM:</strong> {{ (row.ramMb / 1024).toFixed(1) }} GB</span>
+          <span *ngIf="row.storageSummary"><strong>Armazenamento:</strong> {{ row.storageSummary }}</span>
+          <span *ngIf="row.osName"><strong>SO:</strong> {{ row.osName }}</span>
+          <span *ngIf="row.macAddress"><strong>MAC:</strong> {{ row.macAddress }}</span>
+          <span *ngIf="row.hostname"><strong>Hostname:</strong> {{ row.hostname }}</span>
+        </div>
+
+        <div class="import-row-action" *ngIf="row.status !== 'ERROR'">
+          <mat-form-field appearance="outline" subscriptSizing="dynamic">
+            <mat-label>Ação</mat-label>
+            <mat-select [(ngModel)]="row.action">
+              <mat-option *ngIf="row.status === 'MATCHED'" value="update">Atualizar especificações do ativo existente</mat-option>
+              <mat-option *ngIf="row.status === 'NEW'" value="create">Criar novo ativo</mat-option>
+              <mat-option value="skip">Pular este arquivo</mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+
+        <div class="import-row-new-fields" *ngIf="row.action === 'create'">
+          <mat-form-field appearance="outline" subscriptSizing="dynamic">
+            <mat-label>Patrimônio (Tag)</mat-label>
+            <input matInput [(ngModel)]="row.tag" placeholder="Ex: PAT-1234">
+          </mat-form-field>
+          <mat-form-field appearance="outline" subscriptSizing="dynamic">
+            <mat-label>Nome do Ativo</mat-label>
+            <input matInput [(ngModel)]="row.name">
+          </mat-form-field>
+          <mat-form-field appearance="outline" subscriptSizing="dynamic">
+            <mat-label>Categoria</mat-label>
+            <mat-select [(ngModel)]="row.categoryId">
+              <mat-option *ngFor="let cat of categories" [value]="cat.id">{{ cat.name }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field appearance="outline" subscriptSizing="dynamic">
+            <mat-label>Unidade</mat-label>
+            <mat-select [(ngModel)]="row.unitId">
+              <mat-option *ngFor="let u of units" [value]="u.id">{{ u.name }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+      </div>
+
+      <div class="action-row space-between">
+        <button mat-stroked-button (click)="importStep = 1">
+          <mat-icon>arrow_back</mat-icon> Voltar
+        </button>
+        <button mat-flat-button color="primary" [disabled]="!canConfirm || executing" (click)="confirmImport()">
+          <mat-icon>play_arrow</mat-icon> Confirmar Importação
+        </button>
+      </div>
+    </div>
+
+    <!-- PASSO 3: Resultado -->
+    <div *ngIf="importStep === 3" class="wizard-panel">
+      <div class="result-summary-grid">
+        <div class="result-card success">
+          <span class="count">{{ resultCreated }}</span>
+          <span class="label">Criados</span>
+        </div>
+        <div class="result-card total">
+          <span class="count">{{ resultUpdated }}</span>
+          <span class="label">Atualizados</span>
+        </div>
+        <div class="result-card skipped">
+          <span class="count">{{ resultSkipped }}</span>
+          <span class="label">Pulados</span>
+        </div>
+        <div class="result-card error">
+          <span class="count">{{ resultErrors }}</span>
+          <span class="label">Erros</span>
+        </div>
+      </div>
+
+      <div class="error-report-section" *ngIf="resultErrors > 0">
+        <h3 class="section-heading error-title">Itens com erro</h3>
+        <ul class="result-error-list">
+          <li *ngFor="let row of rows">
+            <ng-container *ngIf="row.outcome === 'error'">
+              <strong>{{ row.filename }}:</strong> {{ row.outcomeError }}
+            </ng-container>
+          </li>
+        </ul>
+      </div>
+
+      <div class="action-row space-between">
+        <button mat-stroked-button (click)="resetWizard()">
+          <mat-icon>restart_alt</mat-icon> Nova Importação
+        </button>
+        <button mat-flat-button color="primary" (click)="goToAssets()">
+          <mat-icon>devices</mat-icon> Ver Ativos
+        </button>
+      </div>
+    </div>
+  </div>
+</div>

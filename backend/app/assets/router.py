@@ -1,9 +1,16 @@
+import json
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.assets.glpi_import_schemas import (
+    GlpiImportAnalyzeResponse,
+    GlpiImportExecuteResponse,
+    GlpiImportExecuteRowRequest,
+)
+from app.assets.glpi_import_service import GlpiAssetImportService
 from app.assets.repository import AssetRepository
 from app.assets.schemas import AssetCategoryCreate, AssetCategoryResponse, AssetCategoryUpdate, AssetCreate, AssetResponse, AssetUpdate
 from app.assets.services import AssetService
@@ -17,6 +24,10 @@ router = APIRouter()
 
 def get_asset_service(db: AsyncSession = Depends(get_db)) -> AssetService:
     return AssetService(AssetRepository(db), AssetMovementRepository(db))
+
+
+def get_glpi_import_service(db: AsyncSession = Depends(get_db)) -> GlpiAssetImportService:
+    return GlpiAssetImportService(AssetRepository(db), AssetService(AssetRepository(db), AssetMovementRepository(db)))
 
 
 @router.get("/categories", response_model=list[AssetCategoryResponse], dependencies=[Depends(require_permission("assets.read"))])
@@ -72,6 +83,35 @@ async def list_my_assets(
     if not user or not user.employee_id:
         return []
     return await service.list_assets(employee_id=user.employee_id)
+
+
+@router.post(
+    "/glpi-import/analyze",
+    response_model=GlpiImportAnalyzeResponse,
+    summary="Analisa arquivos de inventário XML do GLPI Agent e indica ativos novos/já cadastrados",
+    dependencies=[Depends(require_permission("assets.write"))],
+)
+async def analyze_glpi_import(
+    files: list[UploadFile] = File(...),
+    service: GlpiAssetImportService = Depends(get_glpi_import_service),
+):
+    return await service.analyze(files)
+
+
+@router.post(
+    "/glpi-import/execute",
+    response_model=GlpiImportExecuteResponse,
+    summary="Executa a importação/atualização dos ativos a partir do inventário GLPI já analisado",
+    dependencies=[Depends(require_permission("assets.write"))],
+)
+async def execute_glpi_import(
+    files: list[UploadFile] = File(...),
+    decisions: str = Form(...),
+    service: GlpiAssetImportService = Depends(get_glpi_import_service),
+    current_user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    parsed_decisions = [GlpiImportExecuteRowRequest.model_validate(d) for d in json.loads(decisions)]
+    return await service.execute(files, parsed_decisions, current_user_id)
 
 
 @router.get("/{asset_id}", response_model=AssetResponse)

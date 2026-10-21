@@ -60,6 +60,19 @@ class AssetRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
+    async def get_asset_by_serial_number(self, serial_number: str) -> Asset | None:
+        stmt = (
+            select(Asset)
+            .options(
+                selectinload(Asset.category),
+                selectinload(Asset.unit),
+                selectinload(Asset.employee),
+            )
+            .where(Asset.serial_number == serial_number, Asset.is_active == True)
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list_assets(self, unit_id: uuid.UUID | None = None, employee_id: uuid.UUID | None = None) -> Sequence[Asset]:
         stmt = (
             select(Asset)
