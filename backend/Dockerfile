@@ -16,10 +16,10 @@ FROM base AS deps
 
 # Dependências exatas do uv.lock (build reproduzível: sem o lock, o pip pegava a versão mais nova de cada
 # pacote e uma release sem wheel quebrava o build).
-RUN pip install --no-cache-dir uv --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
 COPY pyproject.toml uv.lock ./
 RUN uv export --frozen --no-dev --no-emit-project --no-hashes -o requirements.lock \
-    && pip install --no-cache-dir -r requirements.lock --trusted-host pypi.org --trusted-host pypi.python.org --trusted-host files.pythonhosted.org
+    && uv pip install --system --no-cache -r requirements.lock
 
 # --- Stage: runtime ---
 FROM base AS runtime
