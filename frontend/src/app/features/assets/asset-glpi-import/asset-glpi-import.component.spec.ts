@@ -138,4 +138,19 @@ describe('AssetGlpiImportComponent', () => {
     expect(component.importStep).toBe(3);
     expect(component.resultCreated).toBe(1);
   });
+
+  it('ignores files whose name is already selected, since decisions are matched by filename', async () => {
+    const fixture = await mount(fakeAssetService());
+    const component = fixture.componentInstance;
+
+    const pick = (...files: File[]) => {
+      const input = { files, value: 'x' } as unknown as HTMLInputElement;
+      component.onFilesSelected({ target: input } as unknown as Event);
+    };
+
+    pick(file('a.xml'), file('b.xml'));
+    pick(file('a.xml'), file('c.xml'), file('c.xml'));
+
+    expect(component.selectedFiles.map((f) => f.name)).toEqual(['a.xml', 'b.xml', 'c.xml']);
+  });
 });

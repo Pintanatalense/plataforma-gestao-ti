@@ -14,6 +14,7 @@ from app.assets.glpi_import_service import GlpiAssetImportService
 from app.assets.repository import AssetRepository
 from app.assets.schemas import AssetCategoryCreate, AssetCategoryResponse, AssetCategoryUpdate, AssetCreate, AssetResponse, AssetUpdate
 from app.assets.services import AssetService
+from app.core.exceptions import ValidationException
 from app.core.dependencies import require_permission, get_current_user_id, get_token_payload
 from app.database import get_db
 from app.movements.repository import AssetMovementRepository
@@ -110,7 +111,13 @@ async def execute_glpi_import(
     service: GlpiAssetImportService = Depends(get_glpi_import_service),
     current_user_id: uuid.UUID = Depends(get_current_user_id),
 ):
-    parsed_decisions = [GlpiImportExecuteRowRequest.model_validate(d) for d in json.loads(decisions)]
+    try:
+        raw_decisions = json.loads(decisions)
+        if not isinstance(raw_decisions, list):
+            raise ValueError("decisions deve ser uma lista")
+        parsed_decisions = [GlpiImportExecuteRowRequest.model_validate(d) for d in raw_decisions]
+    except ValueError as exc:  # inclui pydantic.ValidationError e json.JSONDecodeError
+        raise ValidationException("Decisões de importação inválidas.") from exc
     return await service.execute(files, parsed_decisions, current_user_id)
 
 

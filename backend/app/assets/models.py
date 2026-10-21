@@ -46,7 +46,7 @@ class Asset(Base, TimestampMixin, SoftDeleteMixin):
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     tag: Mapped[str] = mapped_column(String(50), nullable=False, unique=True) # Patrimônio
-    serial_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    serial_number: Mapped[str | None] = mapped_column(String(100), nullable=True, unique=True, index=True)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
 
     category_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("asset_categories.id"), nullable=False)

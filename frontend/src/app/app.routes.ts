@@ -125,6 +125,11 @@ export const routes: Routes = [
         loadComponent: () => import('./features/stock/stock-list/stock-list.component').then(m => m.StockListComponent)
       },
       {
+        path: 'stock/categories',
+        canActivate: [permissionGuard('stock.read')],
+        loadComponent: () => import('./features/stock/category-list/category-list.component').then(m => m.StockCategoryListComponent)
+      },
+      {
         path: 'stock/new',
         canActivate: [permissionGuard('stock.write')],
         loadComponent: () => import('./features/stock/stock-create/stock-create.component').then(m => m.StockCreateComponent)

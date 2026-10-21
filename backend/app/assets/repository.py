@@ -60,7 +60,8 @@ class AssetRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_asset_by_serial_number(self, serial_number: str) -> Asset | None:
+    async def get_asset_by_serial_number(self, serial_number: str, include_inactive: bool = False) -> Asset | None:
+        # O índice único vale também para ativos inativos; por isso há a opção de enxergá-los.
         stmt = (
             select(Asset)
             .options(
@@ -68,8 +69,10 @@ class AssetRepository:
                 selectinload(Asset.unit),
                 selectinload(Asset.employee),
             )
-            .where(Asset.serial_number == serial_number, Asset.is_active == True)
+            .where(Asset.serial_number == serial_number)
         )
+        if not include_inactive:
+            stmt = stmt.where(Asset.is_active == True)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
