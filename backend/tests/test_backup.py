@@ -6,12 +6,10 @@ import pytest
 import uuid
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
 
 from app.core.security import hash_password
 from app.organization.models import Company, Unit, Sector, Employee
 from app.identity.models import UserAccount, Role, Permission
-from app.backup.models import DatabaseBackup
 from tests.conftest import make_auth_headers
 
 pytestmark = pytest.mark.asyncio

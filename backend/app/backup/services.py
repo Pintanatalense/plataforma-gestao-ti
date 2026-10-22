@@ -14,7 +14,7 @@ import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-from sqlalchemy import select, delete
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -100,7 +100,7 @@ class BackupService:
             )
             self.session.add(backup_err)
             await self.session.commit()
-            raise BusinessRuleException(f"Não foi possível gerar o backup: {exc}")
+            raise BusinessRuleException(f"Não foi possível gerar o backup: {exc}") from exc
 
     def _get_active_db_url(self) -> str:
         try:
@@ -151,7 +151,7 @@ class BackupService:
         if "sqlite" in parsed.scheme:
             sqlite_path = parsed.path.lstrip("/")
             dump_lines = [
-                f"-- DUMP SQLITE - PLATAFORMA DE GESTÃO DE TI",
+                "-- DUMP SQLITE - PLATAFORMA DE GESTÃO DE TI",
                 f"-- Gerado em: {datetime.now(timezone.utc).isoformat()}",
                 "PRAGMA foreign_keys=OFF;",
                 "BEGIN TRANSACTION;",

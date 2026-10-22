@@ -1,11 +1,10 @@
 import pytest
-from uuid import uuid4
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.organization.models import Employee, Company, Unit, Sector
 from app.identity.models import UserAccount
-from app.assets.models import AssetCategory, Asset
+from app.assets.models import AssetCategory
 from app.core.security import hash_password
 from tests.conftest import make_auth_headers
 

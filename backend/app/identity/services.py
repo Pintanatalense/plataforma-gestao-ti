@@ -11,7 +11,6 @@ from typing import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.events import Event, event_bus
 from app.core.exceptions import (
     AppException,
     BusinessRuleException,

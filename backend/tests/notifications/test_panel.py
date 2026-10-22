@@ -190,7 +190,7 @@ async def test_rule_crud_validation_and_system_rules(client: AsyncClient, db_ses
     assert (await client.delete(f"{ADMIN_BASE}/rules/{system_rule['id']}", headers=h)).status_code >= 400
     assert (await client.put(f"{ADMIN_BASE}/rules/{system_rule['id']}", json={**RULE, "enabled": False}, headers=h)).status_code == 200
     assert (await client.delete(f"{ADMIN_BASE}/rules/{rule_id}", headers=h)).status_code == 204
-    kinds = {l.event_type for l in (await db_session.execute(select(AuditLog))).scalars()}
+    kinds = {log.event_type for log in (await db_session.execute(select(AuditLog))).scalars()}
     assert {"notifications.rule_created", "notifications.rule_updated", "notifications.rule_deleted"} <= kinds
 
 
@@ -357,7 +357,8 @@ async def _plan_for(db: AsyncSession, user, event_type="backup.failed", priority
 
 async def test_fanout_honors_prefs_and_quiet_hours(db_session: AsyncSession, users):
     _, _, plain = users
-    by_channel = lambda plans: {p.channel: p for p in plans}
+    def by_channel(plans):
+        return {p.channel: p for p in plans}
 
     daytime = by_channel(await _plan_for(db_session, plain, now=_at(12)))
     assert set(daytime) == {"in_app", "email"} and daytime["email"].next_attempt_at == _at(12)

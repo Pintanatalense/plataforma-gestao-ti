@@ -10,8 +10,6 @@ from typing import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
-logger = logging.getLogger(__name__)
-
 from app.core.exceptions import (
     BusinessRuleException,
     ForbiddenException,
@@ -31,6 +29,8 @@ from app.service_desk.schemas import (
     TicketCategoryUpdate,
     TicketMaterialCreate,
 )
+
+logger = logging.getLogger(__name__)
 
 
 class ServiceDeskService:
@@ -310,7 +310,7 @@ class ServiceDeskService:
             assets = await self.repo.get_assets_by_ids(schema.asset_ids)
             ticket.assets = list(assets)
 
-        updated_ticket = await self.repo.update_ticket(ticket)
+        await self.repo.update_ticket(ticket)
 
         # Se houver notas de justificativa/resolução, cria interação no chamado
         if schema.notes and schema.notes.strip():

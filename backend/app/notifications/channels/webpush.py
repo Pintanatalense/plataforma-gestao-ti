@@ -144,7 +144,7 @@ class WebPushAdapter:
             )
 
             delivered, transient, errors = 0, False, []
-            for sub, (status, detail) in zip(subs, outcomes):
+            for sub, (status, detail) in zip(subs, outcomes, strict=True):
                 if 200 <= status < 300:
                     delivered += 1
                     sub.last_used_at = datetime.now(timezone.utc)

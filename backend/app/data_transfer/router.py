@@ -8,11 +8,11 @@ Endpoints REST para importação e exportação de dados CSV:
 
 import json
 from typing import Annotated
-from fastapi import APIRouter, Depends, UploadFile, File, Form, Response, status
+from fastapi import APIRouter, Depends, UploadFile, File, Form, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.core.dependencies import require_permission, get_token_payload
+from app.core.dependencies import require_permission
 from app.data_transfer.schemas import (
     ExportFilterParams,
     ImportAnalyzeResponse,

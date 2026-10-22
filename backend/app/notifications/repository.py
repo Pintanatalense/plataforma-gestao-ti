@@ -30,7 +30,7 @@ class NotificationRepository:
         return list(result.scalars().all())
         
     async def get_unread_count(self, user_id: uuid.UUID) -> int:
-        stmt = select(Notification).where(Notification.user_id == user_id, Notification.is_read == False)
+        stmt = select(Notification).where(Notification.user_id == user_id, Notification.is_read.is_(False))
         result = await self.session.execute(stmt)
         return len(result.scalars().all())
 
@@ -48,7 +48,7 @@ class NotificationRepository:
     async def mark_all_as_read(self, user_id: uuid.UUID) -> int:
         stmt = (
             update(Notification)
-            .where(Notification.user_id == user_id, Notification.is_read == False)
+            .where(Notification.user_id == user_id, Notification.is_read.is_(False))
             .values(is_read=True)
         )
         result = await self.session.execute(stmt)

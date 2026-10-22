@@ -47,8 +47,8 @@ async def get_token_payload(
 
     try:
         user_id = UUID(str(payload.get("sub")))
-    except ValueError:
-        raise UnauthorizedException("Identificação de usuário inválida no token")
+    except ValueError as exc:
+        raise UnauthorizedException("Identificação de usuário inválida no token") from exc
 
     row = (
         await db.execute(
@@ -99,8 +99,8 @@ async def get_current_user_id(
 
     try:
         return UUID(sub)
-    except ValueError:
-        raise UnauthorizedException("Identificação de usuário inválida no token")
+    except ValueError as exc:
+        raise UnauthorizedException("Identificação de usuário inválida no token") from exc
 
 
 async def get_current_user_ip(

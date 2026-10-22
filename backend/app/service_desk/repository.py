@@ -24,7 +24,7 @@ class ServiceDeskRepository:
     async def list_categories(self, only_active: bool = True) -> Sequence[TicketCategory]:
         stmt = select(TicketCategory)
         if only_active:
-            stmt = stmt.where(TicketCategory.is_active == True)
+            stmt = stmt.where(TicketCategory.is_active.is_(True))
         result = await self.session.execute(stmt)
         return result.scalars().all()
 

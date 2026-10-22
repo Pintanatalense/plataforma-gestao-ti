@@ -12,7 +12,6 @@ Teste E2E de Ciclo de Vida Completo da Plataforma de Gestão de TI:
 """
 
 import io
-import uuid
 import pytest
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,10 +19,10 @@ from tests.conftest import make_auth_headers
 
 from app.core.security import hash_password
 from app.organization.models import Company, Unit, Sector, Employee
-from app.identity.models import UserAccount, Role, Permission
+from app.identity.models import UserAccount
 from app.assets.models import AssetCategory, Asset, AssetStatus
 from app.stock.models import StockItem
-from app.service_desk.models import Ticket, TicketCategory
+from app.service_desk.models import TicketCategory
 from app.notifications.models import Notification
 
 pytestmark = pytest.mark.asyncio

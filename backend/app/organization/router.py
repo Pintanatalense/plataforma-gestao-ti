@@ -3,7 +3,6 @@ MOD-02 — Organização (Router)
 """
 
 import uuid
-from typing import Sequence
 
 from fastapi import APIRouter, Depends, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession

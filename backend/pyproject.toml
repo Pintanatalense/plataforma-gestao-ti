@@ -48,8 +48,19 @@ target-version = "py312"
 line-length = 120
 
 [tool.ruff.lint]
-select = ["E", "F", "W", "I", "N", "UP", "B", "SIM"]
-ignore = ["B008"]
+# Conjunto que apanha defeitos reais (import quebrado/morto, variável não usada, comparação errada,
+# raise sem causa, redefinição). Regras de estilo (E501, I, UP, W, SIM, N) ficam de fora de propósito:
+# ampliar depois, num PR só de formatação, para não misturar com mudança de comportamento.
+select = ["E4", "E7", "E9", "F", "B"]
+ignore = ["B008"]  # Depends() em argumento padrão é o idioma do FastAPI
+
+[tool.ruff.lint.per-file-ignores]
+# Importar por efeito colateral é intencional: registra os mapeadores do SQLAlchemy (relationship("Classe")
+# resolve pelo nome) e o metadata. Remover esses imports quebra scripts que não passam por app.main.
+"app/*/models.py" = ["F401"]
+"app/seed.py" = ["F401"]
+"app/seed_test.py" = ["F401"]
+"app/check_registry.py" = ["F401"]
 
 [tool.mypy]
 python_version = "3.12"

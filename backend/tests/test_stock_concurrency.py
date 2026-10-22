@@ -2,16 +2,15 @@
 
 import asyncio
 import os
-import uuid
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from app.core.security import hash_password
 from app.database import Base
 from app.identity.models import UserAccount
 from app.organization.models import Company, Unit
-from app.stock.models import StockItem, StockMovement
+from app.stock.models import StockItem
 from app.stock.repository import StockRepository
 from app.stock.schemas import StockMovementCreate
 from app.stock.services import StockService
