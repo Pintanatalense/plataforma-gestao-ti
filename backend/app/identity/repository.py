@@ -7,11 +7,11 @@ Centraliza as queries no banco de dados para UserAccount, Role e Permission.
 import uuid
 from typing import Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import update, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
-from app.identity.models import Permission, Role, UserAccount
+from app.identity.models import Permission, Role, UserAccount, user_role_association
 
 
 class IdentityRepository:
@@ -45,6 +45,13 @@ class IdentityRepository:
         stmt = select(UserAccount.id).where(UserAccount.email == email)
         result = await self.session.execute(stmt)
         return result.first() is not None
+
+    async def bump_token_version_for_role(self, role_id: uuid.UUID) -> None:
+        """Encerra as sessões de quem tem o perfil (as permissões vivem dentro do token)."""
+        user_ids = select(user_role_association.c.user_id).where(user_role_association.c.role_id == role_id)
+        await self.session.execute(
+            update(UserAccount).where(UserAccount.id.in_(user_ids)).values(token_version=UserAccount.token_version + 1)
+        )
 
     async def count_active_admins(self, exclude_user_id: uuid.UUID | None = None) -> int:
         """Administradores ativos (e não excluídos), opcionalmente sem contar um usuário."""

@@ -8,6 +8,7 @@ Este documento consolida os controles de segurança técnica, mecanismos de prot
 
 * **Hashing de Credenciais:** As senhas dos usuários nunca são armazenadas em texto plano. É utilizado o algoritmo criptográfico **bcrypt** com salting automático e fator de custo adaptativo.
 * **Tokens de Acesso (JWT):** A sessão utiliza JSON Web Tokens assinados com algoritmo HMAC-SHA256 utilizando o `SECRET_KEY` configurado nas variáveis de ambiente.
+  * **Revogação (ADR-016):** cada token leva a versão de sessão do usuário (`tv`); trocar ou redefinir a senha, desativar o usuário ou mudar seus perfis incrementa a versão e derruba as sessões abertas (401). A troca da própria senha devolve um token novo para a sessão atual. O login tem limite de 30 tentativas/minuto por IP no Nginx (429), além do bloqueio de 15 min após 5 senhas erradas na conta.
 * **Proteção de Segredos e Chaves de Integração:**
   * As credenciais das integrações (SMTP, Telegram, WhatsApp/Meta, Slack, chaves VAPID) ficam cifradas com Fernet (`APP_ENCRYPTION_KEY`) na tabela `channel_configs`; a interface mostra a senha mascarada (`********`) e nunca devolve o segredo. **Guarde `APP_ENCRYPTION_KEY` fora do servidor: sem ela, um backup restaurado não consegue decifrar essas credenciais.**
   * Nenhuma senha ou token de serviço é registrado em logs de aplicação ou exposto em respostas de erro da API.

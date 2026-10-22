@@ -1,13 +1,15 @@
 import { TestBed } from '@angular/core/testing';
 import { provideHttpClient } from '@angular/common/http';
-import { provideHttpClientTesting } from '@angular/common/http/testing';
+import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { AuthService } from './auth.service';
 
 describe('AuthService', () => {
   let service: AuthService;
+  let http: HttpTestingController;
 
   beforeEach(() => {
+    localStorage.clear();
     TestBed.configureTestingModule({
       providers: [
         provideHttpClient(),
@@ -16,9 +18,29 @@ describe('AuthService', () => {
       ]
     });
     service = TestBed.inject(AuthService);
+    http = TestBed.inject(HttpTestingController);
   });
 
   it('should be created', () => {
     expect(service).toBeTruthy();
+  });
+
+  it('keeps the session after a password change by swapping in the token the server returns', () => {
+    localStorage.setItem('access_token', 'old-token');
+    let result: unknown;
+
+    service.changeOwnPassword('atual', 'nova-senha-forte').subscribe((user) => (result = user));
+    http.expectOne('/api/v1/identity/me/password').flush({
+      id: 'u1',
+      email: 'a@b.com',
+      must_change_password: false,
+      access_token: 'new-token',
+      token_type: 'bearer'
+    });
+
+    expect(localStorage.getItem('access_token')).toBe('new-token');
+    // o token não vaza para o usuário em memória nem para o cache local
+    expect(result).toEqual({ id: 'u1', email: 'a@b.com', must_change_password: false });
+    expect(localStorage.getItem('current_user')).not.toContain('new-token');
   });
 });

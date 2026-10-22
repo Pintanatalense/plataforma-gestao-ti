@@ -51,6 +51,10 @@ class UserAccount(Base, TimestampMixin, SoftDeleteMixin):
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # Superadmin
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     
+    # Versão da sessão: todo token carrega a versão vigente (claim `tv`); incrementar invalida os tokens
+    # já emitidos (troca/reset de senha, desativação, mudança de perfil). Ver ADR-016.
+    token_version: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
+
     # Bloqueio temporário após tentativas de login inválidas
     failed_login_count: Mapped[int] = mapped_column(Integer, default=0, server_default="0", nullable=False)
     locked_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)

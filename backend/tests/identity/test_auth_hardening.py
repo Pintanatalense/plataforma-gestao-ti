@@ -88,8 +88,11 @@ async def test_password_change_is_enforced_by_the_server(client: AsyncClient, db
         f"{BASE}/me/password", json={"current_password": PASSWORD, "new_password": "outra-senha-forte-2"}, headers=headers
     )
     assert changed.status_code == 200
-    assert (await client.get(f"{BASE}/me", headers=headers)).status_code == 200
-    assert (await client.get("/api/v1/tickets/categories", headers=headers)).status_code == 200
+    # ADR-016: a troca encerra as sessões antigas; o token novo, devolvido na resposta, segue valendo
+    assert (await client.get(f"{BASE}/me", headers=headers)).status_code == 401
+    fresh = {"Authorization": f"Bearer {changed.json()['access_token']}"}
+    assert (await client.get(f"{BASE}/me", headers=fresh)).status_code == 200
+    assert (await client.get("/api/v1/tickets/categories", headers=fresh)).status_code == 200
 
 
 @pytest.mark.parametrize("key", ["CHANGE-ME-IN-PRODUCTION", "curta", "x" * 20, "alguma-coisa-CHANGE-ME-" + "a" * 20])

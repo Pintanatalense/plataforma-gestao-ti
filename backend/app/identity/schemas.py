@@ -90,6 +90,13 @@ class UserAccountPasswordChange(BaseModel):
     new_password: str = Field(..., min_length=8)
 
 
+class PasswordChangeOut(BaseModel):
+    """Resposta da troca da própria senha: as sessões antigas caem e este token substitui o atual."""
+
+    access_token: str
+    token_type: str = "bearer"
+
+
 class UserAccountOut(BaseModel):
     id: uuid.UUID
     employee_id: Optional[uuid.UUID] = None
@@ -138,3 +145,7 @@ class InitialSetup(BaseModel):
     setup_mode: str = Field("CLEAN", description="CLEAN para base limpa empresarial, DEMO para dados fictícios")
     company_name: str | None = Field(None, description="Nome da empresa contratante")
     company_cnpj: str | None = Field(None, description="CNPJ da empresa contratante")
+
+
+class UserAccountPasswordChangeOut(UserAccountOut, PasswordChangeOut):
+    """Usuário atualizado + token novo."""

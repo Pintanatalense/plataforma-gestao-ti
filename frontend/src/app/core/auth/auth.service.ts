@@ -137,16 +137,22 @@ export class AuthService {
   }
 
   changeOwnPassword(currentPassword: string, newPassword: string): Observable<UserAccount> {
-    return this.http.post<UserAccount>(`${this.apiUrl}/me/password`, {
+    // A troca encerra as sessões antigas no servidor (ADR-016): a resposta traz o token novo que
+    // substitui o atual, para esta sessão seguir logada.
+    return this.http.post<UserAccount & Partial<TokenResponse>>(`${this.apiUrl}/me/password`, {
       current_password: currentPassword,
       new_password: newPassword
     }).pipe(
-      tap((user) => {
-        this.currentUserSubject.next(user);
+      tap(({ access_token, token_type, ...user }) => {
+        if (access_token) {
+          localStorage.setItem(this.TOKEN_KEY, access_token);
+        }
+        this.currentUserSubject.next(user as UserAccount);
         try {
           localStorage.setItem(this.USER_KEY, JSON.stringify(user));
         } catch {}
-      })
+      }),
+      map(({ access_token, token_type, ...user }) => user as UserAccount)
     );
   }
 

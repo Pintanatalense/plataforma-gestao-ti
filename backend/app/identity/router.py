@@ -22,6 +22,7 @@ from app.identity.schemas import (
     UserAccountCreate,
     UserAccountOut,
     UserAccountPasswordChange,
+    UserAccountPasswordChangeOut,
     UserAccountPasswordUpdate,
     UserAccountUpdate,
 )
@@ -74,14 +75,16 @@ async def get_current_user(
     return await service.get_user(user_id)
 
 
-@router.post("/me/password", response_model=UserAccountOut)
+@router.post("/me/password", response_model=UserAccountPasswordChangeOut)
 async def change_own_password(
     schema: UserAccountPasswordChange,
     user_id: uuid.UUID = Depends(get_current_user_id),
     db: AsyncSession = Depends(get_db)
 ):
     service = IdentityService(db)
-    return await service.change_own_password(user_id, schema)
+    user, token = await service.change_own_password(user_id, schema)
+    # Campos do usuário + token novo (o antigo deixou de valer): o frontend troca o token e segue logado.
+    return {**UserAccountOut.model_validate(user).model_dump(), "access_token": token, "token_type": "bearer"}
 
 
 # ==============================================================================
