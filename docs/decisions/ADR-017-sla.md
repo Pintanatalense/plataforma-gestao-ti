@@ -1,6 +1,6 @@
 # ADR-017 — SLA de chamados
 
-**Status:** Proposto (2026-10-22). Os prazos iniciais da seção "Valores iniciais" são uma sugestão a confirmar com o usuário; todo o resto vale para a implementação.  
+**Status:** Proposto (2026-10-22), revisado após revisão independente. Os prazos iniciais da seção "Valores iniciais" são uma sugestão a confirmar com o usuário; todo o resto vale para a implementação.  
 **Data:** 2026-10-22  
 **Depende de:** ADR-013 (worker e outbox já existentes)
 
@@ -14,9 +14,11 @@ SLA é uma **política** ligada à **categoria** do chamado. Categoria sem polí
 
 ### Definições
 
-- **Primeira resposta:** primeira interação *pública* de alguém que não é o solicitante. Nota interna e mensagem automática não contam.
+- **Solicitante** é o colaborador do chamado (`Ticket.requester_id`, um `Employee`). O autor de uma interação é um `UserAccount`; ele é o solicitante quando `author.employee_id == ticket.requester_id`.
+- **Primeira resposta:** primeira `TicketInteraction` com `is_internal = false` cujo autor **não** é o solicitante (`employee_id` nulo ou diferente). Notificações automáticas não geram interação e não contam. Interações também são criadas por `update_ticket` quando a mudança de status leva `notes` (`services.py:316-323`): essas contam como públicas. O ciclo é atualizado no ponto de criação da interação (`add_interaction` e `update_ticket`), no serviço, sem trigger de banco. Limitação aceita: quem abre o próprio chamado não "responde" a ele.
 - **Resolução:** passagem para `RESOLVED` (ou `CLOSED`, se nunca houve `RESOLVED`).
 - **Atendimento** (`IN_PROGRESS`): informativo; não tem relógio próprio.
+- **Chamado sempre nasce `OPENED`** (`create_ticket`) e o criador é sempre o solicitante; o relógio começa na criação. Se um dia houver abertura "em nome de" outra pessoa, o solicitante continua sendo `requester_id`.
 
 ### Modelo de dados (migration única, aditiva)
 
@@ -24,19 +26,23 @@ SLA é uma **política** ligada à **categoria** do chamado. Categoria sem polí
 - `sla_policies` (nome, ativa, calendário, status que pausam, regra de reabertura, % de alerta).
 - `sla_policy_targets` (política, prioridade, minutos úteis de primeira resposta e de resolução). Prioridades do sistema: `LOW`, `MEDIUM`, `HIGH`, `CRITICAL`.
 - `ticket_categories.sla_policy_id` (FK nula).
-- `ticket_sla_cycles`: um registro por ciclo, com **cópia dos alvos e do calendário** vigentes no início (editar a política depois não muda chamados em andamento), `started_at`, `first_response_due_at`, `resolution_due_at` (UTC), `first_response_at`, `resolved_at`, `paused_at`, minutos restantes, `state` (`RUNNING|PAUSED|MET|BREACHED`). Único `(ticket_id, cycle)`.
+- `ticket_sla_cycles`: um registro por ciclo, com **cópia dos alvos e do calendário** vigentes no início (editar a política depois não muda chamados em andamento), `started_at`, `first_response_due_at`, `resolution_due_at` (UTC), `first_response_at`, `resolved_at`, `paused_at`, minutos restantes, `paused_minutes` acumulados, `state` (`RUNNING|PAUSED|MET|BREACHED|SUPERSEDED`). Único `(ticket_id, cycle)`.
 - `sla_breaches` (ciclo, tipo `FIRST_RESPONSE|RESOLUTION`, `due_at`, `detected_at`), único `(ciclo, tipo)`.
 
 ### Regras
 
+Tudo que o ciclo precisa (alvos, calendário, regra de reabertura, % de alerta e status de pausa) é **copiado para o ciclo** no início; depois disso nada é lido da política. Por isso editar ou desativar uma política só vale para chamados novos, e o job e os alertas seguem para ciclos abertos mesmo com a política inativa (`sla.check` não filtra por política ativa).
+
 - **Início:** criação do chamado, se a categoria tem política ativa.
-- **Pausa:** em status configurados na política (padrão `PENDING`, aguardando o solicitante). Ao pausar guarda os minutos úteis restantes; ao retomar recalcula o vencimento a partir de agora.
-- **Reabertura** (`RESOLVED` → aberto): regra da política, `RESTART` (novo ciclo só de resolução, a primeira resposta não se reaplica) ou `CONTINUE`. `CLOSED` continua imutável. `TICKET_REOPEN_DAYS` (configuração hoje sem uso) passa a limitar a reabertura.
-- **Mudança de prioridade:** recalcula os prazos do ciclo aberto a partir do início do ciclo, com os alvos da nova prioridade; violações já registradas permanecem.
-- **Mudança de categoria:** abre novo ciclo (auditado), mantendo o `started_at` original; categoria sem política encerra o relógio como "Não se aplica".
-- **Política editada ou desativada:** vale só para chamados novos.
+- **Pausa:** em status configurados na política; só `PENDING` (padrão) e `IN_PROGRESS` podem ser configurados, nunca `OPENED` (o relógio não pode nascer pausado). Ao pausar guarda os minutos úteis restantes; ao retomar recalcula o vencimento a partir de agora e acumula `paused_minutes`.
+- **Vencimento no limite:** viola quando `agora > due_at` (estritamente); resolver exatamente em `due_at` conta como cumprido.
+- **Reabertura:** hoje não existe regra no código (qualquer transição fora de `CLOSED` é aceita). Passa a ser definida como `RESOLVED → {OPENED, IN_PROGRESS, PENDING}`. Passados `TICKET_REOPEN_DAYS` dias de `resolved_at`, a transição é rejeitada (422), exceto para quem tem `service_desk.sla.manage`; isto muda o comportamento da API e entra no P4-S2. `CLOSED` continua imutável.
+  - `RESTART`: abre novo ciclo só de resolução (a primeira resposta não se reaplica); o anterior fica como está.
+  - `CONTINUE`: o ciclo volta a `RUNNING`, preservando violações já registradas e os minutos consumidos; `resolved_at` é limpo e o anterior vai para a auditoria. Uma violação de resolução registrada permanece (único `(ciclo, tipo)`), então o resultado final é `BREACHED`.
+- **Mudança de prioridade:** recalcula o vencimento do ciclo aberto com os alvos da nova prioridade, descontando o que já foi consumido: `restante = max(0, novo_alvo - consumido)`, em que `consumido` são os minutos úteis decorridos fora de pausa (`paused_minutes` evita contar pausas antigas). Em ciclo `PAUSED` só os minutos restantes são ajustados; não há vencimento até retomar. Se a nova prioridade já estourou, a violação é registrada na hora da troca, com `due_at` retroativo calculado. Violações já registradas permanecem.
+- **Mudança de categoria:** o ciclo atual passa a `SUPERSEDED` (auditado) e um novo parte do `started_at` original com os alvos da nova política, descontadas as pausas acumuladas; pode nascer já vencido, e então a violação é registrada na hora. Violações do ciclo antigo ficam nele. Ciclos `SUPERSEDED` não entram em `MET/(MET+BREACHED)`. Categoria sem política encerra o relógio como "Não se aplica". Só atendente do setor muda categoria (`services.py:279`), então a troca é auditável.
 - **Tempo:** tudo em UTC; cálculo em minutos úteis pelo calendário (`zoneinfo`) com funções puras `add_business_minutes` e `business_minutes_between`, testadas isoladamente (fim do expediente, fim de semana, feriado, limite exato).
-- **Concorrência:** transição de status e atualização do ciclo na mesma transação, com `SELECT … FOR UPDATE`; violação idempotente por `UNIQUE` com `ON CONFLICT DO NOTHING`.
+- **Concorrência:** transição de status e atualização do ciclo na mesma transação, com `SELECT ... FOR UPDATE`; violação idempotente por `UNIQUE` com `ON CONFLICT DO NOTHING`.
 
 ### Processamento
 
@@ -69,7 +75,7 @@ Cumprimento = `MET / (MET + BREACHED)` por período, categoria e prioridade; tem
 2. **P4-S2** integração com chamados (ciclo na criação, pausa, retomada, reabertura, mudança de prioridade/categoria); `sla` na resposta da API.
 3. **P4-S3** job `sla.check`, violações e alertas.
 4. **P4-S4** telas de administração e campo na categoria.
-5. **P4-S5** indicadores nas telas de chamados e relatório (substitui o `reports/summary` sem período).
+5. **P4-S5** indicadores nas telas de chamados e relatório (substitui `GET /tickets/reports/summary`, hoje sem período).
 
 Cada PR com testes e migration validada em PostgreSQL (`upgrade → downgrade → upgrade` com dados).
 
