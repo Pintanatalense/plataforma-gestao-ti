@@ -20,6 +20,10 @@ PUBLIC = {
     ("post", "/api/v1/identity/setup"),  # só funciona com 0 usuários
     ("post", "/api/v1/identity/login"),
     ("get", "/api/v1/organization/company/public"),  # nome/logo para a tela de login
+    # recuperação de senha (ADR-018): públicas de propósito; desligadas respondem 404 (status responde enabled=false)
+    ("get", "/api/v1/identity/password-reset/status"),
+    ("post", "/api/v1/identity/password-reset/request"),
+    ("post", "/api/v1/identity/password-reset/confirm"),
     # Webhook da Meta: GET = handshake com verify_token; POST = assinatura HMAC (X-Hub-Signature-256).
     # Ficam fora do OpenAPI (include_in_schema=False) e são exercitados em test_whatsapp_meta.py.
 }

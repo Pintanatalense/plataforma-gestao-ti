@@ -4,13 +4,18 @@ MOD-03 — Identidade (Router)
 
 import uuid
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, BackgroundTasks, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.dependencies import get_current_user_id, get_current_user_ip, get_token_payload, require_permission
 from app.database import get_db
+from app.identity.password_reset import PasswordResetService, deliver_reset_email
 from app.identity.schemas import (
+    PasswordResetAcceptedOut,
+    PasswordResetConfirmIn,
+    PasswordResetRequestIn,
+    PasswordResetStatusOut,
     InitialSetup,
     PermissionOut,
     RoleCreate,
@@ -63,6 +68,40 @@ async def login(
     service = IdentityService(db)
     token = await service.authenticate(form_data.username, form_data.password, ip_address)
     return {"access_token": token, "token_type": "bearer"}
+
+
+# --- Recuperação de senha (ADR-018): desligada por padrão; desligada, tudo responde 404 -------------------------
+
+RESET_ACCEPTED = "Se o e-mail estiver cadastrado, enviaremos um link para redefinir a senha."
+
+
+@router.get("/password-reset/status", response_model=PasswordResetStatusOut)
+async def password_reset_status(db: AsyncSession = Depends(get_db)):
+    return {"enabled": await PasswordResetService(db).is_enabled()}
+
+
+@router.post("/password-reset/request", response_model=PasswordResetAcceptedOut, status_code=status.HTTP_202_ACCEPTED)
+async def password_reset_request(
+    schema: PasswordResetRequestIn,
+    background: BackgroundTasks,
+    ip_address: str = Depends(get_current_user_ip),
+    db: AsyncSession = Depends(get_db),
+):
+    """Resposta idêntica para e-mail existente, inexistente ou acima do limite (sem enumeração de contas)."""
+    outgoing = await PasswordResetService(db).request(schema.email, ip_address)
+    if outgoing is not None:
+        config, email, token = outgoing
+        background.add_task(deliver_reset_email, config, email, token)
+    return {"message": RESET_ACCEPTED}
+
+
+@router.post("/password-reset/confirm", status_code=status.HTTP_204_NO_CONTENT)
+async def password_reset_confirm(
+    schema: PasswordResetConfirmIn,
+    ip_address: str = Depends(get_current_user_ip),
+    db: AsyncSession = Depends(get_db),
+):
+    await PasswordResetService(db).confirm(schema.token, schema.new_password, ip_address)
 
 
 @router.get("/me", response_model=UserAccountOut)

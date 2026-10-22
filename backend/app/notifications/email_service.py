@@ -16,7 +16,7 @@ from email.mime.text import MIMEText
 from typing import Literal
 
 from pydantic import BaseModel, EmailStr
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.settings_model import SystemSetting
@@ -25,6 +25,8 @@ from app.notifications.channel_store import load_channel, save_channel
 logger = logging.getLogger(__name__)
 
 EMAIL_CHANNEL = "email"
+PASSWORD_RESET_KEY = "password_reset"  # flag da recuperação de senha (ADR-018)
+HOMOLOGATION_KEY = "smtp_homologated"  # último teste de envio bem-sucedido (ADR-018)
 LEGACY_EMAIL_SETTING_KEY = "smtp_config"  # configuração antiga (senha em texto puro em system_settings)
 MASKED_PASSWORD = "********"
 
@@ -85,7 +87,7 @@ def send_smtp_raw(
                     server.login(config.username, config.password)
                 server.send_message(msg)
 
-        logger.info("E-mail enviado para %s: %s", to_email, subject)
+        logger.info("E-mail enviado: %s", subject)
         return "ok", "E-mail enviado com sucesso."
 
     except smtplib.SMTPAuthenticationError as exc:
@@ -95,7 +97,7 @@ def send_smtp_raw(
         code = getattr(exc, "smtp_code", 0) or 0
         return ("permanent" if 500 <= code < 600 else "retryable"), str(exc)
     except Exception as exc:  # timeout, DNS, conexão recusada, TLS...
-        logger.warning("Falha no envio SMTP para %s: %s", to_email, exc)
+        logger.warning("Falha no envio SMTP (%s)", type(exc).__name__)  # a mensagem pode citar o destinatário
         return "retryable", str(exc)
 
 
@@ -126,9 +128,18 @@ class EmailService:
         return SmtpConfigSchema()
 
     async def update_config(self, new_config: SmtpConfigSchema) -> SmtpConfigSchema:
-        # Mantém a senha atual se veio mascarada ou em branco
+        old = await self.get_config()
+        # Mantém a senha atual se veio mascarada ou em branco, mas só para o MESMO servidor/porta/usuário:
+        # ao apontar para outro destino a senha salva não pode ir junto (seria entregá-la a quem controla o destino).
         if not new_config.password or new_config.password == MASKED_PASSWORD:
-            new_config.password = (await self.get_config()).password
+            same_target = self._endpoint(new_config) == self._endpoint(old)
+            new_config.password = old.password if same_target else ""
+        # Qualquer mudança que altere para onde/como os e-mails saem desfaz a homologação e desliga a recuperação
+        # de senha: quem só gerencia o SMTP não pode redirecionar os links de recuperação e depois reativá-la.
+        delivery_changed = any(
+            getattr(old, field) != getattr(new_config, field)
+            for field in ("host", "port", "security", "username", "password", "from_email", "from_name", "app_base_url")
+        )
 
         dump = new_config.model_dump()
         password = dump.pop("password")
@@ -137,8 +148,31 @@ class EmailService:
 
         # A cópia antiga guardava a senha em texto puro: remove assim que a nova existe.
         await self.session.execute(delete(SystemSetting).where(SystemSetting.key == LEGACY_EMAIL_SETTING_KEY))
+        if delivery_changed:
+            await self.session.execute(delete(SystemSetting).where(SystemSetting.key == HOMOLOGATION_KEY))
+            await self.session.execute(
+                update(SystemSetting).where(SystemSetting.key == PASSWORD_RESET_KEY).values(value="false")
+            )
         await self.session.commit()
         return new_config
+
+    @staticmethod
+    def _endpoint(config: SmtpConfigSchema) -> str:
+        return f"{(config.host or '').strip().lower()}:{config.port}:{config.username}"
+
+    async def is_homologated(self, config: SmtpConfigSchema) -> bool:
+        """Houve um teste de envio bem-sucedido para este mesmo host, porta e usuário?"""
+        row = await self.session.get(SystemSetting, HOMOLOGATION_KEY)
+        return bool(row and row.metadata_json.get("endpoint") == self._endpoint(config))
+
+    async def _mark_homologated(self, config: SmtpConfigSchema) -> None:
+        metadata = {"endpoint": self._endpoint(config), "tested_at": datetime.now(timezone.utc).isoformat()}
+        row = await self.session.get(SystemSetting, HOMOLOGATION_KEY)
+        if row is None:
+            self.session.add(SystemSetting(key=HOMOLOGATION_KEY, value=None, metadata_json=metadata))
+        else:
+            row.metadata_json = metadata
+        await self.session.commit()
 
     async def test_smtp(self, req: SmtpTestEmailRequest) -> tuple[bool, str]:
         current_cfg = await self.get_config()
@@ -186,4 +220,14 @@ class EmailService:
         outcome, detail = await asyncio.to_thread(
             send_smtp_raw, config, req.target_email, subject, html, "Teste de Conexão SMTP OK."
         )
+        # só vale como homologação o teste do servidor JÁ SALVO (mesmo host/porta/usuário): testar outro não prova nada
+        # sem senha digitada e sem sobrescrever segurança/remetente: o que foi testado é exatamente o que está salvo
+        exactly_saved = (
+            typed_password is None
+            and req.security in (None, current_cfg.security)
+            and req.from_email in (None, current_cfg.from_email)
+            and req.from_name in (None, current_cfg.from_name)
+        )
+        if outcome == "ok" and same_endpoint and exactly_saved:
+            await self._mark_homologated(current_cfg)
         return outcome == "ok", detail

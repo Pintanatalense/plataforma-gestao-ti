@@ -149,3 +149,30 @@ class InitialSetup(BaseModel):
 
 class UserAccountPasswordChangeOut(UserAccountOut, PasswordChangeOut):
     """Usuário atualizado + token novo."""
+
+
+class PasswordResetRequestIn(BaseModel):
+    email: EmailStr
+
+
+class PasswordResetConfirmIn(BaseModel):
+    token: str = Field(..., min_length=20, max_length=200)
+    new_password: str = Field(..., min_length=8, max_length=128)
+
+
+class PasswordResetStatusOut(BaseModel):
+    """Público: a tela só mostra "Esqueci minha senha" quando `enabled` é verdadeiro."""
+    enabled: bool
+
+
+class PasswordResetAcceptedOut(BaseModel):
+    message: str
+
+
+class PasswordResetConfigIn(BaseModel):
+    enabled: bool
+
+
+class PasswordResetConfigOut(BaseModel):
+    enabled: bool
+    smtp_ready: bool
