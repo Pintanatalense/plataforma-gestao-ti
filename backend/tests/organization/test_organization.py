@@ -292,7 +292,14 @@ async def test_patch_company_rejects_an_external_logo_url(client: AsyncClient, d
     await db_session.commit()
     url = "/api/v1/organization/company"
 
-    for bad in ("https://tracker.example.com/pixel.png", "//evil.example/x.png", "/static/../etc/passwd", "javascript:alert(1)"):
+    for bad in (
+        "https://tracker.example.com/pixel.png",
+        "//evil.example/x.png",
+        "/static/../etc/passwd",
+        "javascript:alert(1)",
+        "/static/logo.png\n",  # quebra de linha final
+        "/static/logo.jpeg",  # o upload nunca gera .jpeg
+    ):
         resp = await client.patch(url, json={"logo_url": bad}, headers=h)
         assert resp.status_code == 422, bad
 

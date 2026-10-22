@@ -26,7 +26,8 @@ class CompanyCreate(CompanyBase):
 
 # A logomarca é sempre um arquivo servido pelo próprio sistema (upload em /company/logo), nunca uma URL externa:
 # uma URL de terceiros no menu de todos os usuários seria um rastreador.
-_LOGO_URL = re.compile(r"^/static/logo\.(png|jpg|jpeg|webp)(\?v=\d+)?$")
+# o upload só gera .png, .jpg e .webp; fullmatch + [0-9] evitam aceitar "\n" final e dígitos Unicode
+_LOGO_URL = re.compile(r"/static/logo\.(png|jpg|webp)(\?v=[0-9]+)?")
 
 
 class CompanyUpdate(BaseModel):
@@ -37,8 +38,8 @@ class CompanyUpdate(BaseModel):
     @field_validator("logo_url")
     @classmethod
     def _logo_must_be_local(cls, value: Optional[str]) -> Optional[str]:
-        if value is not None and not _LOGO_URL.match(value):
-            raise ValueError("logo_url deve ser o arquivo enviado em /company/logo (/static/logo.<png|jpg|jpeg|webp>)")
+        if value is not None and not _LOGO_URL.fullmatch(value):
+            raise ValueError("logo_url deve ser o arquivo enviado em /company/logo (/static/logo.<png|jpg|webp>)")
         return value
 
 
