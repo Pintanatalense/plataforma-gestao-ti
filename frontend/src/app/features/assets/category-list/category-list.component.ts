@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -14,6 +14,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 import { AssetCategory, AssetService } from '../../../core/services/asset.service';
 import { apiErrorMessage } from '../../../core/http/api-error';
+import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
 
 interface SpecFieldItem {
   name: string;
@@ -25,6 +26,7 @@ interface SpecFieldItem {
   standalone: true,
   imports: [
     CommonModule,
+    LoadStateComponent,
     FormsModule,
     ReactiveFormsModule,
     RouterModule,
@@ -150,10 +152,14 @@ interface SpecFieldItem {
         <div class="table-card">
           <div class="table-header">
             <h3>Categorias Cadastradas</h3>
-            <span class="badge-total">{{ categories.length }} categorias</span>
+            <span class="badge-total" *ngIf="!categoriesLoading && !categoriesError">{{ categories.length }} categorias</span>
           </div>
 
-          <table mat-table [dataSource]="categories" class="modern-table">
+          <app-load-state [loading]="categoriesLoading" [error]="categoriesError" [empty]="categories.length === 0"
+                          emptyText="Nenhuma categoria cadastrada." loadingText="Carregando categorias…" (retry)="loadData()"></app-load-state>
+
+          <table mat-table [dataSource]="categories" class="modern-table"
+                 *ngIf="!categoriesLoading && !categoriesError && categories.length > 0">
             <ng-container matColumnDef="name">
               <th mat-header-cell *matHeaderCellDef> Categoria </th>
               <td mat-cell *matCellDef="let element">
@@ -649,8 +655,13 @@ export class AssetCategoryListComponent implements OnInit {
   private assetService = inject(AssetService);
   private fb = inject(FormBuilder);
   private snackBar = inject(MatSnackBar);
+  private cdr = inject(ChangeDetectorRef);
 
   categories: AssetCategory[] = [];
+  /** Primeira carga / falha da lista (uma recarga que falha depois de carregar mantém a tabela e só avisa). */
+  categoriesLoading = true;
+  categoriesError: string | null = null;
+  private categoriesLoaded = false;
   displayedColumns: string[] = ['name', 'specs', 'actions'];
   
   catForm: FormGroup;
@@ -669,9 +680,28 @@ export class AssetCategoryListComponent implements OnInit {
   }
 
   loadData(): void {
+    if (!this.categoriesLoaded) {
+      this.categoriesLoading = true;
+      this.categoriesError = null;
+    }
     this.assetService.getCategories().subscribe({
-      next: (c) => (this.categories = c),
-      error: (err) => console.error('Erro ao carregar categorias de ativos:', err)
+      next: (c) => {
+        this.categories = c;
+        this.categoriesLoaded = true;
+        this.categoriesLoading = false;
+        this.categoriesError = null;
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        const msg = apiErrorMessage(err, 'Não foi possível carregar as categorias de ativos.');
+        if (this.categoriesLoaded) {
+          this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+        } else {
+          this.categoriesLoading = false;
+          this.categoriesError = msg;
+        }
+        this.cdr.markForCheck();
+      }
     });
   }
 
