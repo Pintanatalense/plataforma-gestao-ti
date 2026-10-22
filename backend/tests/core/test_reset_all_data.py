@@ -11,7 +11,7 @@ from app.assets.models import Asset
 from app.audit.models import AuditLog
 from app.backup.services import BackupService
 from app.identity.models import UserAccount
-from app.organization.models import Company, Employee, Sector, Unit
+from app.organization.models import Employee, Sector, Unit
 from app.service_desk.models import Ticket, TicketInteraction
 from app.stock.models import StockItem
 from tests.factories import (
