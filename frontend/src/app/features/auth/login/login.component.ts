@@ -2,7 +2,7 @@ import { ChangeDetectorRef, Component, DestroyRef, inject, OnInit } from '@angul
 import { CommonModule } from '@angular/common';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
-import { Router } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
 
 import { MatCardModule } from '@angular/material/card';
 import { MatInputModule } from '@angular/material/input';
@@ -27,6 +27,7 @@ import { OrganizationService } from '../../../core/services/organization.service
     MatProgressSpinnerModule,
     MatIconModule,
     MatSnackBarModule,
+    RouterLink,
   ],
   templateUrl: './login.component.html',
   styleUrls: ['./login.component.scss']
@@ -40,6 +41,8 @@ export class LoginComponent implements OnInit {
   private cdr = inject(ChangeDetectorRef);
   private destroyRef = inject(DestroyRef);
 
+  /** O link "Esqueci minha senha" só aparece quando o administrador ativou a recuperação. */
+  resetEnabled = false;
   companyName = 'Gestão de TI';
   companyLogoUrl: string | null = null;
 
@@ -59,6 +62,13 @@ export class LoginComponent implements OnInit {
       this.cdr.markForCheck();
     });
     this.orgService.loadBranding();
+    this.authService.passwordResetStatus().subscribe({
+      next: (res) => {
+        this.resetEnabled = !!res.enabled;
+        this.cdr.markForCheck();
+      },
+      error: () => {} // sem resposta: sem link (o login continua funcionando)
+    });
     this.authService.getSetupStatus().subscribe(res => {
       if (res.setup_required) {
         this.router.navigate(['/setup']);

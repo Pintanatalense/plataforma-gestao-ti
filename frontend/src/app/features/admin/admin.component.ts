@@ -25,8 +25,7 @@ import {
   CsvExportRequest,
   DemoStatus,
   DemoCleanPreview,
-  SmtpConfig
-} from '../../core/services/admin.service';
+  SmtpConfig, PasswordResetConfig } from '../../core/services/admin.service';
 
 
 @Component({
@@ -157,6 +156,7 @@ export class AdminComponent implements OnInit {
     this.loadBackups();
     this.loadDemoStatus();
     this.loadSmtpConfig();
+    this.loadPasswordReset();
   }
 
   // ==========================================
@@ -626,11 +626,62 @@ export class AdminComponent implements OnInit {
         this.smtpPasswordInput = cfg.password || '********';
         this.savingSmtpConfig = false;
         this.snackBar.open('Configurações de SMTP salvas com sucesso!', 'OK', { duration: 3000 });
+        this.loadPasswordReset(); // alterar o SMTP desliga a recuperação de senha
       },
       error: (err) => {
         this.savingSmtpConfig = false;
         const msg = apiErrorMessage(err, 'Erro ao salvar configuração SMTP.');
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+      }
+    });
+  }
+
+  // ------ Recuperação de senha por e-mail (ADR-018)
+  passwordReset: PasswordResetConfig | null = null;
+  passwordResetError: string | null = null;
+  savingPasswordReset = false;
+
+  loadPasswordReset(): void {
+    this.passwordResetError = null;
+    this.adminService.getPasswordResetConfig().subscribe({
+      next: (cfg) => {
+        this.passwordReset = cfg;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.passwordReset = null;
+        this.passwordResetError = apiErrorMessage(err, 'Não foi possível ler o estado da recuperação de senha.');
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  togglePasswordReset(): void {
+    if (!this.passwordReset || this.savingPasswordReset) return;
+    const enable = !this.passwordReset.enabled;
+    if (enable) {
+      // o link de recuperação sai deste servidor e aponta para este endereço: quem ativa confere os dois
+      const ok = confirm(
+        'Ativar a recuperação de senha por e-mail?\n\n' +
+        `Servidor: ${this.smtpConfig.host}:${this.smtpConfig.port}\n` +
+        `Remetente: ${this.smtpConfig.from_email}\n` +
+        `Endereço dos links: ${this.smtpConfig.app_base_url}\n\n` +
+        'Qualquer pessoa poderá pedir um link por e-mail, sem estar logada. Confirme que esses dados estão corretos.'
+      );
+      if (!ok) return;
+    }
+    this.savingPasswordReset = true;
+    this.adminService.setPasswordReset(enable).subscribe({
+      next: (cfg) => {
+        this.passwordReset = cfg;
+        this.savingPasswordReset = false;
+        this.snackBar.open(enable ? 'Recuperação de senha ativada.' : 'Recuperação de senha desativada.', 'OK', { duration: 3000 });
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.savingPasswordReset = false;
+        this.snackBar.open(apiErrorMessage(err, 'Não foi possível alterar a recuperação de senha.'), 'Fechar', { duration: 6000 });
+        this.cdr.detectChanges();
       }
     });
   }
@@ -655,6 +706,7 @@ export class AdminComponent implements OnInit {
       next: (res) => {
         this.testingSmtp = false;
         this.smtpTestFeedback = { success: true, message: `E-mail de teste enviado com sucesso para ${res.target_email}!` };
+        this.loadPasswordReset(); // um teste ok homologa o SMTP salvo
       },
       error: (err) => {
         this.testingSmtp = false;

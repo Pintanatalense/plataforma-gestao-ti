@@ -857,6 +857,33 @@ scripts/restore-backup.sh banco.sql.gz arquivos_AAAAMMDD_HHMMSS.tar.gz</code></p
               </div>
             </mat-card-content>
           </mat-card>
+
+          <!-- Recuperação de senha por e-mail -->
+          <mat-card class="admin-card" data-testid="password-reset-card">
+            <mat-card-header>
+              <mat-icon mat-card-avatar color="primary">lock_reset</mat-icon>
+              <mat-card-title>Recuperação de senha por e-mail</mat-card-title>
+              <mat-card-subtitle>"Esqueci minha senha" na tela de login (desativada por padrão)</mat-card-subtitle>
+            </mat-card-header>
+            <mat-card-content>
+              <app-load-state [error]="passwordResetError" (retry)="loadPasswordReset()"></app-load-state>
+              <ng-container *ngIf="passwordReset">
+                <p style="font-size: 13px; color: #475569;">
+                  Estado: <strong data-testid="password-reset-state">{{ passwordReset.enabled ? 'Ativada' : 'Desativada' }}</strong>.
+                  O link vale 30 minutos e só pode ser usado uma vez; ao redefinir, as sessões abertas do usuário são encerradas.
+                </p>
+                <p *ngIf="!passwordReset.enabled && !passwordReset.smtp_ready" style="font-size: 13px; color: #92400e;" data-testid="password-reset-hint">
+                  Para ativar: habilite o SMTP com STARTTLS ou SSL/TLS, salve e envie um e-mail de teste com sucesso.
+                  Qualquer alteração no SMTP desativa a recuperação e exige um novo teste. Apenas administradores podem ativar.
+                </p>
+                <button mat-flat-button [color]="passwordReset.enabled ? 'warn' : 'primary'" data-testid="password-reset-toggle"
+                        [disabled]="savingPasswordReset || (!passwordReset.enabled && !passwordReset.smtp_ready)" (click)="togglePasswordReset()">
+                  <mat-icon>{{ passwordReset.enabled ? 'lock' : 'lock_open' }}</mat-icon>
+                  {{ passwordReset.enabled ? 'Desativar recuperação de senha' : 'Ativar recuperação de senha' }}
+                </button>
+              </ng-container>
+            </mat-card-content>
+          </mat-card>
         </div>
       </div>
     </mat-tab>

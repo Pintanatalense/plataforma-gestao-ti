@@ -57,3 +57,11 @@
   max-height: 48px;
   object-fit: contain;
 }
+
+.forgot-link {
+  margin: 0;
+  text-align: right;
+  font-size: 13px;
+
+  a { color: #1976d2; }
+}

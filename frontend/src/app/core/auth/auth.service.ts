@@ -112,6 +112,19 @@ export class AuthService {
     this.router.navigate(['/login']);
   }
 
+  /** Recuperação de senha por e-mail (ADR-018): só aparece na tela quando o administrador a ativou. */
+  passwordResetStatus(): Observable<{ enabled: boolean }> {
+    return this.http.get<{ enabled: boolean }>(`${this.apiUrl}/password-reset/status`);
+  }
+
+  requestPasswordReset(email: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`${this.apiUrl}/password-reset/request`, { email });
+  }
+
+  confirmPasswordReset(token: string, newPassword: string): Observable<void> {
+    return this.http.post<void>(`${this.apiUrl}/password-reset/confirm`, { token, new_password: newPassword });
+  }
+
   getSetupStatus(): Observable<{setup_required: boolean}> {
     return this.http.get<{setup_required: boolean}>(`${this.apiUrl}/setup/status`);
   }
