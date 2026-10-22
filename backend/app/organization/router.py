@@ -7,6 +7,7 @@ import uuid
 from fastapi import APIRouter, Depends, status, UploadFile, File
 from sqlalchemy.ext.asyncio import AsyncSession
 import os
+import time
 import aiofiles
 
 from app.core.dependencies import require_permission, get_token_payload
@@ -71,6 +72,9 @@ async def upload_company_logo(file: UploadFile = File(...), db: AsyncSession = D
     if extension is None:
         raise ValidationException("Formato de logomarca inválido. Use PNG, JPEG ou WebP.")
 
+    service = OrganizationService(db)
+    await service.get_company()  # sem empresa cadastrada: 404 antes de gravar qualquer arquivo
+
     static_dir = str(get_settings().static_dir)
     os.makedirs(static_dir, exist_ok=True)
     for old in os.listdir(static_dir):
@@ -81,8 +85,8 @@ async def upload_company_logo(file: UploadFile = File(...), db: AsyncSession = D
     async with aiofiles.open(os.path.join(static_dir, filename), "wb") as out_file:
         await out_file.write(content)
 
-    logo_url = f"/static/{filename}"
-    service = OrganizationService(db)
+    # ?v=<epoch>: o nome do arquivo é sempre o mesmo, então sem isso o navegador mostraria a logo antiga em cache
+    logo_url = f"/static/{filename}?v={int(time.time())}"
     await service.update_company(CompanyUpdate(logo_url=logo_url))
     return {"logo_url": logo_url, "message": "Logo atualizada com sucesso"}
 

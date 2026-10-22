@@ -54,7 +54,9 @@ class OrganizationService:
             company.name = schema.name
         if schema.cnpj is not None:
             company.cnpj = schema.cnpj
-        
+        if schema.logo_url is not None:
+            company.logo_url = schema.logo_url
+
         return await self.repo.update_company(company)
 
     # ==========================================================================

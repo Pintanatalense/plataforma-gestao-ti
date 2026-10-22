@@ -211,9 +211,90 @@ async def test_logo_upload_accepts_png_and_rejects_html_and_svg(client: AsyncCli
     png = b"\x89PNG\r\n\x1a\n" + b"0" * 32
     ok = await client.post(url, files={"file": ("../../x.html", png, "image/png")}, headers=h)
     assert ok.status_code == 200
-    assert ok.json()["logo_url"] == "/static/logo.png"
+    assert ok.json()["logo_url"].startswith("/static/logo.png?v=")
 
     html = await client.post(url, files={"file": ("logo.png", b"<script>alert(1)</script>", "image/png")}, headers=h)
     assert html.status_code == 422
     svg = await client.post(url, files={"file": ("logo.svg", b"<svg onload=alert(1)/>", "image/svg+xml")}, headers=h)
     assert svg.status_code == 422
+
+
+JPEG = b"\xff\xd8\xff" + b"0" * 32
+PNG = b"\x89PNG\r\n\x1a\n" + b"0" * 32
+LOGO_URL = "/api/v1/organization/company/logo"
+
+
+async def _admin_headers(db_session: AsyncSession):
+    from tests.factories import headers_for, make_user
+
+    return headers_for(await make_user(db_session, is_admin=True))
+
+
+async def test_uploaded_logo_is_persisted_and_served_by_company_public(client: AsyncClient, db_session: AsyncSession):
+    """Antes, update_company ignorava logo_url: /company/public devolvia sempre null depois do upload."""
+    from sqlalchemy import select
+
+    from app.organization.models import Company
+
+    h = await _admin_headers(db_session)
+    db_session.add(Company(name="Logo Persist"))
+    await db_session.commit()
+
+    sent = (await client.post(LOGO_URL, files={"file": ("x.png", PNG, "image/png")}, headers=h)).json()["logo_url"]
+
+    public = (await client.get("/api/v1/organization/company/public")).json()
+    assert public["logo_url"] == sent
+    stored = (await db_session.execute(select(Company.logo_url))).scalar_one()
+    assert stored == sent
+
+
+async def test_replacing_the_logo_keeps_a_single_file_and_a_new_url(client: AsyncClient, db_session: AsyncSession):
+    import os
+
+    from app.config import get_settings
+
+    h = await _admin_headers(db_session)
+    from app.organization.models import Company
+
+    db_session.add(Company(name="Logo Replace"))
+    await db_session.commit()
+
+    await client.post(LOGO_URL, files={"file": ("a.png", PNG, "image/png")}, headers=h)
+    second = (await client.post(LOGO_URL, files={"file": ("b.jpg", JPEG, "image/jpeg")}, headers=h)).json()["logo_url"]
+
+    assert second.startswith("/static/logo.jpg?v=")
+    assert (await client.get("/api/v1/organization/company/public")).json()["logo_url"] == second
+    logos = [f for f in os.listdir(str(get_settings().static_dir)) if f.startswith("logo.")]
+    assert logos == ["logo.jpg"]
+
+
+async def test_logo_upload_without_a_company_is_404_and_writes_no_file(client: AsyncClient, db_session: AsyncSession):
+    import os
+
+    from app.config import get_settings
+
+    h = await _admin_headers(db_session)
+    static_dir = str(get_settings().static_dir)
+    before = set(os.listdir(static_dir)) if os.path.isdir(static_dir) else set()
+
+    resp = await client.post(LOGO_URL, files={"file": ("a.png", PNG, "image/png")}, headers=h)
+
+    assert resp.status_code == 404
+    after = set(os.listdir(static_dir)) if os.path.isdir(static_dir) else set()
+    assert after == before
+
+
+async def test_patch_company_rejects_an_external_logo_url(client: AsyncClient, db_session: AsyncSession):
+    from app.organization.models import Company
+
+    h = await _admin_headers(db_session)
+    db_session.add(Company(name="Logo Patch"))
+    await db_session.commit()
+    url = "/api/v1/organization/company"
+
+    for bad in ("https://tracker.example.com/pixel.png", "//evil.example/x.png", "/static/../etc/passwd", "javascript:alert(1)"):
+        resp = await client.patch(url, json={"logo_url": bad}, headers=h)
+        assert resp.status_code == 422, bad
+
+    ok = await client.patch(url, json={"logo_url": "/static/logo.png?v=123"}, headers=h)
+    assert ok.status_code == 200 and ok.json()["logo_url"] == "/static/logo.png?v=123"
