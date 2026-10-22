@@ -60,6 +60,7 @@ export class AdminComponent implements OnInit {
   currentOrigin = typeof window !== 'undefined' ? window.location.origin : 'http://localhost';
 
   // --- WhatsApp: respostas rápidas (o canal em si fica em Notificações > Entregas e regras) ---
+  // eslint-disable-next-line @typescript-eslint/prefer-as-const
   waActiveSubTab: 'templates' = 'templates';
   templates: WhatsAppTemplate[] = [];
   loadingTemplates = false;

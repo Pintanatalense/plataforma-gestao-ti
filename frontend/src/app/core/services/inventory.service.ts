@@ -43,7 +43,7 @@ export class InventoryService {
   private apiUrl = '/api/v1/inventory';
 
   listAudits(unitId?: string): Observable<InventoryAudit[]> {
-    let params: any = {};
+    const params: any = {};
     if (unitId) params.unit_id = unitId;
     return this.http.get<InventoryAudit[]>(this.apiUrl, { params });
   }

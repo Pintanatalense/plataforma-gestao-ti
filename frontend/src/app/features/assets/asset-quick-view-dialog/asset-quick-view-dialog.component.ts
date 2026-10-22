@@ -1,4 +1,4 @@
-import { Component, Inject, inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { Router } from '@angular/router';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
@@ -15,13 +15,7 @@ export interface AssetQuickViewData {
 @Component({
   selector: 'app-asset-quick-view-dialog',
   standalone: true,
-  imports: [
-    CommonModule,
-    MatDialogModule,
-    MatButtonModule,
-    MatIconModule,
-    MatTooltipModule
-  ],
+  imports: [CommonModule, MatDialogModule, MatButtonModule, MatIconModule, MatTooltipModule],
   template: `
     <div class="quick-view-container">
       <div class="dialog-header">
@@ -58,7 +52,9 @@ export interface AssetQuickViewData {
           <div class="info-cell">
             <span class="cell-label">Responsável / Custodiante</span>
             <span class="cell-value" [class.in-stock]="!asset.employee_id">
-              <mat-icon class="cell-icon">{{ asset.employee_id ? 'person' : 'inventory_2' }}</mat-icon>
+              <mat-icon class="cell-icon">{{
+                asset.employee_id ? 'person' : 'inventory_2'
+              }}</mat-icon>
               {{ displayedEmployee }}
             </span>
           </div>
@@ -67,7 +63,9 @@ export interface AssetQuickViewData {
             <span class="cell-label">Aquisição</span>
             <span class="cell-value">
               <mat-icon class="cell-icon">shopping_bag</mat-icon>
-              {{ asset.purchase_date ? (asset.purchase_date | date:'dd/MM/yyyy') : 'Não informada' }}
+              {{
+                asset.purchase_date ? (asset.purchase_date | date: 'dd/MM/yyyy') : 'Não informada'
+              }}
             </span>
           </div>
 
@@ -75,9 +73,17 @@ export interface AssetQuickViewData {
             <span class="cell-label">Situação da Garantia</span>
             <span class="cell-value">
               <span *ngIf="asset.warranty_expires; else noWarranty">
-                <span class="warranty-tag" [class.active]="isWarrantyActive" [class.expired]="!isWarrantyActive">
+                <span
+                  class="warranty-tag"
+                  [class.active]="isWarrantyActive"
+                  [class.expired]="!isWarrantyActive"
+                >
                   <mat-icon>{{ isWarrantyActive ? 'verified' : 'history_toggle_off' }}</mat-icon>
-                  {{ isWarrantyActive ? 'Vigente até ' + (asset.warranty_expires | date:'dd/MM/yyyy') : 'Expirada em ' + (asset.warranty_expires | date:'dd/MM/yyyy') }}
+                  {{
+                    isWarrantyActive
+                      ? 'Vigente até ' + (asset.warranty_expires | date: 'dd/MM/yyyy')
+                      : 'Expirada em ' + (asset.warranty_expires | date: 'dd/MM/yyyy')
+                  }}
                 </span>
               </span>
               <ng-template #noWarranty>
@@ -125,7 +131,12 @@ export interface AssetQuickViewData {
       </mat-dialog-content>
 
       <mat-dialog-actions class="dialog-actions">
-        <button *ngIf="asset.employee_id" mat-stroked-button class="print-btn" (click)="printStatement()">
+        <button
+          *ngIf="asset.employee_id"
+          mat-stroked-button
+          class="print-btn"
+          (click)="printStatement()"
+        >
           <mat-icon>print</mat-icon> Termo de Cautela
         </button>
         <span class="spacer"></span>
@@ -136,112 +147,305 @@ export interface AssetQuickViewData {
       </mat-dialog-actions>
     </div>
   `,
-  styles: [`
-    .quick-view-container {
-      display: flex;
-      flex-direction: column;
-      max-width: 680px;
-      min-width: 520px;
-      padding: 6px;
-
-      @media (max-width: 600px) {
-        min-width: 90vw;
-      }
-    }
-
-    .dialog-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: flex-start;
-      padding: 16px 20px 12px;
-      border-bottom: 1px solid #e2e8f0;
-      gap: 16px;
-
-      .title-area {
+  styles: [
+    `
+      .quick-view-container {
         display: flex;
         flex-direction: column;
-        gap: 4px;
+        max-width: 680px;
+        min-width: 520px;
+        padding: 6px;
 
-        .title-row {
+        @media (max-width: 600px) {
+          min-width: 90vw;
+        }
+      }
+
+      .dialog-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding: 16px 20px 12px;
+        border-bottom: 1px solid #e2e8f0;
+        gap: 16px;
+
+        .title-area {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+
+          .title-row {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+
+            h2 {
+              margin: 0;
+              font-size: 19px;
+              font-weight: 700;
+              color: #0f172a;
+            }
+
+            .tag-badge {
+              font-family: ui-monospace, SFMono-Regular, monospace;
+              background: #f1f5f9;
+              color: #334155;
+              padding: 2px 8px;
+              border-radius: 6px;
+              font-size: 12px;
+              font-weight: 700;
+              border: 1px solid #e2e8f0;
+            }
+          }
+
+          .category-name {
+            font-size: 13px;
+            color: #64748b;
+          }
+        }
+
+        .header-actions {
           display: flex;
           align-items: center;
           gap: 10px;
-          flex-wrap: wrap;
 
-          h2 {
-            margin: 0;
-            font-size: 19px;
-            font-weight: 700;
-            color: #0f172a;
+          .close-btn {
+            color: #64748b;
           }
 
-          .tag-badge {
-            font-family: ui-monospace, SFMono-Regular, monospace;
-            background: #f1f5f9;
-            color: #334155;
-            padding: 2px 8px;
-            border-radius: 6px;
+          .status-badge {
+            padding: 4px 10px;
+            border-radius: 14px;
             font-size: 12px;
-            font-weight: 700;
-            border: 1px solid #e2e8f0;
+            font-weight: 600;
+
+            &.status-in_stock {
+              background: #ecfdf5;
+              color: #059669;
+              border: 1px solid #a7f3d0;
+            }
+            &.status-in_use {
+              background: #eff6ff;
+              color: #2563eb;
+              border: 1px solid #bfdbfe;
+            }
+            &.status-maintenance {
+              background: #fffbeb;
+              color: #d97706;
+              border: 1px solid #fde68a;
+            }
+            &.status-decommissioned {
+              background: #fef2f2;
+              color: #dc2626;
+              border: 1px solid #fecaca;
+            }
+            &.status-default {
+              background: #f1f5f9;
+              color: #475569;
+            }
           }
         }
-
-        .category-name {
-          font-size: 13px;
-          color: #64748b;
-        }
       }
 
-      .header-actions {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-
-        .close-btn {
-          color: #64748b;
-        }
-
-        .status-badge {
-          padding: 4px 10px;
-          border-radius: 14px;
-          font-size: 12px;
-          font-weight: 600;
-
-          &.status-in_stock { background: #ecfdf5; color: #059669; border: 1px solid #a7f3d0; }
-          &.status-in_use { background: #eff6ff; color: #2563eb; border: 1px solid #bfdbfe; }
-          &.status-maintenance { background: #fffbeb; color: #d97706; border: 1px solid #fde68a; }
-          &.status-decommissioned { background: #fef2f2; color: #dc2626; border: 1px solid #fecaca; }
-          &.status-default { background: #f1f5f9; color: #475569; }
-        }
-      }
-    }
-
-    .dialog-body {
-      padding: 20px !important;
-      display: flex;
-      flex-direction: column;
-      gap: 20px;
-      max-height: 70vh;
-      overflow-y: auto;
-    }
-
-    .info-summary-grid {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 12px;
-
-      @media (max-width: 500px) {
-        grid-template-columns: 1fr;
-      }
-
-      .info-cell {
+      .dialog-body {
+        padding: 20px !important;
         display: flex;
         flex-direction: column;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 10px 12px;
+        gap: 20px;
+        max-height: 70vh;
+        overflow-y: auto;
+      }
+
+      .info-summary-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 12px;
+
+        @media (max-width: 500px) {
+          grid-template-columns: 1fr;
+        }
+
+        .info-cell {
+          display: flex;
+          flex-direction: column;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          padding: 10px 12px;
+
+          .cell-label {
+            font-size: 11px;
+            color: #64748b;
+            text-transform: uppercase;
+            font-weight: 600;
+            letter-spacing: 0.04em;
+            margin-bottom: 4px;
+          }
+
+          .cell-value {
+            font-size: 13px;
+            font-weight: 600;
+            color: #1e293b;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+
+            .cell-icon {
+              font-size: 16px;
+              width: 16px;
+              height: 16px;
+              color: #2563eb;
+            }
+
+            &.in-stock {
+              color: #059669;
+              .cell-icon {
+                color: #059669;
+              }
+            }
+          }
+
+          .warranty-tag {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11.5px;
+            font-weight: 600;
+
+            mat-icon {
+              font-size: 14px;
+              width: 14px;
+              height: 14px;
+            }
+
+            &.active {
+              background: #ecfdf5;
+              color: #059669;
+            }
+
+            &.expired {
+              background: #fef2f2;
+              color: #dc2626;
+            }
+          }
+
+          .muted-text {
+            color: #94a3b8;
+            font-size: 12px;
+            font-weight: 400;
+          }
+        }
+      }
+
+      .specs-section {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+
+        .section-title {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          color: #0f172a;
+
+          mat-icon {
+            color: #7c3aed;
+            font-size: 20px;
+            width: 20px;
+            height: 20px;
+          }
+
+          h3 {
+            margin: 0;
+            font-size: 14px;
+            font-weight: 700;
+          }
+        }
+
+        .specs-grid {
+          display: grid;
+          grid-template-columns: 1fr 1fr;
+          gap: 10px;
+
+          @media (max-width: 500px) {
+            grid-template-columns: 1fr;
+          }
+
+          .spec-card {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            background: #ffffff;
+            border: 1px solid #e2e8f0;
+            border-radius: 8px;
+            padding: 8px 12px;
+
+            .icon-wrap {
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              width: 32px;
+              height: 32px;
+              border-radius: 6px;
+              background: #ede9fe;
+              color: #7c3aed;
+              flex-shrink: 0;
+
+              mat-icon {
+                font-size: 17px;
+                width: 17px;
+                height: 17px;
+              }
+            }
+
+            .spec-text {
+              display: flex;
+              flex-direction: column;
+
+              .spec-label {
+                font-size: 10.5px;
+                color: #64748b;
+                font-weight: 600;
+                text-transform: uppercase;
+              }
+
+              .spec-value {
+                font-size: 13px;
+                font-weight: 600;
+                color: #0f172a;
+              }
+            }
+          }
+        }
+
+        .empty-state {
+          display: flex;
+          align-items: center;
+          gap: 10px;
+          padding: 14px;
+          background: #f8fafc;
+          border: 1px dashed #cbd5e1;
+          border-radius: 8px;
+          color: #64748b;
+          font-size: 13px;
+
+          mat-icon {
+            color: #94a3b8;
+          }
+
+          p {
+            margin: 0;
+          }
+        }
+      }
+
+      .notes-section {
+        display: flex;
+        flex-direction: column;
+        gap: 6px;
 
         .cell-label {
           font-size: 11px;
@@ -249,224 +453,58 @@ export interface AssetQuickViewData {
           text-transform: uppercase;
           font-weight: 600;
           letter-spacing: 0.04em;
-          margin-bottom: 4px;
         }
 
-        .cell-value {
-          font-size: 13px;
-          font-weight: 600;
-          color: #1e293b;
+        .notes-content {
           display: flex;
-          align-items: center;
-          gap: 6px;
+          align-items: flex-start;
+          gap: 8px;
+          background: #f8fafc;
+          border: 1px solid #e2e8f0;
+          border-radius: 8px;
+          padding: 10px 12px;
 
-          .cell-icon {
+          mat-icon {
             font-size: 16px;
             width: 16px;
             height: 16px;
-            color: #2563eb;
+            color: #64748b;
+            margin-top: 2px;
           }
 
-          &.in-stock {
-            color: #059669;
-            .cell-icon { color: #059669; }
+          p {
+            margin: 0;
+            font-size: 12.5px;
+            color: #334155;
+            line-height: 1.4;
           }
         }
+      }
 
-        .warranty-tag {
+      .dialog-actions {
+        padding: 12px 20px !important;
+        border-top: 1px solid #e2e8f0;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+
+        .spacer {
+          flex: 1;
+        }
+
+        .print-btn {
           display: inline-flex;
           align-items: center;
-          gap: 4px;
-          padding: 2px 8px;
-          border-radius: 4px;
-          font-size: 11.5px;
-          font-weight: 600;
-
-          mat-icon {
-            font-size: 14px;
-            width: 14px;
-            height: 14px;
-          }
-
-          &.active {
-            background: #ecfdf5;
-            color: #059669;
-          }
-
-          &.expired {
-            background: #fef2f2;
-            color: #dc2626;
-          }
-        }
-
-        .muted-text {
-          color: #94a3b8;
-          font-size: 12px;
-          font-weight: 400;
+          gap: 6px;
+          font-size: 13px;
         }
       }
-    }
-
-    .specs-section {
-      display: flex;
-      flex-direction: column;
-      gap: 10px;
-
-      .section-title {
-        display: flex;
-        align-items: center;
-        gap: 8px;
-        color: #0f172a;
-
-        mat-icon {
-          color: #7c3aed;
-          font-size: 20px;
-          width: 20px;
-          height: 20px;
-        }
-
-        h3 {
-          margin: 0;
-          font-size: 14px;
-          font-weight: 700;
-        }
-      }
-
-      .specs-grid {
-        display: grid;
-        grid-template-columns: 1fr 1fr;
-        gap: 10px;
-
-        @media (max-width: 500px) {
-          grid-template-columns: 1fr;
-        }
-
-        .spec-card {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          background: #ffffff;
-          border: 1px solid #e2e8f0;
-          border-radius: 8px;
-          padding: 8px 12px;
-
-          .icon-wrap {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            width: 32px;
-            height: 32px;
-            border-radius: 6px;
-            background: #ede9fe;
-            color: #7c3aed;
-            flex-shrink: 0;
-
-            mat-icon {
-              font-size: 17px;
-              width: 17px;
-              height: 17px;
-            }
-          }
-
-          .spec-text {
-            display: flex;
-            flex-direction: column;
-
-            .spec-label {
-              font-size: 10.5px;
-              color: #64748b;
-              font-weight: 600;
-              text-transform: uppercase;
-            }
-
-            .spec-value {
-              font-size: 13px;
-              font-weight: 600;
-              color: #0f172a;
-            }
-          }
-        }
-      }
-
-      .empty-state {
-        display: flex;
-        align-items: center;
-        gap: 10px;
-        padding: 14px;
-        background: #f8fafc;
-        border: 1px dashed #cbd5e1;
-        border-radius: 8px;
-        color: #64748b;
-        font-size: 13px;
-
-        mat-icon {
-          color: #94a3b8;
-        }
-
-        p { margin: 0; }
-      }
-    }
-
-    .notes-section {
-      display: flex;
-      flex-direction: column;
-      gap: 6px;
-
-      .cell-label {
-        font-size: 11px;
-        color: #64748b;
-        text-transform: uppercase;
-        font-weight: 600;
-        letter-spacing: 0.04em;
-      }
-
-      .notes-content {
-        display: flex;
-        align-items: flex-start;
-        gap: 8px;
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
-        padding: 10px 12px;
-
-        mat-icon {
-          font-size: 16px;
-          width: 16px;
-          height: 16px;
-          color: #64748b;
-          margin-top: 2px;
-        }
-
-        p {
-          margin: 0;
-          font-size: 12.5px;
-          color: #334155;
-          line-height: 1.4;
-        }
-      }
-    }
-
-    .dialog-actions {
-      padding: 12px 20px !important;
-      border-top: 1px solid #e2e8f0;
-      display: flex;
-      align-items: center;
-      gap: 8px;
-
-      .spacer {
-        flex: 1;
-      }
-
-      .print-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 13px;
-      }
-    }
-  `]
+    `,
+  ],
 })
 export class AssetQuickViewDialogComponent {
+  data = inject<AssetQuickViewData>(MAT_DIALOG_DATA);
+
   private router = inject(Router);
   private assetService = inject(AssetService);
   private dialogRef = inject(MatDialogRef<AssetQuickViewDialogComponent>);
@@ -474,7 +512,9 @@ export class AssetQuickViewDialogComponent {
   asset: Asset;
   specEntries: [string, any][] = [];
 
-  constructor(@Inject(MAT_DIALOG_DATA) public data: AssetQuickViewData) {
+  constructor() {
+    const data = this.data;
+
     this.asset = data.asset;
     this.specEntries = this.asset.technical_specs ? Object.entries(this.asset.technical_specs) : [];
   }
@@ -520,7 +560,7 @@ export class AssetQuickViewDialogComponent {
       cor: 'Cor / Acabamento',
       mac_address: 'Endereço MAC',
       hostname: 'Nome de Rede (Hostname)',
-      last_logged_user: 'Último Usuário Conectado'
+      last_logged_user: 'Último Usuário Conectado',
     };
     return map[key.toLowerCase()] || key.replace(/_/g, ' ').toUpperCase();
   }
@@ -529,7 +569,13 @@ export class AssetQuickViewDialogComponent {
     const k = key.toLowerCase();
     if (k.includes('cpu') || k.includes('proc')) return 'memory';
     if (k.includes('ram') || k.includes('mem')) return 'speed';
-    if (k.includes('storage') || k.includes('armazenamento') || k.includes('ssd') || k.includes('hd')) return 'dns';
+    if (
+      k.includes('storage') ||
+      k.includes('armazenamento') ||
+      k.includes('ssd') ||
+      k.includes('hd')
+    )
+      return 'dns';
     if (k.includes('os') || k.includes('sistema')) return 'terminal';
     if (k.includes('tela') || k.includes('screen') || k.includes('display')) return 'laptop';
     if (k.includes('imei') || k.includes('serial')) return 'fingerprint';
@@ -543,21 +589,31 @@ export class AssetQuickViewDialogComponent {
 
   getStatusBadgeClass(status: string): string {
     switch (status) {
-      case 'IN_STOCK': return 'status-in_stock';
-      case 'IN_USE': return 'status-in_use';
-      case 'MAINTENANCE': return 'status-maintenance';
-      case 'DECOMMISSIONED': return 'status-decommissioned';
-      default: return 'status-default';
+      case 'IN_STOCK':
+        return 'status-in_stock';
+      case 'IN_USE':
+        return 'status-in_use';
+      case 'MAINTENANCE':
+        return 'status-maintenance';
+      case 'DECOMMISSIONED':
+        return 'status-decommissioned';
+      default:
+        return 'status-default';
     }
   }
 
   getStatusLabel(status: string): string {
     switch (status) {
-      case 'IN_STOCK': return 'Em Estoque';
-      case 'IN_USE': return 'Em Uso';
-      case 'MAINTENANCE': return 'Em Manutenção';
-      case 'DECOMMISSIONED': return 'Baixado';
-      default: return status;
+      case 'IN_STOCK':
+        return 'Em Estoque';
+      case 'IN_USE':
+        return 'Em Uso';
+      case 'MAINTENANCE':
+        return 'Em Manutenção';
+      case 'DECOMMISSIONED':
+        return 'Baixado';
+      default:
+        return status;
     }
   }
 

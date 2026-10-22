@@ -1,4 +1,4 @@
-import { Component, Inject, inject, OnInit } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
@@ -22,7 +22,7 @@ import { OrganizationService, Employee, Sector } from '../../../core/services/or
     MatSelectModule,
     MatButtonModule,
     MatIconModule,
-    MatSlideToggleModule
+    MatSlideToggleModule,
   ],
   template: `
     <h2 mat-dialog-title>{{ data ? 'Editar' : 'Novo' }} Colaborador</h2>
@@ -31,53 +31,59 @@ import { OrganizationService, Employee, Sector } from '../../../core/services/or
         <mat-form-field appearance="outline">
           <mat-label>Setor</mat-label>
           <mat-select formControlName="sector_id" required>
-            <mat-option *ngFor="let sector of sectors" [value]="sector.id">{{ sector.unit?.name }} - {{ sector.name }}</mat-option>
+            <mat-option *ngFor="let sector of sectors" [value]="sector.id"
+              >{{ sector.unit?.name }} - {{ sector.name }}</mat-option
+            >
           </mat-select>
         </mat-form-field>
 
         <mat-form-field appearance="outline">
           <mat-label>Matrícula</mat-label>
-          <input matInput formControlName="registration" required>
+          <input matInput formControlName="registration" required />
         </mat-form-field>
-        
+
         <mat-form-field appearance="outline">
           <mat-label>Nome Completo</mat-label>
-          <input matInput formControlName="name" required>
+          <input matInput formControlName="name" required />
         </mat-form-field>
 
         <mat-form-field appearance="outline">
           <mat-label>Cargo</mat-label>
-          <input matInput formControlName="job_title" required>
+          <input matInput formControlName="job_title" required />
         </mat-form-field>
 
         <mat-form-field appearance="outline">
           <mat-label>Telefone / WhatsApp</mat-label>
-          <input matInput formControlName="phone" placeholder="Ex: +5511999998888 ou 11999998888">
+          <input matInput formControlName="phone" placeholder="Ex: +5511999998888 ou 11999998888" />
           <mat-icon matPrefix>phone</mat-icon>
           <mat-hint>Utilizado para notificações e bot de atendimento via WhatsApp</mat-hint>
         </mat-form-field>
 
-        <mat-slide-toggle formControlName="is_active" *ngIf="data">
-          Ativo
-        </mat-slide-toggle>
+        <mat-slide-toggle formControlName="is_active" *ngIf="data"> Ativo </mat-slide-toggle>
       </form>
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button mat-button mat-dialog-close>Cancelar</button>
-      <button mat-flat-button color="primary" [disabled]="form.invalid" (click)="save()">Salvar</button>
+      <button mat-flat-button color="primary" [disabled]="form.invalid" (click)="save()">
+        Salvar
+      </button>
     </mat-dialog-actions>
   `,
-  styles: [`
-    .dialog-form {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      margin-top: 8px;
-      min-width: 320px;
-    }
-  `]
+  styles: [
+    `
+      .dialog-form {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        margin-top: 8px;
+        min-width: 320px;
+      }
+    `,
+  ],
 })
 export class EmployeeDialogComponent implements OnInit {
+  data = inject<Employee | null>(MAT_DIALOG_DATA);
+
   private fb = inject(FormBuilder);
   private orgService = inject(OrganizationService);
   dialogRef = inject(MatDialogRef<EmployeeDialogComponent>);
@@ -86,14 +92,14 @@ export class EmployeeDialogComponent implements OnInit {
 
   form: any;
 
-  constructor(@Inject(MAT_DIALOG_DATA) public data: Employee | null) {
+  constructor() {
     this.form = this.fb.group({
       sector_id: [this.data?.sector_id || '', Validators.required],
       registration: [this.data?.registration || '', Validators.required],
       name: [this.data?.name || '', Validators.required],
       job_title: [this.data?.job_title || '', Validators.required],
       phone: [this.data?.phone || ''],
-      is_active: [this.data ? this.data.is_active : true]
+      is_active: [this.data ? this.data.is_active : true],
     });
   }
 

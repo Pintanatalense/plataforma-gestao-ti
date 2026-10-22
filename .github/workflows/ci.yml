@@ -200,6 +200,10 @@ jobs:
       working-directory: ./frontend
       run: npm ci
 
+    - name: Lint (erros bloqueiam; avisos são dívida registrada)
+      working-directory: ./frontend
+      run: npm run lint -- --quiet
+
     - name: Run tests
       working-directory: ./frontend
       run: npm run test -- --watch=false

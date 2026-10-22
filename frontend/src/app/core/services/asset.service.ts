@@ -151,7 +151,7 @@ export class AssetService {
 
   // Assets
   getAssets(unitId?: string, employeeId?: string): Observable<Asset[]> {
-    let params: any = {};
+    const params: any = {};
     if (unitId) params.unit_id = unitId;
     if (employeeId) params.employee_id = employeeId;
     return this.http.get<Asset[]>(this.assetsUrl, { params });

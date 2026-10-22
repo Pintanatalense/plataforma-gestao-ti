@@ -86,7 +86,9 @@ export class AuthService {
     if (!this.isSafeReturnUrl(url) || ['/login', '/setup', '/change-password'].some((p) => url.startsWith(p))) return;
     try {
       sessionStorage.setItem(this.RETURN_URL_KEY, url);
-    } catch {}
+    } catch {
+      // armazenamento indisponível (modo privado): segue sem guardar
+    }
   }
 
   /** Devolve (e esquece) a página guardada; nulo se não houver ou se não for um caminho interno. */
@@ -189,7 +191,9 @@ export class AuthService {
         this.currentUserSubject.next(user as UserAccount);
         try {
           localStorage.setItem(this.USER_KEY, JSON.stringify(user));
-        } catch {}
+        } catch {
+          // armazenamento indisponível: a sessão continua só em memória
+        }
       }),
       map(({ access_token, token_type, ...user }) => user as UserAccount)
     );
