@@ -67,7 +67,7 @@ Com 2 usuários comuns criados (A e B) e o administrador.
 ## Etapa 4d — Empresa e Auditoria
 
 1. Organização → **Empresa**: troque o nome e envie uma logomarca PNG/JPEG/WebP de até 2 MB. **Esperado:** o menu lateral muda na hora; ao sair, a tela de **login** mostra a logo e o nome. SVG ou arquivo grande é recusado com mensagem clara.
-2. Administração → **Auditoria**: **Esperado:** aparecem seus logins, a falha de senha da Etapa 4c, a criação/alteração de usuários, a redefinição de senha, a troca de nome da empresa e da logo (cada um com usuário, data/hora e IP nos detalhes). Nenhuma linha mostra senha ou token.
+2. Administração & Sistema → **Auditoria**: **Esperado:** aparecem seus logins, a falha de senha da Etapa 4c, a criação/alteração de usuários, a redefinição de senha, a troca de nome da empresa e da logo (cada um com usuário e data/hora; o IP aparece nos detalhes só nos eventos de login e de recuperação de senha, e as alterações de usuário e de empresa mostram apenas os **nomes dos campos** alterados). Nenhuma linha mostra senha ou token.
 3. Filtre por **evento**, por trecho do **e-mail** e por **período**; use "Próxima/Anterior" (50 por página). Uma busca sem resultado mostra "Nenhum registro", e desligar o backend (`docker compose stop backend`) mostra **erro com Tentar novamente** (nunca "vazio").
 
 ## Etapa 4b — Importar inventário do GLPI Agent (XML)
@@ -102,7 +102,7 @@ Faça na instalação com o **modelo de exemplo** (Etapa 2) ou cadastre itens na
 Depende da Etapa 6 (SMTP funcionando). **Nasce desativada**: antes de ativar, a tela de login **não** tem "Esqueci minha senha" e `POST /api/v1/identity/password-reset/request` responde 404.
 
 1. Administração → aba de e-mail → cartão **Recuperação de senha por e-mail**. **Esperado:** botão **desabilitado** com a explicação enquanto o SMTP não estiver habilitado com **STARTTLS ou SSL/TLS** e **testado com sucesso** (use o teste de envio da Etapa 6 com a configuração salva).
-2. Como **administrador**, clique em **Ativar**. **Esperado:** uma confirmação mostra servidor, remetente e **endereço dos links** — confira que o endereço é o que os usuários acessam (`app_base_url`); confirme. (Quem só gerencia o SMTP, sem ser administrador, é recusado.)
+2. Como **administrador**, clique em **Ativar recuperação de senha** (depois de ativo, o botão vira **Desativar recuperação de senha**). **Esperado:** uma confirmação mostra servidor, remetente e **endereço dos links** — confira que o endereço é o que os usuários acessam (`app_base_url`); confirme. (Quem só gerencia o SMTP, sem ser administrador, é recusado.)
 3. Na tela de login, clique em **Esqueci minha senha**, informe o e-mail de um usuário. **Esperado:** mensagem genérica ("Se o e-mail estiver cadastrado...") — a mesma para e-mail inexistente; o e-mail com o link chega em instantes.
 4. Abra o link. **Esperado:** a barra de endereço **perde o token** (`/reset-password` sem `?token=`); defina a senha nova (8+ caracteres, confirmação igual) → "Senha redefinida". Entre com a nova senha; **sessões antigas** desse usuário caem.
 5. Abra o **mesmo link de novo**. **Esperado:** "Link inválido ou expirado". Peça dois links seguidos: só o **mais recente** funciona. O link vale 30 minutos.
@@ -110,7 +110,7 @@ Depende da Etapa 6 (SMTP funcionando). **Nasce desativada**: antes de ativar, a 
 7. Altere **qualquer** campo do SMTP (ex.: remetente) e salve. **Esperado:** a recuperação volta para **Desativada** (e some do login); é preciso testar o envio de novo e reativar.
 8. Em **Auditoria**, confira os eventos de recuperação (solicitada, concluída, configurada), sem o token e sem o e-mail.
 
-> O envio de e-mail real **nunca foi exercitado** nos testes automatizados (SMTP simulado): esta etapa é a primeira validação com o servidor da empresa. Se o link chegar com endereço errado, corrija o campo de endereço dos links no SMTP.
+> O envio de e-mail real **nunca foi exercitado** nos testes automatizados (SMTP simulado): esta etapa é a primeira validação com o servidor da empresa. Se o link chegar com endereço errado, corrija o campo **URL Base da Plataforma (para links nos e-mails)** na configuração do SMTP.
 
 ## Etapa 7 — Backup e restauração
 

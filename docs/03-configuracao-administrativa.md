@@ -83,8 +83,8 @@ O sistema opera sob o princípio do menor privilégio. Estão pré-configurados 
 
 ## 4. Auditoria e Rastreabilidade
 
-Ações críticas são gravadas na tabela `audit_logs` e consultadas em **Administração > Auditoria** (permissão `audit.read`), com filtros por evento, usuário (trecho do e-mail) e período, e paginação:
+Ações críticas são gravadas na tabela `audit_logs` e consultadas em **Administração & Sistema > Auditoria** (permissão `audit.read`), com filtros por evento, usuário (trecho do e-mail) e período, e paginação:
 * Logins (sucesso, falha, conta bloqueada), criação/alteração/inativação de usuários, perfis, redefinição e troca de senha, recuperação de senha, dados da empresa e configuração de SMTP.
-* Histórico dos eventos de cada chamado do Service Desk e eventos de ativos, estoque e backup concluído/falho.
+* Histórico dos eventos de cada chamado do Service Desk (inclui vínculo, reserva, entrega e devolução de ativos e materiais), colaborador criado e backup concluído/falho.
 * Senhas, tokens e o texto digitado no campo de e-mail do login **nunca** são registrados.
 * Não são auditados: logout, restauração de backup feita por script, importação/exportação e leituras. Detalhes e limites em [09](09-seguranca-e-auditoria.md).
