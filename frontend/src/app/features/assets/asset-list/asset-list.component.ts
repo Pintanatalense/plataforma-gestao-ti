@@ -11,6 +11,8 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 
 import { Asset, AssetService } from '../../../core/services/asset.service';
 import { AssetQuickViewDialogComponent } from '../asset-quick-view-dialog/asset-quick-view-dialog.component';
+import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
+import { apiErrorMessage } from '../../../core/http/api-error';
 
 @Component({
   selector: 'app-asset-list',
@@ -24,7 +26,8 @@ import { AssetQuickViewDialogComponent } from '../asset-quick-view-dialog/asset-
     MatInputModule,
     MatFormFieldModule,
     MatTooltipModule,
-    MatDialogModule
+    MatDialogModule,
+    LoadStateComponent
   ],
   templateUrl: './asset-list.component.html',
   styleUrls: ['./asset-list.component.scss']
@@ -35,21 +38,30 @@ export class AssetListComponent implements OnInit {
 
   displayedColumns: string[] = ['tag', 'name', 'category', 'unit', 'employee', 'status', 'actions'];
   dataSource = new MatTableDataSource<Asset>([]);
+  loading = true;
+  loadError: string | null = null;
 
   ngOnInit(): void {
     this.loadAssets();
   }
 
   loadAssets(): void {
+    this.loading = true;
+    this.loadError = null;
     this.assetService.getAssets().subscribe({
       next: (data) => {
+        this.loading = false;
         this.dataSource.data = data;
         this.dataSource.filterPredicate = (asset: Asset, filter: string) => {
           const searchStr = `${asset.tag} ${asset.name} ${asset.category?.name || ''} ${asset.unit?.name || ''} ${asset.employee?.name || ''}`.toLowerCase();
           return searchStr.includes(filter);
         };
       },
-      error: (err) => console.error('Erro ao carregar ativos:', err)
+      error: (err) => {
+        // falha de comunicação não pode parecer "nenhum ativo registrado"
+        this.loading = false;
+        this.loadError = apiErrorMessage(err, 'Não foi possível carregar os ativos.');
+      }
     });
   }
 

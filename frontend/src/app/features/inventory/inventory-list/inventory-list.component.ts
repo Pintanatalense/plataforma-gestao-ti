@@ -11,6 +11,8 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 import { InventoryAudit, InventoryService } from '../../../core/services/inventory.service';
+import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
+import { apiErrorMessage } from '../../../core/http/api-error';
 import { OrganizationService, Unit } from '../../../core/services/organization.service';
 import { CreateAuditDialogComponent } from './create-audit-dialog.component';
 
@@ -27,7 +29,8 @@ import { CreateAuditDialogComponent } from './create-audit-dialog.component';
     MatFormFieldModule,
     MatTooltipModule,
     MatDialogModule,
-    MatSnackBarModule
+    MatSnackBarModule,
+    LoadStateComponent
   ],
   templateUrl: './inventory-list.component.html',
   styleUrls: ['./inventory-list.component.scss']
@@ -42,6 +45,9 @@ export class InventoryListComponent implements OnInit {
   dataSource = new MatTableDataSource<InventoryAudit>([]);
   units: Unit[] = [];
 
+  loading = true;
+  loadError: string | null = null;
+
   ngOnInit(): void {
     this.loadUnits();
     this.loadAudits();
@@ -55,8 +61,11 @@ export class InventoryListComponent implements OnInit {
   }
 
   loadAudits(): void {
+    this.loading = true;
+    this.loadError = null;
     this.inventoryService.listAudits().subscribe({
       next: (audits) => {
+        this.loading = false;
         this.dataSource.data = audits;
         this.dataSource.filterPredicate = (data: InventoryAudit, filter: string) => {
           const unit = data.unit_name || this.getUnitName(data.unit_id);
@@ -64,7 +73,11 @@ export class InventoryListComponent implements OnInit {
           return search.includes(filter);
         };
       },
-      error: (err) => console.error('Erro ao listar inventários:', err)
+      error: (err) => {
+        // falha de comunicação não pode parecer "nenhuma auditoria cadastrada"
+        this.loading = false;
+        this.loadError = apiErrorMessage(err, 'Não foi possível carregar os inventários.');
+      }
     });
   }
 
