@@ -28,6 +28,7 @@
           </button>
           <mat-error *ngIf="loginForm.controls.password.hasError('required')">A senha é obrigatória</mat-error>
         </mat-form-field>
+        <p class="forgot-link" *ngIf="resetEnabled"><a routerLink="/forgot-password" data-testid="forgot-link">Esqueci minha senha</a></p>
       </mat-card-content>
 
       <mat-card-actions align="end">

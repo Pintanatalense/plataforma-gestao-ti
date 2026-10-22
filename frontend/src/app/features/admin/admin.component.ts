@@ -25,8 +25,7 @@ import {
   CsvExportRequest,
   DemoStatus,
   DemoCleanPreview,
-  SmtpConfig
-} from '../../core/services/admin.service';
+  SmtpConfig, PasswordResetConfig } from '../../core/services/admin.service';
 
 
 @Component({
@@ -157,6 +156,7 @@ export class AdminComponent implements OnInit {
     this.loadBackups();
     this.loadDemoStatus();
     this.loadSmtpConfig();
+    this.loadPasswordReset();
   }
 
   // ==========================================
@@ -626,11 +626,80 @@ export class AdminComponent implements OnInit {
         this.smtpPasswordInput = cfg.password || '********';
         this.savingSmtpConfig = false;
         this.snackBar.open('Configurações de SMTP salvas com sucesso!', 'OK', { duration: 3000 });
+        this.loadPasswordReset(); // alterar o SMTP desliga a recuperação de senha
       },
       error: (err) => {
         this.savingSmtpConfig = false;
         const msg = apiErrorMessage(err, 'Erro ao salvar configuração SMTP.');
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+      }
+    });
+  }
+
+  // ------ Recuperação de senha por e-mail (ADR-018)
+  passwordReset: PasswordResetConfig | null = null;
+  passwordResetError: string | null = null;
+  savingPasswordReset = false;
+
+  loadPasswordReset(): void {
+    this.passwordResetError = null;
+    this.adminService.getPasswordResetConfig().subscribe({
+      next: (cfg) => {
+        this.passwordReset = cfg;
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.passwordReset = null;
+        this.passwordResetError = apiErrorMessage(err, 'Não foi possível ler o estado da recuperação de senha.');
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  togglePasswordReset(): void {
+    if (!this.passwordReset || this.savingPasswordReset) return;
+    const enable = !this.passwordReset.enabled;
+    if (!enable) {
+      this.applyPasswordReset(false);
+      return;
+    }
+    // a confirmação mostra o que está SALVO no servidor (o formulário pode ter edições ainda não salvas):
+    // o link de recuperação sai desse servidor e aponta para esse endereço
+    this.savingPasswordReset = true;
+    this.adminService.getSmtpConfig().subscribe({
+      next: (saved) => {
+        this.savingPasswordReset = false;
+        const ok = confirm(
+          'Ativar a recuperação de senha por e-mail?\n\n' +
+          `Servidor: ${saved.host}:${saved.port}\n` +
+          `Remetente: ${saved.from_email}\n` +
+          `Endereço dos links: ${saved.app_base_url}\n\n` +
+          'Qualquer pessoa poderá pedir um link por e-mail, sem estar logada. Confirme que esses dados estão corretos.'
+        );
+        if (ok) this.applyPasswordReset(true);
+        else this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.savingPasswordReset = false;
+        this.snackBar.open(apiErrorMessage(err, 'Não foi possível ler a configuração de e-mail salva.'), 'Fechar', { duration: 6000 });
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private applyPasswordReset(enable: boolean): void {
+    this.savingPasswordReset = true;
+    this.adminService.setPasswordReset(enable).subscribe({
+      next: (cfg) => {
+        this.passwordReset = cfg;
+        this.savingPasswordReset = false;
+        this.snackBar.open(enable ? 'Recuperação de senha ativada.' : 'Recuperação de senha desativada.', 'OK', { duration: 3000 });
+        this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.savingPasswordReset = false;
+        this.snackBar.open(apiErrorMessage(err, 'Não foi possível alterar a recuperação de senha.'), 'Fechar', { duration: 6000 });
+        this.cdr.detectChanges();
       }
     });
   }
@@ -655,6 +724,7 @@ export class AdminComponent implements OnInit {
       next: (res) => {
         this.testingSmtp = false;
         this.smtpTestFeedback = { success: true, message: `E-mail de teste enviado com sucesso para ${res.target_email}!` };
+        this.loadPasswordReset(); // um teste ok homologa o SMTP salvo
       },
       error: (err) => {
         this.testingSmtp = false;

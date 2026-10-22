@@ -205,6 +205,14 @@ export class AdminService {
     return this.http.put<SmtpConfig>('/api/v1/notifications/email/config', config);
   }
 
+  getPasswordResetConfig(): Observable<PasswordResetConfig> {
+    return this.http.get<PasswordResetConfig>('/api/v1/notifications/email/password-reset');
+  }
+
+  setPasswordReset(enabled: boolean): Observable<PasswordResetConfig> {
+    return this.http.put<PasswordResetConfig>('/api/v1/notifications/email/password-reset', { enabled });
+  }
+
   testSmtpConnection(req: { target_email: string } & Partial<SmtpConfig>): Observable<{ success: boolean; message: string; target_email: string }> {
     return this.http.post<{ success: boolean; message: string; target_email: string }>('/api/v1/notifications/email/test', req);
   }
@@ -239,6 +247,11 @@ export interface DemoCleanPreview {
   };
   can_proceed: boolean;
   blocking_reasons: string[];
+}
+
+export interface PasswordResetConfig {
+  enabled: boolean;
+  smtp_ready: boolean;
 }
 
 export interface SmtpConfig {
