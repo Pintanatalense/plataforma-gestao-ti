@@ -1,4 +1,4 @@
-import { Component, Inject, inject, OnInit } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
@@ -22,28 +22,29 @@ import { generateTemporaryPassword } from '../../../core/auth/temporary-password
     MatInputModule,
     MatSelectModule,
     MatButtonModule,
-    MatSlideToggleModule
+    MatSlideToggleModule,
   ],
   template: `
     <h2 mat-dialog-title>{{ data ? 'Editar' : 'Novo' }} Usuário</h2>
     <mat-dialog-content>
       <form [formGroup]="form" class="dialog-form">
-        
         <mat-form-field appearance="outline">
           <mat-label>Colaborador</mat-label>
           <mat-select formControlName="employee_id" required>
-            <mat-option *ngFor="let emp of employees" [value]="emp.id">{{ emp.name }} ({{ emp.registration }})</mat-option>
+            <mat-option *ngFor="let emp of employees" [value]="emp.id"
+              >{{ emp.name }} ({{ emp.registration }})</mat-option
+            >
           </mat-select>
         </mat-form-field>
 
         <mat-form-field appearance="outline">
           <mat-label>Email</mat-label>
-          <input matInput formControlName="email" type="email" required>
+          <input matInput formControlName="email" type="email" required />
         </mat-form-field>
-        
+
         <mat-form-field appearance="outline" *ngIf="!data">
           <mat-label>Senha Temporária</mat-label>
-          <input matInput formControlName="password" required>
+          <input matInput formControlName="password" required />
         </mat-form-field>
 
         <mat-form-field appearance="outline">
@@ -53,28 +54,31 @@ import { generateTemporaryPassword } from '../../../core/auth/temporary-password
           </mat-select>
         </mat-form-field>
 
-        <mat-slide-toggle formControlName="is_admin">
-          Administrador Global
-        </mat-slide-toggle>
-
+        <mat-slide-toggle formControlName="is_admin"> Administrador Global </mat-slide-toggle>
       </form>
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button mat-button mat-dialog-close>Cancelar</button>
-      <button mat-flat-button color="primary" [disabled]="form.invalid" (click)="save()">Salvar</button>
+      <button mat-flat-button color="primary" [disabled]="form.invalid" (click)="save()">
+        Salvar
+      </button>
     </mat-dialog-actions>
   `,
-  styles: [`
-    .dialog-form {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      margin-top: 8px;
-      min-width: 400px;
-    }
-  `]
+  styles: [
+    `
+      .dialog-form {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        margin-top: 8px;
+        min-width: 400px;
+      }
+    `,
+  ],
 })
 export class UserDialogComponent implements OnInit {
+  data = inject<User | null>(MAT_DIALOG_DATA);
+
   private fb = inject(FormBuilder);
   private identityService = inject(IdentityService);
   private orgService = inject(OrganizationService);
@@ -85,19 +89,24 @@ export class UserDialogComponent implements OnInit {
 
   form: any;
 
-  constructor(@Inject(MAT_DIALOG_DATA) public data: User | null) {
+  constructor() {
     this.form = this.fb.group({
       employee_id: [this.data?.employee_id || '', Validators.required],
       email: [this.data?.email || '', [Validators.required, Validators.email]],
-      password: [this.data ? '' : generateTemporaryPassword(), this.data ? [] : Validators.required],
+      password: [
+        this.data ? '' : generateTemporaryPassword(),
+        this.data ? [] : Validators.required,
+      ],
       role_ids: [this.data?.roles?.map((r: any) => r.id) || []],
-      is_admin: [this.data?.is_admin || false]
+      is_admin: [this.data?.is_admin || false],
     });
   }
 
   ngOnInit(): void {
-    this.identityService.getRoles().subscribe((roles: any) => this.roles = roles);
-    this.orgService.getEmployees().subscribe((emps: any) => this.employees = emps.filter((e: any) => e.is_active));
+    this.identityService.getRoles().subscribe((roles: any) => (this.roles = roles));
+    this.orgService
+      .getEmployees()
+      .subscribe((emps: any) => (this.employees = emps.filter((e: any) => e.is_active)));
   }
 
   save() {

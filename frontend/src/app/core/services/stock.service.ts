@@ -67,7 +67,7 @@ export class StockService {
 
   // --- Items ---
   getItems(unitId?: string): Observable<StockItem[]> {
-    let params: any = {};
+    const params: any = {};
     if (unitId) params.unit_id = unitId;
     return this.http.get<StockItem[]>(`${this.apiUrl}/items`, { params });
   }

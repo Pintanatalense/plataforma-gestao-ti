@@ -1,4 +1,4 @@
-import { Component, Inject, inject, OnInit } from '@angular/core';
+import { Component, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MAT_DIALOG_DATA, MatDialogModule, MatDialogRef } from '@angular/material/dialog';
@@ -20,7 +20,7 @@ import { OrganizationService, Sector, Unit } from '../../../core/services/organi
     MatInputModule,
     MatSelectModule,
     MatButtonModule,
-    MatSlideToggleModule
+    MatSlideToggleModule,
   ],
   template: `
     <h2 mat-dialog-title>{{ data ? 'Editar' : 'Novo' }} Setor</h2>
@@ -35,35 +35,39 @@ import { OrganizationService, Sector, Unit } from '../../../core/services/organi
 
         <mat-form-field appearance="outline">
           <mat-label>Código</mat-label>
-          <input matInput formControlName="code" required>
-        </mat-form-field>
-        
-        <mat-form-field appearance="outline">
-          <mat-label>Nome</mat-label>
-          <input matInput formControlName="name" required>
+          <input matInput formControlName="code" required />
         </mat-form-field>
 
-        <mat-slide-toggle formControlName="is_active" *ngIf="data">
-          Ativo
-        </mat-slide-toggle>
+        <mat-form-field appearance="outline">
+          <mat-label>Nome</mat-label>
+          <input matInput formControlName="name" required />
+        </mat-form-field>
+
+        <mat-slide-toggle formControlName="is_active" *ngIf="data"> Ativo </mat-slide-toggle>
       </form>
     </mat-dialog-content>
     <mat-dialog-actions align="end">
       <button mat-button mat-dialog-close>Cancelar</button>
-      <button mat-flat-button color="primary" [disabled]="form.invalid" (click)="save()">Salvar</button>
+      <button mat-flat-button color="primary" [disabled]="form.invalid" (click)="save()">
+        Salvar
+      </button>
     </mat-dialog-actions>
   `,
-  styles: [`
-    .dialog-form {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
-      margin-top: 8px;
-      min-width: 300px;
-    }
-  `]
+  styles: [
+    `
+      .dialog-form {
+        display: flex;
+        flex-direction: column;
+        gap: 16px;
+        margin-top: 8px;
+        min-width: 300px;
+      }
+    `,
+  ],
 })
 export class SectorDialogComponent implements OnInit {
+  data = inject<Sector | null>(MAT_DIALOG_DATA);
+
   private fb = inject(FormBuilder);
   private orgService = inject(OrganizationService);
   dialogRef = inject(MatDialogRef<SectorDialogComponent>);
@@ -72,17 +76,17 @@ export class SectorDialogComponent implements OnInit {
 
   form: any;
 
-  constructor(@Inject(MAT_DIALOG_DATA) public data: Sector | null) {
+  constructor() {
     this.form = this.fb.group({
       unit_id: [this.data?.unit_id || '', Validators.required],
       code: [this.data?.code || '', Validators.required],
       name: [this.data?.name || '', Validators.required],
-      is_active: [this.data ? this.data.is_active : true]
+      is_active: [this.data ? this.data.is_active : true],
     });
   }
 
   ngOnInit(): void {
-    this.orgService.getUnits().subscribe((units: any) => this.units = units);
+    this.orgService.getUnits().subscribe((units: any) => (this.units = units));
   }
 
   save() {
