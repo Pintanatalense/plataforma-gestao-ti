@@ -13,14 +13,15 @@
 #   make lint        - Executa linter no backend
 #   make shell       - Abre shell no container do backend
 #   make db-shell    - Abre psql no container do banco
-#   make backup      - Gera backup do banco + anexos
-#   make restore     - Restaura backup .sql.gz com a API parada (FILE="arquivo.sql.gz")
+#   make backup        - Backup do banco (.sql.gz) + anexos e logomarca (.tar.gz) em ./backups
+#   make restore       - Restaura (FILE="banco.sql.gz" [FILES="arquivos.tar.gz"]) com backend e worker parados
+#   make verify-backup - Prova que um backup restaura, num banco temporário (FILE="banco.sql.gz")
 # =============================================================================
 
 install:
 	@scripts/install.sh
 
-.PHONY: install up down logs migrate migration seed test lint shell db-shell backup restore
+.PHONY: install up down logs migrate migration seed test lint shell db-shell backup restore verify-backup
 
 # --- Docker ---
 up:
@@ -101,13 +102,13 @@ shell:
 
 # --- Backup ---
 backup:
-	@echo "Gerando backup..."
-	@mkdir -p backups
-	docker compose exec postgres pg_dump -U postgres gestao_ti > backups/backup_$$(date +%Y%m%d_%H%M%S).sql
-	@echo "Backup concluído."
+	@scripts/backup.sh
 
 restore:
-	@scripts/restore-backup.sh "$(FILE)"
+	@scripts/restore-backup.sh "$(FILE)" "$(FILES)"
+
+verify-backup:
+	@scripts/verify-backup.sh "$(FILE)"
 
 # --- Frontend ---
 fe-install:

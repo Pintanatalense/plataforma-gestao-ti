@@ -48,6 +48,7 @@ services:
       ENABLE_QA_SEED: ${ENABLE_QA_SEED:-false}
       ENABLE_API_DOCS: ${ENABLE_API_DOCS:-true}
       ATTACHMENT_STORAGE_PATH: /data/attachments
+      ATTACHMENT_MAX_SIZE_MB: ${ATTACHMENT_MAX_SIZE_MB:-100}
       BACKUP_STORAGE_PATH: /data/backups
       CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost"]}
     volumes:

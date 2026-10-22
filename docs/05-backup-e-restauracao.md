@@ -35,12 +35,20 @@ curl "http://localhost/api/v1/system/backups/<ID>/download" -o backup.sql.gz -H 
 curl -X DELETE "http://localhost/api/v1/system/backups/<ID>"         -H "Authorization: Bearer <TOKEN>"
 ```
 
-### 2.3. Manual, direto do banco (API indisponível)
+### 2.3. Pela linha de comando: banco **e** arquivos (recomendado para cópia completa)
+```bash
+make backup            # ou: scripts/backup.sh
+```
+Gera em `./backups` (ou `BACKUP_DIR`):
+* `backup_gestao_ti_AAAAMMDD_HHMMSS.sql.gz` — banco, no mesmo formato dos backups da tela;
+* `arquivos_AAAAMMDD_HHMMSS.tar.gz` — **anexos e logomarca** (volumes `attachments_data` e `static_data`).
+
+Cada arquivo é verificado ao final (gzip íntegro; dump com a marca `dump complete`; tar legível) e, se algo falhar, nada fica pela metade. Requer os serviços `postgres` e `backend` no ar. No Windows, use o Git Bash. **Mudança:** `make backup` antes gravava `backups/backup_*.sql` (sem gzip, só banco); agora grava `backup_gestao_ti_*.sql.gz` e `arquivos_*.tar.gz` — ajuste rotinas que dependiam do formato antigo.
+
+Só o banco, sem os scripts:
 ```bash
 docker compose exec -T postgres pg_dump -U postgres -d gestao_ti --clean --if-exists | gzip > backup_manual_$(date +%Y%m%d_%H%M%S).sql.gz
 ```
-
-> **Atenção:** `make backup` gera um `.sql` **sem gzip e sem `--clean`**, que **não** serve para `make restore`/`scripts/restore-backup.sh` (exigem `.sql.gz`). Use o comando acima ou a tela. Correção prevista no plano diretor (P2-7).
 
 ---
 
@@ -56,39 +64,36 @@ A verificação só prova que o arquivo não mudou; **não prova que ele restaur
 ## 4. Restaurar
 
 > [!WARNING]
-> A restauração **substitui** o estado atual do banco. Faça com autorização e, de preferência, em janela de manutenção.
+> A restauração **substitui** o estado atual do banco (e dos arquivos, se informados). Faça com autorização e, de preferência, em janela de manutenção.
 
-**Não existe restauração pela API nem pela tela.** O caminho suportado é o script:
+**Não existe restauração pela API nem pela tela.** O caminho suportado é o script, a partir da pasta do projeto:
 
 ```bash
-scripts/restore-backup.sh /caminho/backup_gestao_ti_AAAAMMDD_HHMMSS.sql.gz
-# ou: make restore FILE=/caminho/backup_gestao_ti_AAAAMMDD_HHMMSS.sql.gz
+scripts/restore-backup.sh backups/backup_gestao_ti_AAAAMMDD_HHMMSS.sql.gz backups/arquivos_AAAAMMDD_HHMMSS.tar.gz
+# ou: make restore FILE=backups/backup_....sql.gz FILES=backups/arquivos_....tar.gz
 ```
+O segundo arquivo (anexos e logomarca) é opcional; sem ele só o banco é restaurado e o script avisa.
 
-O script valida o `.gz`, grava um dump de segurança `pre-restore-<data>.sql.gz` **no diretório atual**, para o `backend`, restaura em transação única (`ON_ERROR_STOP`; se falhar, nada é aplicado) e religa o `backend`.
+O que o script faz, em ordem (**nada é alterado antes do passo 3**):
+1. valida os arquivos (`gzip -t` / `tar -t`) e recusa um tar com caminhos fora de `data/attachments` e `app/static` (ou com `..`);
+2. grava cópias de segurança **no diretório atual** e confere que estão completas: `pre-restore-<data>.sql.gz` (banco) e, se for restaurar arquivos, `pre-restore-arquivos-<data>.tar.gz` (anexos e logo **atuais**). Se alguma falhar, **para antes de mexer em qualquer coisa**;
+3. para o `backend` **e o `worker`**;
+4. restaura o banco em transação única (`ON_ERROR_STOP`): se falhar, nada é aplicado e os serviços voltam;
+5. sobe o `backend` e, se houver o segundo arquivo, extrai numa pasta temporária e **só então** troca o conteúdo de anexos/logomarca (inclusive arquivos ocultos); se a extração falhar, os arquivos atuais continuam intactos;
+6. sobe o `worker`.
 
-Cuidados:
-* O script **não para o `worker`**. Rode `docker compose stop worker` antes e `docker compose start worker` depois (correção prevista em P2-7).
-* Restaura **só o banco**: anexos e logo ficam nos volumes `attachments_data` e `static_data`.
-* Em servidor recriado do zero: instale (`scripts/install.sh`), garanta o **mesmo `APP_ENCRYPTION_KEY`** do ambiente original (seção 6), suba apenas o banco (`docker compose up -d postgres`) e então rode o script.
+**Se falhar depois do passo 4** (banco já restaurado, arquivos não): o script para com o `worker` desligado, informa onde estão as cópias `pre-restore-*` e o que fazer. Corrija a causa e repita o comando; só depois `docker compose start worker`. As cópias de segurança **não são apagadas** — remova-as quando confirmar que o sistema está correto.
+
+Em servidor recriado do zero: instale (`scripts/install.sh`), garanta o **mesmo `APP_ENCRYPTION_KEY`** do ambiente original (seção 6), suba apenas o banco (`docker compose up -d postgres`) e rode o script.
 
 ---
 
-## 5. Testar a restauração sem afetar o ambiente
+## 5. Provar que o backup restaura (sem afetar o ambiente)
 
 ```bash
-# 1. banco temporário
-docker compose exec -T postgres psql -U postgres -c "CREATE DATABASE gestao_ti_valida_dr;"
-
-# 2. restaura o dump nele (sem --single-transaction o psql continua após erros: confira a saída)
-gunzip -c backup_gestao_ti_AAAAMMDD_HHMMSS.sql.gz | docker compose exec -T postgres psql -U postgres -d gestao_ti_valida_dr -v ON_ERROR_STOP=1 --single-transaction -q
-
-# 3. confere dados
-docker compose exec -T postgres psql -U postgres -d gestao_ti_valida_dr -c "SELECT count(*) FROM user_accounts;" -c "SELECT count(*) FROM sd_ticket;"
-
-# 4. remove
-docker compose exec -T postgres psql -U postgres -c "DROP DATABASE gestao_ti_valida_dr;"
+make verify-backup FILE=backups/backup_gestao_ti_AAAAMMDD_HHMMSS.sql.gz   # ou: scripts/verify-backup.sh ...
 ```
+Cria um banco temporário, aplica o backup nele, confere tabelas, usuários e a revisão de migration e **remove o banco temporário** (o banco em uso não é tocado). Saída esperada: `OK: N tabelas, N usuários, migration <rev>` (o número de tabelas muda com o esquema). Agende periodicamente: o SHA-256 só prova que o arquivo não mudou, não que ele restaura.
 
 ---
 
@@ -103,14 +108,10 @@ As credenciais de SMTP, Telegram, WhatsApp, Slack e as chaves do pop-up do naveg
 
 ## 7. O que NÃO está coberto hoje (riscos conhecidos)
 
-1. **Anexos e logo não entram no backup.** Faça cópia dos volumes à parte, por exemplo (ajuste o prefixo conforme `docker volume ls`):
-   ```bash
-   docker run --rm -v <projeto>_attachments_data:/data -v "$PWD":/backup alpine tar czf /backup/anexos_$(date +%Y%m%d).tar.gz -C /data .
-   docker run --rm -v <projeto>_static_data:/data      -v "$PWD":/backup alpine tar czf /backup/static_$(date +%Y%m%d).tar.gz -C /data .
-   ```
-2. **Sem cópia fora do servidor.** Os backups ficam no mesmo host do banco; falha do disco perde tudo. Copie periodicamente os `.sql.gz` e as cópias dos volumes para outro local (idealmente criptografado).
-3. **Sem teste automático de restauração** e sem metas de **RPO/RTO** definidas. Defina-as e agende o teste da seção 5.
-4. O backup **não é criptografado** e a geração carrega o dump em memória (atenção em bases grandes).
-5. Dumps `*.sql.gz` e `pre-restore-*` podem conter dados reais: o `.gitignore` os ignora, mas nunca os coloque em repositório.
+1. **Anexos e logo não entram no backup da tela / do job das 02:00** (que cobrem só o banco). Use `make backup` (seção 2.3) para a cópia completa.
+2. **Sem cópia fora do servidor.** Os backups ficam no mesmo host do banco; falha do disco perde tudo. Copie periodicamente `./backups` (ou o volume `backups_data`) para outro local, idealmente criptografado.
+3. **Sem teste automático e agendado de restauração** e sem metas de **RPO/RTO** definidas. Defina-as e agende o `make verify-backup`.
+4. O backup **não é criptografado** e a geração pela tela carrega o dump em memória (atenção em bases grandes).
+5. Dumps `*.sql.gz`, `arquivos_*.tar.gz` e `pre-restore-*` podem conter dados reais: o `.gitignore` ignora `*.sql.gz` e `pre-restore-*`; nunca os coloque em repositório.
 
-O plano de correção está em `docs/plans/plano-diretor.md` (itens P2-7 e Fase 5).
+Plano de correção do restante: `docs/plans/plano-diretor.md`, Fase 5.
