@@ -76,7 +76,8 @@ Se a versão com falha aplicou migrações de esquema incompatíveis com a vers�
 docker compose exec backend alembic downgrade -1
 
 # Opção B: Restauração do Backup Pré-Atualização (Método Recomendado)
-gunzip -c /var/lib/docker/volumes/plataforma-gestao-ti_backups_data/_data/backup_gestao_ti_PRE_ATUALIZACAO.sql.gz | docker exec -i gestao-ti-db psql -U postgres -d gestao_ti
+# com o backup copiado para o host (baixado pela tela de Backups):
+scripts/restore-backup.sh /caminho/backup_gestao_ti_PRE_ATUALIZACAO.sql.gz
 ```
 
 ---

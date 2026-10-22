@@ -1,5 +1,8 @@
 # DEC-012: Separação de Interações Públicas e Internas no Service Desk
 
+**Status:** Aceito  
+**Data:** 2026-10-07  
+
 ## Contexto e Problema
 Dentro das operações de suporte de TI (Service Desk), os técnicos costumam se deparar com a necessidade de registrar informações altamente técnicas e sensíveis durante a investigação de um incidente (ex: trechos de logs contendo IPs, credenciais provisórias ou debates internos sobre quem causou o problema).
 

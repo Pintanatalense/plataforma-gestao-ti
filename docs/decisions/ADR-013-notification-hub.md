@@ -1,6 +1,6 @@
 # ADR-013 — Hub de notificações e automação multicanal
 
-**Status:** Aceito (2026-10-15). Fase 0 concluída; **Fase A implementada** (ver §16). Fases B–F pendentes.
+**Status:** Aceito (2026-10-15). Fase 0 e **fases A–G implementadas e mescladas** (PRs #1–#10; registros nas seções finais). Pendente: SLA, termo de responsabilidade e divergência de inventário (ver `docs/plans/plano-diretor.md`).
 **Data:** 2026-10-15
 **Base:** commit `a544af7`; `docs/PROJECT_MAP.md`, `docs/AUDIT.md`
 **Numeração:** `DEC-013` já é citado em `core/events.py` mas não tem arquivo; este ADR usa o próximo número livre da série ADR.
