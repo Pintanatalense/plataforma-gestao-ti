@@ -5,7 +5,7 @@ Contém as entidades responsáveis por usuários do sistema, contas de acesso,
 e a camada de RBAC (Role-Based Access Control) associada ao colaborador.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 import uuid
 
@@ -87,3 +87,26 @@ class Permission(Base, TimestampMixin):
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
 
     roles: Mapped[list["Role"]] = relationship("Role", secondary=role_permission_association, back_populates="permissions")
+
+
+class PasswordResetRequest(Base):
+    """Pedido de recuperação de senha (ADR-018). Um registro por pedido, com ou sem conta correspondente.
+
+    Pedidos de e-mails inexistentes também são gravados (sem `user_id` e sem token) para que os limites por e-mail
+    e por IP valham igualmente para quem testa endereços. O token nunca é guardado: só o hash SHA-256.
+    """
+    __tablename__ = "password_reset_requests"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=True, index=True
+    )
+    email_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    token_hash: Mapped[str | None] = mapped_column(String(64), nullable=True, unique=True, index=True)
+    requested_ip: Mapped[str | None] = mapped_column(String(50), nullable=True, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    used_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+

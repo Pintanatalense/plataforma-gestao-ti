@@ -25,6 +25,7 @@ from app.notifications.channel_store import load_channel, save_channel
 logger = logging.getLogger(__name__)
 
 EMAIL_CHANNEL = "email"
+HOMOLOGATION_KEY = "smtp_homologated"  # último teste de envio bem-sucedido (ADR-018)
 LEGACY_EMAIL_SETTING_KEY = "smtp_config"  # configuração antiga (senha em texto puro em system_settings)
 MASKED_PASSWORD = "********"
 
@@ -140,6 +141,24 @@ class EmailService:
         await self.session.commit()
         return new_config
 
+    @staticmethod
+    def _endpoint(config: SmtpConfigSchema) -> str:
+        return f"{(config.host or '').strip().lower()}:{config.port}:{config.username}"
+
+    async def is_homologated(self, config: SmtpConfigSchema) -> bool:
+        """Houve um teste de envio bem-sucedido para este mesmo host, porta e usuário?"""
+        row = await self.session.get(SystemSetting, HOMOLOGATION_KEY)
+        return bool(row and row.metadata_json.get("endpoint") == self._endpoint(config))
+
+    async def _mark_homologated(self, config: SmtpConfigSchema) -> None:
+        metadata = {"endpoint": self._endpoint(config), "tested_at": datetime.now(timezone.utc).isoformat()}
+        row = await self.session.get(SystemSetting, HOMOLOGATION_KEY)
+        if row is None:
+            self.session.add(SystemSetting(key=HOMOLOGATION_KEY, value=None, metadata_json=metadata))
+        else:
+            row.metadata_json = metadata
+        await self.session.commit()
+
     async def test_smtp(self, req: SmtpTestEmailRequest) -> tuple[bool, str]:
         current_cfg = await self.get_config()
         typed_password = req.password if (req.password and req.password != MASKED_PASSWORD) else None
@@ -186,4 +205,7 @@ class EmailService:
         outcome, detail = await asyncio.to_thread(
             send_smtp_raw, config, req.target_email, subject, html, "Teste de Conexão SMTP OK."
         )
+        # só vale como homologação o teste do servidor JÁ SALVO (mesmo host/porta/usuário): testar outro não prova nada
+        if outcome == "ok" and same_endpoint and typed_password is None:
+            await self._mark_homologated(current_cfg)
         return outcome == "ok", detail
