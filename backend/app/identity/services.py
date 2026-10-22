@@ -4,6 +4,7 @@ MOD-03 — Identidade (Services)
 Regras de negócio para as entidades de identidade e controle de acesso.
 """
 
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 import uuid
 from typing import Sequence
@@ -15,6 +16,7 @@ from app.core.exceptions import (
     AppException,
     BusinessRuleException,
     ConflictException,
+    ForbiddenException,
     NotFoundException,
     UnauthorizedException,
 )
@@ -36,6 +38,23 @@ MAX_FAILED_LOGINS = 5
 LOCKOUT_MINUTES = 15
 # Hash bcrypt válido (de uma senha aleatória descartada), usado só para igualar o tempo de resposta.
 _DUMMY_HASH = hash_password("dummy-password-for-timing-only")
+
+
+@dataclass(frozen=True)
+class Actor:
+    """Quem está executando a operação administrativa (vem do JWT já validado no banco)."""
+
+    id: uuid.UUID
+    is_admin: bool
+    permissions: frozenset[str]
+
+    @classmethod
+    def from_payload(cls, payload: dict) -> "Actor":
+        return cls(
+            id=uuid.UUID(str(payload["sub"])),
+            is_admin=bool(payload.get("is_admin")),
+            permissions=frozenset(payload.get("permissions") or []),
+        )
 
 
 class IdentityService:
@@ -195,12 +214,46 @@ class IdentityService:
             raise NotFoundException("Perfil", ", ".join(str(m) for m in missing))
         return roles
 
-    async def create_user(self, schema: UserAccountCreate) -> UserAccount:
+    # --- Regras de não-escalada de privilégio ------------------------------------------------------
+
+    @staticmethod
+    def _role_codes(roles: Sequence[Role]) -> set[str]:
+        return {p.code for r in roles for p in r.permissions}
+
+    def _ensure_can_grant_roles(self, actor: Actor, roles: Sequence[Role]) -> None:
+        """Quem não é admin só atribui perfis cujas permissões ele mesmo possui."""
+        if actor.is_admin:
+            return
+        excess = self._role_codes(roles) - actor.permissions
+        if excess:
+            raise ForbiddenException(
+                "Você não pode atribuir perfis com permissões que você não possui: " + ", ".join(sorted(excess))
+            )
+
+    def _ensure_can_manage_user(self, actor: Actor, target: UserAccount) -> None:
+        """Não-admin não altera administradores nem quem tem mais poder do que ele."""
+        if actor.is_admin:
+            return
+        if target.is_admin:
+            raise ForbiddenException("Apenas administradores podem alterar uma conta de administrador.")
+        if self._role_codes(target.roles) - actor.permissions:
+            raise ForbiddenException("Você não pode alterar um usuário com mais permissões do que as suas.")
+
+    async def _ensure_not_last_admin(self, target: UserAccount) -> None:
+        """Impede ficar sem nenhum administrador ativo."""
+        if target.is_admin and target.is_active and target.deleted_at is None:
+            if await self.repo.count_active_admins(exclude_user_id=target.id) == 0:
+                raise ConflictException("Não é possível remover, desativar ou rebaixar o último administrador ativo.")
+
+    async def create_user(self, schema: UserAccountCreate, actor: Actor) -> UserAccount:
         if await self.repo.email_exists(schema.email):
             raise ConflictException("Email já cadastrado.", {"field": "email"})
             
+        if schema.is_admin and not actor.is_admin:
+            raise ForbiddenException("Apenas administradores podem criar outro administrador.")
         roles = await self._resolve_roles(schema.role_ids)
-        
+        self._ensure_can_grant_roles(actor, roles)
+
         user = UserAccount(
             employee_id=schema.employee_id,
             email=schema.email,
@@ -213,8 +266,14 @@ class IdentityService:
         
         return await self.repo.create_user(user)
 
-    async def update_user(self, user_id: uuid.UUID, schema: UserAccountUpdate) -> UserAccount:
+    async def update_user(self, user_id: uuid.UUID, schema: UserAccountUpdate, actor: Actor) -> UserAccount:
         user = await self.get_user(user_id, include_inactive=True)
+        self._ensure_can_manage_user(actor, user)
+        if schema.is_admin is not None and schema.is_admin != user.is_admin and not actor.is_admin:
+            raise ForbiddenException("Apenas administradores podem conceder ou retirar o papel de administrador.")
+        # rebaixar ou desativar o último administrador deixaria o sistema sem gestão
+        if (schema.is_admin is False) or (schema.is_active is False):
+            await self._ensure_not_last_admin(user)
         
         if schema.email is not None and schema.email != user.email:
             if await self.repo.email_exists(schema.email):
@@ -228,7 +287,9 @@ class IdentityService:
             user.is_admin = schema.is_admin
             
         if schema.role_ids is not None:
-            user.roles = await self._resolve_roles(schema.role_ids)
+            new_roles = await self._resolve_roles(schema.role_ids)
+            self._ensure_can_grant_roles(actor, new_roles)
+            user.roles = new_roles
 
         if schema.is_active is not None:
             user.is_active = schema.is_active
@@ -239,14 +300,20 @@ class IdentityService:
             
         return await self.repo.update_user(user)
 
-    async def delete_user(self, user_id: uuid.UUID) -> None:
+    async def delete_user(self, user_id: uuid.UUID, actor: Actor) -> None:
         user = await self.get_user(user_id, include_inactive=True)
+        self._ensure_can_manage_user(actor, user)
+        await self._ensure_not_last_admin(user)
         user.soft_delete()
         await self.repo.update_user(user)
 
-    async def update_password(self, user_id: uuid.UUID, schema: UserAccountPasswordUpdate) -> UserAccount:
+    async def update_password(
+        self, user_id: uuid.UUID, schema: UserAccountPasswordUpdate, actor: Actor
+    ) -> UserAccount:
         """Redefinição por administrador: a senha é temporária e deve ser trocada no próximo login."""
         user = await self.get_user(user_id)
+        # sem esta trava, quem só tem identity.users.update assumiria a conta de um administrador
+        self._ensure_can_manage_user(actor, user)
         user.hashed_password = hash_password(schema.password)
         user.must_change_password = True
         return await self.repo.update_user(user)
@@ -282,7 +349,16 @@ class IdentityService:
             raise NotFoundException("Permissão", ", ".join(str(m) for m in missing))
         return permissions
 
-    async def create_role(self, schema: RoleCreate) -> Role:
+    def _ensure_can_grant_permissions(self, actor: Actor, permissions: Sequence[Permission]) -> None:
+        if actor.is_admin:
+            return
+        excess = {p.code for p in permissions} - actor.permissions
+        if excess:
+            raise ForbiddenException(
+                "Você não pode conceder permissões que você não possui: " + ", ".join(sorted(excess))
+            )
+
+    async def create_role(self, schema: RoleCreate, actor: Actor) -> Role:
         if await self.repo.get_role_by_name(schema.name):
             raise ConflictException(f"Já existe um perfil chamado '{schema.name}'.", {"field": "name"})
 
@@ -290,12 +366,16 @@ class IdentityService:
             name=schema.name,
             description=schema.description
         )
-        role.permissions = await self._resolve_permissions(schema.permission_ids)
-        
+        permissions = await self._resolve_permissions(schema.permission_ids)
+        self._ensure_can_grant_permissions(actor, permissions)
+        role.permissions = permissions
+
         return await self.repo.create_role(role)
 
-    async def update_role(self, role_id: uuid.UUID, schema: RoleUpdate) -> Role:
+    async def update_role(self, role_id: uuid.UUID, schema: RoleUpdate, actor: Actor) -> Role:
         role = await self.get_role(role_id)
+        # perfil que contém permissões além das do ator não pode ser reescrito por ele
+        self._ensure_can_grant_permissions(actor, list(role.permissions))
         
         if schema.name is not None and schema.name != role.name:
             if await self.repo.get_role_by_name(schema.name):
@@ -305,12 +385,15 @@ class IdentityService:
             role.description = schema.description
             
         if schema.permission_ids is not None:
-            role.permissions = await self._resolve_permissions(schema.permission_ids)
+            permissions = await self._resolve_permissions(schema.permission_ids)
+            self._ensure_can_grant_permissions(actor, permissions)
+            role.permissions = permissions
             
         return await self.repo.update_role(role)
 
-    async def delete_role(self, role_id: uuid.UUID) -> None:
+    async def delete_role(self, role_id: uuid.UUID, actor: Actor) -> None:
         role = await self.get_role(role_id)
+        self._ensure_can_grant_permissions(actor, list(role.permissions))
         await self.repo.delete_role(role)
 
     # ==========================================================================

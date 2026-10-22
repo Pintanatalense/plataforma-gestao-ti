@@ -9,7 +9,7 @@ from fastapi import APIRouter, Depends, status
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user_id, get_current_user_ip, require_permission
+from app.core.dependencies import get_current_user_id, get_current_user_ip, get_token_payload, require_permission
 from app.database import get_db
 from app.identity.schemas import (
     InitialSetup,
@@ -25,7 +25,7 @@ from app.identity.schemas import (
     UserAccountPasswordUpdate,
     UserAccountUpdate,
 )
-from app.identity.services import IdentityService
+from app.identity.services import Actor, IdentityService
 
 router = APIRouter(prefix="/identity", tags=["Identity"])
 
@@ -105,9 +105,9 @@ async def list_users(include_inactive: bool = True, db: AsyncSession = Depends(g
 
 
 @router.post("/users", response_model=UserAccountOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("identity.users.create"))])
-async def create_user(schema: UserAccountCreate, db: AsyncSession = Depends(get_db)):
+async def create_user(schema: UserAccountCreate, db: AsyncSession = Depends(get_db), payload: dict = Depends(get_token_payload)):
     service = IdentityService(db)
-    return await service.create_user(schema)
+    return await service.create_user(schema, Actor.from_payload(payload))
 
 
 @router.get("/users/{user_id}", response_model=UserAccountOut, dependencies=[Depends(require_permission("identity.users.read"))])
@@ -117,22 +117,24 @@ async def get_user(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/users/{user_id}", response_model=UserAccountOut, dependencies=[Depends(require_permission("identity.users.update"))])
-async def update_user(user_id: uuid.UUID, schema: UserAccountUpdate, db: AsyncSession = Depends(get_db)):
+async def update_user(user_id: uuid.UUID, schema: UserAccountUpdate, db: AsyncSession = Depends(get_db), payload: dict = Depends(get_token_payload)):
     service = IdentityService(db)
-    return await service.update_user(user_id, schema)
+    return await service.update_user(user_id, schema, Actor.from_payload(payload))
 
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("identity.users.update"))])
-async def delete_user(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def delete_user(user_id: uuid.UUID, db: AsyncSession = Depends(get_db), payload: dict = Depends(get_token_payload)):
     service = IdentityService(db)
-    await service.delete_user(user_id)
+    await service.delete_user(user_id, Actor.from_payload(payload))
     return None
 
 
 @router.patch("/users/{user_id}/password", response_model=UserAccountOut, dependencies=[Depends(require_permission("identity.users.update"))])
-async def reset_password(user_id: uuid.UUID, schema: UserAccountPasswordUpdate, db: AsyncSession = Depends(get_db)):
+async def reset_password(
+    user_id: uuid.UUID, schema: UserAccountPasswordUpdate, db: AsyncSession = Depends(get_db), payload: dict = Depends(get_token_payload)
+):
     service = IdentityService(db)
-    return await service.update_password(user_id, schema)
+    return await service.update_password(user_id, schema, Actor.from_payload(payload))
 
 
 # ==============================================================================
@@ -146,9 +148,9 @@ async def list_roles(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/roles", response_model=RoleOut, status_code=status.HTTP_201_CREATED, dependencies=[Depends(require_permission("identity.roles.create"))])
-async def create_role(schema: RoleCreate, db: AsyncSession = Depends(get_db)):
+async def create_role(schema: RoleCreate, db: AsyncSession = Depends(get_db), payload: dict = Depends(get_token_payload)):
     service = IdentityService(db)
-    return await service.create_role(schema)
+    return await service.create_role(schema, Actor.from_payload(payload))
 
 
 @router.get("/roles/{role_id}", response_model=RoleOut, dependencies=[Depends(require_permission("identity.roles.read"))])
@@ -158,13 +160,13 @@ async def get_role(role_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
 
 
 @router.patch("/roles/{role_id}", response_model=RoleOut, dependencies=[Depends(require_permission("identity.roles.update"))])
-async def update_role(role_id: uuid.UUID, schema: RoleUpdate, db: AsyncSession = Depends(get_db)):
+async def update_role(role_id: uuid.UUID, schema: RoleUpdate, db: AsyncSession = Depends(get_db), payload: dict = Depends(get_token_payload)):
     service = IdentityService(db)
-    return await service.update_role(role_id, schema)
+    return await service.update_role(role_id, schema, Actor.from_payload(payload))
 
 
 @router.delete("/roles/{role_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("identity.roles.update"))])
-async def delete_role(role_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+async def delete_role(role_id: uuid.UUID, db: AsyncSession = Depends(get_db), payload: dict = Depends(get_token_payload)):
     service = IdentityService(db)
-    await service.delete_role(role_id)
+    await service.delete_role(role_id, Actor.from_payload(payload))
     return None
