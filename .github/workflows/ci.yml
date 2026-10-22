@@ -15,8 +15,8 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-# As actions estão fixadas pelo SHA do commit (o comentário indica a versão). Atualizar é manual até o
-# Dependabot ser configurado (plano diretor, P1-3): sem isso os SHAs ficam velhos.
+# As actions estão fixadas pelo SHA do commit (o comentário indica a versão); o Dependabot
+# (.github/dependabot.yml) propõe a atualização do SHA e do comentário.
 env:
   CI_SECRET_KEY: ci-only-secret-key-0123456789abcdef0123456789
   CI_ENCRYPTION_KEY: j7aZmoHBs-fLFKl4myK4N7BqySPuIpD8OjzqKQmxKtA=

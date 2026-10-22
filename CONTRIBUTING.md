@@ -13,13 +13,16 @@ em [`docs/decisions/`](docs/decisions/).
 4. Abra o PR com o modelo (`.github/pull_request_template.md`): problema, o que muda, **evidência** de validação,
    limitações e rollback. "Compila" ou "a tela aparece" não é validação.
 5. O PR só entra na `main` com **CI verde** e **revisão** (code owner). Nada de commit direto na `main`.
+   Com um único code owner, o GitHub não deixa o dono aprovar o PR que ele mesmo abriu: use um autor diferente do dono, um segundo code owner ou o bypass de administrador na proteção da `main`.
+
+Dependabot: PRs semanais de dependências (limite baixo no início). Versão **maior** de runtime (Python, Node, PostgreSQL, Nginx, uv) não é proposta automaticamente; o `uv` do `backend/Dockerfile` é atualizado à mão.
 
 ## Qualidade mínima
 
 | Verificação | Comando |
 |---|---|
 | Testes do backend (SQLite, rápido) | `cd backend && uv run pytest` |
-| Testes do backend em PostgreSQL (inclui `pg` e `migrations`) | `TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/gti_test` e `docker compose -f docker-compose.test.yml up -d` (ver `docs/11-base-de-testes-e-homologacao.md`) |
+| Testes do backend em PostgreSQL (inclui `pg` e `migrations`) | `docker compose -f docker-compose.test.yml up -d`; depois `export TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/gti_test` e `cd backend && uv run pytest` (sem a variável os testes `pg`/`migrations` são ignorados; ver `docs/11-base-de-testes-e-homologacao.md`) |
 | Lint do backend | `cd backend && uv run ruff check app tests alembic` |
 | Models × migrations | `cd backend && uv run alembic upgrade head && uv run alembic check` |
 | Scripts de operação | `shellcheck scripts/*.sh` |
@@ -32,7 +35,7 @@ testes em SQLite **e** PostgreSQL, imagens Docker construindo.
 
 - Uma migration por PR; **testar com dados**: `alembic upgrade head` → `downgrade -1` → `upgrade head`.
 - Alterou um model? A migration correspondente vai junto (`alembic check` reprova o PR se faltar).
-- Nunca rode testes contra um banco que não seja descartável (o guarda `backend/tests/_guard.py` exige nome terminado em `_test`).
+- Nunca rode testes contra um banco que não seja descartável (o guarda `backend/tests/_guard.py` exige nome terminado em `_test` **e** host local).
 
 ## Segredos
 

@@ -18,7 +18,7 @@ disponível, avise o responsável do projeto por um canal privado e inclua:
 
 - Senhas com bcrypt; sessões JWT com revogação (ADR-016: troca de senha, desativação e mudança de perfil encerram as sessões).
 - Credenciais de integrações cifradas no banco (Fernet).
-- Autorização por permissão em toda rota autenticada; teste automatizado impede rota nova sem autenticação.
+- Autenticação obrigatória em toda rota (teste de contrato: rota nova sem token reprova o CI) e autorização por permissão nas rotas protegidas.
 - CI com testes em PostgreSQL, `alembic check`, lint, `shellcheck`, build das imagens e auditoria de dependências (`pip-audit`, `npm audit`).
 
 Limites e riscos conhecidos estão em `docs/09-seguranca-e-auditoria.md` e em `docs/plans/plano-diretor.md`.

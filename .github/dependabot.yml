@@ -1,4 +1,7 @@
-# Atualizações automáticas de dependências (um PR por grupo, no máximo 5 abertos por ecossistema).
+# Atualizações automáticas de dependências. Limites iniciais baixos (o primeiro ciclo costuma abrir muitos PRs).
+# Mudança de VERSÃO MAIOR de runtime (Python, Node, PostgreSQL, Nginx, uv) é decisão humana com ADR/teste real:
+# o Dependabot não a propõe nos ecossistemas docker. Majors do npm (Angular/Material) vêm em PR individual.
+# Fora do alcance do Dependabot: `COPY --from=ghcr.io/astral-sh/uv:<versão>` do backend/Dockerfile (manual).
 # Todo PR do Dependabot passa pelo mesmo CI e pela mesma revisão de qualquer outro (ver CONTRIBUTING.md).
 version: 2
 updates:
@@ -9,7 +12,7 @@ updates:
       interval: "weekly"
       day: "monday"
       timezone: "America/Fortaleza"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "chore(deps)"
     groups:
@@ -23,7 +26,7 @@ updates:
       interval: "weekly"
       day: "monday"
       timezone: "America/Fortaleza"
-    open-pull-requests-limit: 5
+    open-pull-requests-limit: 3
     commit-message:
       prefix: "chore(deps)"
     groups:
@@ -37,6 +40,10 @@ updates:
       interval: "weekly"
       day: "monday"
       timezone: "America/Fortaleza"
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(docker)"
   - package-ecosystem: "docker"
@@ -45,6 +52,24 @@ updates:
       interval: "weekly"
       day: "monday"
       timezone: "America/Fortaleza"
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "chore(docker)"
+
+  # Imagens dos docker-compose*.yml (postgres, etc.)
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "America/Fortaleza"
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
     commit-message:
       prefix: "chore(docker)"
 
