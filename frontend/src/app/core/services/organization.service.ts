@@ -1,6 +1,19 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { BehaviorSubject, Observable } from 'rxjs';
+
+export interface Company {
+  id: string;
+  name: string;
+  cnpj: string | null;
+  logo_url: string | null;
+}
+
+/** Nome e logo exibidos no menu e na tela de login (endpoint público). */
+export interface Branding {
+  name: string;
+  logo_url: string | null;
+}
 
 export interface Unit {
   id: string;
@@ -38,8 +51,32 @@ export class OrganizationService {
   private baseUrl = '/api/v1/organization';
 
   // Company
-  getCompanyPublic(): Observable<{ name: string; logo_url: string | null }> {
-    return this.http.get<{ name: string; logo_url: string | null }>(`${this.baseUrl}/company/public`);
+  /** Marca atual; o menu e o login assinam, a tela da empresa atualiza ao salvar. */
+  readonly branding$ = new BehaviorSubject<Branding | null>(null);
+
+  getCompanyPublic(): Observable<Branding> {
+    return this.http.get<Branding>(`${this.baseUrl}/company/public`);
+  }
+
+  loadBranding(): void {
+    this.getCompanyPublic().subscribe({
+      next: (branding) => this.branding$.next(branding),
+      error: () => {} // sem a marca o sistema continua com o nome padrão
+    });
+  }
+
+  getCompany(): Observable<Company> {
+    return this.http.get<Company>(`${this.baseUrl}/company`);
+  }
+
+  updateCompany(data: { name?: string; cnpj?: string | null }): Observable<Company> {
+    return this.http.patch<Company>(`${this.baseUrl}/company`, data);
+  }
+
+  uploadCompanyLogo(file: File): Observable<{ logo_url: string; message: string }> {
+    const form = new FormData();
+    form.append('file', file);
+    return this.http.post<{ logo_url: string; message: string }>(`${this.baseUrl}/company/logo`, form);
   }
 
   // Units

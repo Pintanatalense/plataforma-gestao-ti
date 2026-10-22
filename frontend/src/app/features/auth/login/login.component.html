@@ -2,9 +2,10 @@
   <mat-card class="login-card mat-elevation-z8">
     <mat-card-header>
       <div mat-card-avatar class="header-image">
-        <mat-icon color="primary">computer</mat-icon>
+        <img *ngIf="companyLogoUrl; else defaultIcon" [src]="companyLogoUrl" alt="Logomarca" class="company-logo" (error)="onLogoError()">
+        <ng-template #defaultIcon><mat-icon color="primary">computer</mat-icon></ng-template>
       </div>
-      <mat-card-title>Gestão de TI</mat-card-title>
+      <mat-card-title>{{ companyName }}</mat-card-title>
       <mat-card-subtitle>Acesse sua conta</mat-card-subtitle>
     </mat-card-header>
 

@@ -305,3 +305,22 @@ async def test_patch_company_rejects_an_external_logo_url(client: AsyncClient, d
 
     ok = await client.patch(url, json={"logo_url": "/static/logo.png?v=123"}, headers=h)
     assert ok.status_code == 200 and ok.json()["logo_url"] == "/static/logo.png?v=123"
+
+
+async def test_with_two_companies_reads_and_edits_always_hit_the_oldest(client: AsyncClient, db_session: AsyncSession):
+    """Sem ORDER BY, o LIMIT 1 podia devolver linhas diferentes e a edição "pulava" de empresa."""
+    from datetime import datetime, timedelta, timezone
+
+    from app.organization.models import Company
+
+    h = await _admin_headers(db_session)
+    now = datetime.now(timezone.utc)
+    db_session.add(Company(name="Mais nova", created_at=now))
+    db_session.add(Company(name="Mais antiga", created_at=now - timedelta(days=1)))
+    await db_session.commit()
+
+    for _ in range(3):
+        assert (await client.get("/api/v1/organization/company/public")).json()["name"] == "Mais antiga"
+    patched = await client.patch("/api/v1/organization/company", json={"name": "Renomeada"}, headers=h)
+    assert patched.json()["name"] == "Renomeada"
+    assert (await client.get("/api/v1/organization/company/public")).json()["name"] == "Renomeada"
