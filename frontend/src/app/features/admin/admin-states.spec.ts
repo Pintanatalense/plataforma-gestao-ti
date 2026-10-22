@@ -11,6 +11,7 @@ const API = '/api/v1';
 const BACKUPS_TAB = 3;
 /** Posição da aba de e-mail/SMTP. */
 const SMTP_TAB = 6;
+const SAVED_SMTP = { is_enabled: true, host: 'smtp.real.local', port: 587, security: 'STARTTLS', username: 'u', password: '********', from_email: 'ti@real.local', from_name: 'x', app_base_url: 'https://ti.real.local' };
 const URLS = {
   templates: `${API}/integrations/whatsapp/templates`,
   backups: `${API}/system/backups`,
@@ -145,7 +146,9 @@ describe('Painel administrativo: falhas de carga não parecem "vazio" nem permit
       await load({ enabled: false, smtp_ready: true });
       const ask = vi.spyOn(window, 'confirm').mockReturnValue(true);
       toggle().click();
-      expect(ask.mock.calls[0][0]).toContain('smtp.real.local:587');
+      // mostra o que está SALVO no servidor, não o que está no formulário
+      backend.expectOne(URLS.smtp).flush({ ...SAVED_SMTP, host: 'smtp.salvo.local' });
+      expect(ask.mock.calls[0][0]).toContain('smtp.salvo.local:587');
       expect(ask.mock.calls[0][0]).toContain('https://ti.real.local');
       const put = backend.expectOne((r) => r.url === URLS.reset && r.method === 'PUT');
       expect(put.request.body).toEqual({ enabled: true });
@@ -159,6 +162,7 @@ describe('Painel administrativo: falhas de carga não parecem "vazio" nem permit
       await load({ enabled: false, smtp_ready: true });
       const ask = vi.spyOn(window, 'confirm').mockReturnValue(false);
       toggle().click();
+      backend.expectOne(URLS.smtp).flush(SAVED_SMTP);
       backend.expectNone((r) => r.url === URLS.reset && r.method === 'PUT');
       ask.mockRestore();
     });
@@ -167,6 +171,7 @@ describe('Painel administrativo: falhas de carga não parecem "vazio" nem permit
       await load({ enabled: false, smtp_ready: true });
       vi.spyOn(window, 'confirm').mockReturnValue(true);
       toggle().click();
+      backend.expectOne(URLS.smtp).flush(SAVED_SMTP);
       backend
         .expectOne((r) => r.url === URLS.reset && r.method === 'PUT')
         .flush({ error: { message: 'Apenas administradores podem ativar a recuperação de senha.' } }, { status: 403, statusText: 'x' });

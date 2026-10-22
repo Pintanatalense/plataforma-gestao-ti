@@ -659,17 +659,35 @@ export class AdminComponent implements OnInit {
   togglePasswordReset(): void {
     if (!this.passwordReset || this.savingPasswordReset) return;
     const enable = !this.passwordReset.enabled;
-    if (enable) {
-      // o link de recuperação sai deste servidor e aponta para este endereço: quem ativa confere os dois
-      const ok = confirm(
-        'Ativar a recuperação de senha por e-mail?\n\n' +
-        `Servidor: ${this.smtpConfig.host}:${this.smtpConfig.port}\n` +
-        `Remetente: ${this.smtpConfig.from_email}\n` +
-        `Endereço dos links: ${this.smtpConfig.app_base_url}\n\n` +
-        'Qualquer pessoa poderá pedir um link por e-mail, sem estar logada. Confirme que esses dados estão corretos.'
-      );
-      if (!ok) return;
+    if (!enable) {
+      this.applyPasswordReset(false);
+      return;
     }
+    // a confirmação mostra o que está SALVO no servidor (o formulário pode ter edições ainda não salvas):
+    // o link de recuperação sai desse servidor e aponta para esse endereço
+    this.savingPasswordReset = true;
+    this.adminService.getSmtpConfig().subscribe({
+      next: (saved) => {
+        this.savingPasswordReset = false;
+        const ok = confirm(
+          'Ativar a recuperação de senha por e-mail?\n\n' +
+          `Servidor: ${saved.host}:${saved.port}\n` +
+          `Remetente: ${saved.from_email}\n` +
+          `Endereço dos links: ${saved.app_base_url}\n\n` +
+          'Qualquer pessoa poderá pedir um link por e-mail, sem estar logada. Confirme que esses dados estão corretos.'
+        );
+        if (ok) this.applyPasswordReset(true);
+        else this.cdr.detectChanges();
+      },
+      error: (err) => {
+        this.savingPasswordReset = false;
+        this.snackBar.open(apiErrorMessage(err, 'Não foi possível ler a configuração de e-mail salva.'), 'Fechar', { duration: 6000 });
+        this.cdr.detectChanges();
+      }
+    });
+  }
+
+  private applyPasswordReset(enable: boolean): void {
     this.savingPasswordReset = true;
     this.adminService.setPasswordReset(enable).subscribe({
       next: (cfg) => {
