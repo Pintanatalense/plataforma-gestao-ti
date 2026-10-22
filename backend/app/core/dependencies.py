@@ -52,13 +52,19 @@ async def get_token_payload(
 
     row = (
         await db.execute(
-            select(UserAccount.is_active, UserAccount.is_admin, UserAccount.must_change_password).where(
-                UserAccount.id == user_id
-            )
+            select(
+                UserAccount.is_active,
+                UserAccount.is_admin,
+                UserAccount.must_change_password,
+                UserAccount.token_version,
+            ).where(UserAccount.id == user_id)
         )
     ).first()
     if row is None or not row.is_active:
         raise UnauthorizedException("Usuário inexistente ou inativo")
+    # Token sem `tv` (emitido antes do ADR-016) vale como versão 0, a de todo usuário existente.
+    if int(payload.get("tv") or 0) != int(row.token_version or 0):
+        raise UnauthorizedException("Sessão encerrada. Entre novamente.")
 
     payload["is_admin"] = bool(payload.get("is_admin")) and row.is_admin
 

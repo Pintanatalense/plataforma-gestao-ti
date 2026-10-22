@@ -22,3 +22,7 @@ A primeira versão utilizará autenticação própria com usuário e senha. Senh
 
 - Integração com AD/LDAP fica planejada para versão futura
 - Administrador precisa gerenciar resets de senha manualmente
+
+## Atualização (2026-10-22)
+
+Revogação de sessões e limite de login: ver [ADR-016](ADR-016-sessao-e-revogacao.md). A recuperação por e-mail será tratada no ADR-018.

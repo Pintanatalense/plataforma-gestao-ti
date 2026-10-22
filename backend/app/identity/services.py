@@ -102,6 +102,16 @@ class IdentityService:
 
         return self._issue_token(user)
 
+    @staticmethod
+    def _revoke_sessions(user: UserAccount) -> None:
+        """Invalida todos os tokens já emitidos para o usuário."""
+        user.token_version = (user.token_version or 0) + 1
+
+    @staticmethod
+    def _clear_lockout(user: UserAccount) -> None:
+        user.failed_login_count = 0
+        user.locked_until = None
+
     def _issue_token(self, user: UserAccount) -> str:
         # Extrair permissions e roles (flat)
         roles = [r.name for r in user.roles]
@@ -113,6 +123,7 @@ class IdentityService:
             "permissions": list(permissions),
             "is_admin": user.is_admin,
             "must_change_password": user.must_change_password,
+            "tv": user.token_version or 0,
         }
         
         return create_access_token(data=token_data)
@@ -284,14 +295,20 @@ class IdentityService:
             user.must_change_password = schema.must_change_password
             
         if schema.is_admin is not None:
+            if schema.is_admin != user.is_admin:
+                self._revoke_sessions(user)
             user.is_admin = schema.is_admin
             
         if schema.role_ids is not None:
             new_roles = await self._resolve_roles(schema.role_ids)
             self._ensure_can_grant_roles(actor, new_roles)
+            if {r.id for r in new_roles} != {r.id for r in user.roles}:
+                self._revoke_sessions(user)
             user.roles = new_roles
 
         if schema.is_active is not None:
+            if schema.is_active != user.is_active:
+                self._revoke_sessions(user)
             user.is_active = schema.is_active
             if not schema.is_active and user.deleted_at is None:
                 user.soft_delete()
@@ -304,6 +321,7 @@ class IdentityService:
         user = await self.get_user(user_id, include_inactive=True)
         self._ensure_can_manage_user(actor, user)
         await self._ensure_not_last_admin(user)
+        self._revoke_sessions(user)
         user.soft_delete()
         await self.repo.update_user(user)
 
@@ -316,10 +334,17 @@ class IdentityService:
         self._ensure_can_manage_user(actor, user)
         user.hashed_password = hash_password(schema.password)
         user.must_change_password = True
+        self._revoke_sessions(user)
+        self._clear_lockout(user)
         return await self.repo.update_user(user)
 
-    async def change_own_password(self, user_id: uuid.UUID, schema: UserAccountPasswordChange) -> UserAccount:
-        """Troca de senha pelo próprio usuário, exigindo a senha atual."""
+    async def change_own_password(
+        self, user_id: uuid.UUID, schema: UserAccountPasswordChange
+    ) -> tuple[UserAccount, str]:
+        """Troca de senha pelo próprio usuário, exigindo a senha atual.
+
+        Encerra todas as outras sessões (token_version) e devolve um token novo para a sessão atual.
+        """
         user = await self.get_user(user_id)
         if not verify_password(schema.current_password, user.hashed_password):
             raise BusinessRuleException("Senha atual incorreta.", rule="identity.current_password")
@@ -327,7 +352,10 @@ class IdentityService:
             raise BusinessRuleException("A nova senha deve ser diferente da atual.", rule="identity.password_reuse")
         user.hashed_password = hash_password(schema.new_password)
         user.must_change_password = False
-        return await self.repo.update_user(user)
+        self._revoke_sessions(user)
+        self._clear_lockout(user)
+        user = await self.repo.update_user(user)
+        return user, self._issue_token(user)
 
     # ==========================================================================
     # Role
@@ -387,13 +415,16 @@ class IdentityService:
         if schema.permission_ids is not None:
             permissions = await self._resolve_permissions(schema.permission_ids)
             self._ensure_can_grant_permissions(actor, permissions)
+            if {p.id for p in permissions} != {p.id for p in role.permissions}:
+                await self.repo.bump_token_version_for_role(role.id)
             role.permissions = permissions
-            
+
         return await self.repo.update_role(role)
 
     async def delete_role(self, role_id: uuid.UUID, actor: Actor) -> None:
         role = await self.get_role(role_id)
         self._ensure_can_grant_permissions(actor, list(role.permissions))
+        await self.repo.bump_token_version_for_role(role.id)
         await self.repo.delete_role(role)
 
     # ==========================================================================
