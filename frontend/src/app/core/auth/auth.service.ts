@@ -79,6 +79,32 @@ export class AuthService {
     );
   }
 
+  private readonly RETURN_URL_KEY = 'return_url';
+
+  /** Guarda a página em que a sessão caiu para voltar a ela depois do login (só caminhos internos). */
+  rememberReturnUrl(url: string): void {
+    if (!this.isSafeReturnUrl(url) || url.startsWith('/login') || url.startsWith('/setup')) return;
+    try {
+      sessionStorage.setItem(this.RETURN_URL_KEY, url);
+    } catch {}
+  }
+
+  /** Devolve (e esquece) a página guardada; nulo se não houver ou se não for um caminho interno. */
+  takeReturnUrl(): string | null {
+    try {
+      const url = sessionStorage.getItem(this.RETURN_URL_KEY);
+      sessionStorage.removeItem(this.RETURN_URL_KEY);
+      return url && this.isSafeReturnUrl(url) ? url : null;
+    } catch {
+      return null;
+    }
+  }
+
+  // Evita redirecionamento aberto: só caminho interno ("/x"), nunca "//host" nem esquema ("http:", "javascript:").
+  private isSafeReturnUrl(url: string): boolean {
+    return /^\/(?!\/)[^\s]*$/.test(url) && !url.includes('://') && !url.includes('\\');
+  }
+
   logout() {
     localStorage.removeItem(this.TOKEN_KEY);
     localStorage.removeItem(this.USER_KEY);

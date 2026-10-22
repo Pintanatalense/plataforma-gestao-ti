@@ -31,6 +31,18 @@ Dependabot: PRs semanais de dependências (limite baixo no início). Versão **m
 Regras que o CI faz cumprir: `ruff` sem achados (regras de defeito), `alembic check` sem diferença, `shellcheck` limpo,
 testes em SQLite **e** PostgreSQL, imagens Docker construindo.
 
+## Telas que dependem da API (frontend)
+
+Toda tela que carrega dados trata **quatro estados**: carregando, erro (com "Tentar novamente"), vazio e conteúdo.
+**Falha de comunicação nunca pode parecer lista vazia ou zero.**
+
+- Componente `<app-load-state>` (`shared/components/load-state`): `[loading]`, `[error]` (texto), `[empty]`, `(retry)`.
+- Mensagem de erro: `apiErrorMessage(err, "texto padrão")` (`core/http/api-error.ts`). A API responde `{ error: { message } }`;
+  **não existe** `err.error.detail`.
+- O interceptor (`jwt.interceptor.ts`) já avisa uma vez quando o servidor não responde (status 0 ou 5xx) e, ao expirar a sessão,
+  guarda a página para voltar a ela depois do login. Não repita esse aviso na tela.
+- Não escreva `error: () => {}` nem só `console.error`. Teste a falha da API: o número não vira zero, o aviso aparece e "Tentar novamente" recarrega.
+
 ## Banco de dados
 
 - Uma migration por PR; **testar com dados**: `alembic upgrade head` → `downgrade -1` → `upgrade head`.

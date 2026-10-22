@@ -493,3 +493,10 @@
     }
   }
 }
+
+.load-error-banner {
+  display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+  margin: 0 0 16px; padding: 12px 16px; border-radius: 10px;
+  background: #fef2f2; border: 1px solid #fecaca; color: #991b1b;
+}
+.load-error-banner span { flex: 1 1 280px; }
