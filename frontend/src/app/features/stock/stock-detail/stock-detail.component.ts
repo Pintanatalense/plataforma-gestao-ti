@@ -130,7 +130,7 @@ export class StockDetailComponent implements OnInit {
       },
       error: (err) => {
         console.error('Erro ao registrar movimentação:', err);
-        const errorMsg = err?.error?.detail || 'Erro ao registrar movimentação.';
+        const errorMsg = apiErrorMessage(err, 'Erro ao registrar movimentação.');
         this.snackBar.open(errorMsg, 'Fechar', { duration: 5000 });
       }
     });

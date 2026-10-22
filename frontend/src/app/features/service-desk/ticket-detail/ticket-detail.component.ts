@@ -230,7 +230,7 @@ export class TicketDetailComponent implements OnInit {
       },
       error: (err) => {
         this.isUploadingChatFile = false;
-        this.snackBar.open(err?.error?.detail || 'Erro ao anexar arquivo ao chamado', 'Fechar', { duration: 4000 });
+        this.snackBar.open(apiErrorMessage(err, 'Erro ao anexar arquivo ao chamado'), 'Fechar', { duration: 4000 });
         this.cdr.detectChanges();
       }
     });
@@ -321,7 +321,7 @@ export class TicketDetailComponent implements OnInit {
       },
       error: (err) => {
         console.error(err);
-        const msg = err?.error?.detail || 'Erro ao enviar mensagem.';
+        const msg = apiErrorMessage(err, 'Erro ao enviar mensagem.');
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
       }
     });
@@ -347,7 +347,7 @@ export class TicketDetailComponent implements OnInit {
       },
       error: (err) => {
         console.error(err);
-        const msg = err?.error?.detail || 'Erro ao lançar material.';
+        const msg = apiErrorMessage(err, 'Erro ao lançar material.');
         this.snackBar.open(msg, 'Fechar', { duration: 5000 });
       }
     });
@@ -381,7 +381,7 @@ export class TicketDetailComponent implements OnInit {
       },
       error: (err) => {
         console.error(err);
-        const msg = err?.error?.detail || 'Erro ao alterar status do chamado.';
+        const msg = apiErrorMessage(err, 'Erro ao alterar status do chamado.');
         this.snackBar.open(msg, 'Fechar', { duration: 5000 });
       }
     });
@@ -501,7 +501,7 @@ export class TicketDetailComponent implements OnInit {
         },
         error: (err) => {
           console.error(err);
-          const msg = err?.error?.error?.message || err?.error?.detail || 'Erro ao processar operação do ativo.';
+          const msg = apiErrorMessage(err, 'Erro ao processar operação do ativo.');
           this.snackBar.open(msg, 'Fechar', { duration: 5000 });
         }
       });
@@ -677,7 +677,7 @@ export class TicketDetailComponent implements OnInit {
       },
       error: (err) => {
         console.error('Erro ao enviar WhatsApp:', err);
-        const msg = err?.error?.error?.message || err?.error?.detail || 'Erro ao enfileirar mensagem de WhatsApp.';
+        const msg = apiErrorMessage(err, 'Erro ao enfileirar mensagem de WhatsApp.');
         this.snackBar.open(msg, 'Fechar', { duration: 5000 });
         this.sendingWhatsApp = false;
         this.cdr.markForCheck();
@@ -756,9 +756,7 @@ export class TicketDetailComponent implements OnInit {
         this.linkingAsset = false;
         console.error(err);
         const msg =
-          err?.error?.error?.message ||
-          err?.error?.detail ||
-          'Erro ao vincular equipamento.';
+          apiErrorMessage(err, 'Erro ao vincular equipamento.');
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
       }
     });
@@ -787,9 +785,7 @@ export class TicketDetailComponent implements OnInit {
       error: (err) => {
         console.error(err);
         const msg =
-          err?.error?.error?.message ||
-          err?.error?.detail ||
-          'Erro ao desvincular equipamento.';
+          apiErrorMessage(err, 'Erro ao desvincular equipamento.');
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
       }
     });

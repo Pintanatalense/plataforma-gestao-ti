@@ -166,7 +166,7 @@ export class InventoryListComponent implements OnInit {
           },
           error: (err) => {
             console.error('Erro ao criar auditoria:', err);
-            const msg = err?.error?.detail || 'Erro ao criar auditoria.';
+            const msg = apiErrorMessage(err, 'Erro ao criar auditoria.');
             this.snackBar.open(msg, 'Fechar', { duration: 5000 });
           }
         });

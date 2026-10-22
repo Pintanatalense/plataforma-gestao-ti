@@ -269,7 +269,7 @@ export class AttachmentsComponent implements OnInit {
         },
         error: (err) => {
           this.isUploading = false;
-          this.snackBar.open(err.error?.detail || 'Erro ao enviar arquivo', 'Fechar', { duration: 3000 });
+          this.snackBar.open(apiErrorMessage(err, 'Erro ao enviar arquivo'), 'Fechar', { duration: 3000 });
         }
       });
       

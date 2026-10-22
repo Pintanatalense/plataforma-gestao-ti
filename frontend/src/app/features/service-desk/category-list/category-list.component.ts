@@ -14,6 +14,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 import { TicketService, TicketCategory, CategoryFormField } from '../ticket.service';
 import { OrganizationService, Sector } from '../../../core/services/organization.service';
+import { apiErrorMessage } from '../../../core/http/api-error';
 
 interface FormFieldBuilder {
   id: string;
@@ -1222,7 +1223,7 @@ export class CategoryListComponent implements OnInit {
             this.cancelEdit();
           },
           error: (err) => {
-            const msg = err?.error?.error?.message || err?.error?.detail || 'Erro ao atualizar categoria';
+            const msg = apiErrorMessage(err, 'Erro ao atualizar categoria');
             this.snackBar.open(msg, 'Fechar', { duration: 5000 });
           }
         });
@@ -1234,7 +1235,7 @@ export class CategoryListComponent implements OnInit {
             this.cancelEdit();
           },
           error: (err) => {
-            const msg = err?.error?.error?.message || err?.error?.detail || 'Erro ao criar categoria';
+            const msg = apiErrorMessage(err, 'Erro ao criar categoria');
             this.snackBar.open(msg, 'Fechar', { duration: 5000 });
           }
         });

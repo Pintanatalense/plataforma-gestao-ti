@@ -1,4 +1,4 @@
-import { Component, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatCardModule } from '@angular/material/card';
@@ -10,6 +10,7 @@ import { MatProgressSpinnerModule } from '@angular/material/progress-spinner';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Router } from '@angular/router';
 import { AuthService } from '../../../core/auth/auth.service';
+import { apiErrorMessage } from '../../../core/http/api-error';
 
 @Component({
   selector: 'app-change-password',
@@ -33,6 +34,7 @@ export class ChangePasswordComponent {
   private authService = inject(AuthService);
   private router = inject(Router);
   private snackBar = inject(MatSnackBar);
+  private cdr = inject(ChangeDetectorRef);
 
   isLoading = false;
   hideCurrent = true;
@@ -64,7 +66,8 @@ export class ChangePasswordComponent {
       },
       error: (err) => {
         this.isLoading = false;
-        const msg = err.error?.error?.message || err.error?.message || err.error?.detail || 'Erro ao alterar senha.';
+        this.cdr.markForCheck(); // sem isto o botão ficava preso no carregamento (componente OnPush)
+        const msg = apiErrorMessage(err, 'Erro ao alterar senha.');
         this.snackBar.open(msg, 'Fechar', { duration: 5000, panelClass: 'error-snackbar' });
       }
     });
