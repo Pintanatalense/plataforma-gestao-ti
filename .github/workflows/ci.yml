@@ -6,7 +6,22 @@ on:
   pull_request:
     branches: [ "**" ]  # inclui PRs empilhados (base != main)
 
+# Princípio do menor privilégio: nenhum job precisa escrever no repositório.
+permissions:
+  contents: read
+
+# Um push novo no mesmo PR cancela a execução anterior (main nunca é cancelada).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+# As actions estão fixadas pelo SHA do commit (o comentário indica a versão); o Dependabot as atualiza.
+env:
+  CI_SECRET_KEY: ci-only-secret-key-0123456789abcdef0123456789
+  CI_ENCRYPTION_KEY: j7aZmoHBs-fLFKl4myK4N7BqySPuIpD8OjzqKQmxKtA=
+
 jobs:
+  # Testes rápidos (SQLite em memória) + migrations em banco vazio. O nome do job é mantido.
   backend-tests:
     runs-on: ubuntu-latest
     services:
@@ -21,18 +36,18 @@ jobs:
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-    - uses: actions/checkout@v4
-    
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
     - name: Install uv
-      uses: astral-sh/setup-uv@v3
+      uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
       with:
         enable-cache: true
-    
+
     - name: Set up Python
-      uses: actions/setup-python@v5
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
       with:
         python-version: "3.12"
-        
+
     - name: Install dependencies
       working-directory: ./backend
       run: uv sync --frozen
@@ -41,34 +56,127 @@ jobs:
       working-directory: ./backend
       env:
         DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/gti_ci
-        SECRET_KEY: ci-only-secret-key-0123456789abcdef0123456789
-        APP_ENCRYPTION_KEY: j7aZmoHBs-fLFKl4myK4N7BqySPuIpD8OjzqKQmxKtA=
+        SECRET_KEY: ${{ env.CI_SECRET_KEY }}
+        APP_ENCRYPTION_KEY: ${{ env.CI_ENCRYPTION_KEY }}
       run: uv run alembic upgrade head
 
     - name: Run pytest
       working-directory: ./backend
       run: uv run pytest
 
+  # Mesma suíte contra PostgreSQL 16 de verdade (inclui os testes marcados `pg` e `migrations`)
+  # e verificação de que os models batem com as migrations.
+  backend-postgres:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          # O guarda dos testes (tests/_guard.py) só aceita banco descartável: o nome termina em `_test`.
+          POSTGRES_DB: gti_ci_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/gti_ci_test
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
+      with:
+        enable-cache: true
+
+    - name: Set up Python
+      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+      with:
+        python-version: "3.12"
+
+    - name: Install dependencies
+      working-directory: ./backend
+      run: uv sync --frozen
+
+    - name: Migrations apply on an empty database
+      working-directory: ./backend
+      env:
+        DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        SECRET_KEY: ${{ env.CI_SECRET_KEY }}
+        APP_ENCRYPTION_KEY: ${{ env.CI_ENCRYPTION_KEY }}
+      run: uv run alembic upgrade head
+
+    - name: Models match migrations (alembic check)
+      working-directory: ./backend
+      env:
+        DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
+        SECRET_KEY: ${{ env.CI_SECRET_KEY }}
+        APP_ENCRYPTION_KEY: ${{ env.CI_ENCRYPTION_KEY }}
+      run: uv run alembic check
+
+    - name: Run pytest against PostgreSQL
+      working-directory: ./backend
+      run: uv run pytest
+
+  # As imagens que vão para produção precisam construir (sem publicar).
+  docker-build:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+    - name: Build backend image
+      run: docker build -t gti-backend:ci ./backend
+
+    - name: Build nginx image (compila o frontend Angular)
+      run: docker build -f nginx/Dockerfile -t gti-nginx:ci .
+
+  # Informativo: não reprova o PR, mas deixa o relatório de vulnerabilidades conhecidas no log.
+  dependency-audit:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
+
+    - name: Python dependencies (pip-audit)
+      working-directory: ./backend
+      continue-on-error: true
+      run: |
+        uv export --frozen --no-dev --no-emit-project -o "$RUNNER_TEMP/requirements.txt"
+        uvx pip-audit -r "$RUNNER_TEMP/requirements.txt" --no-deps --disable-pip
+
+    - name: Use Node.js
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+      with:
+        node-version: '22.x'
+
+    - name: Frontend dependencies (npm audit)
+      working-directory: ./frontend
+      continue-on-error: true
+      run: npm audit --omit=dev --audit-level=high
+
   frontend-tests:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v4
-    
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
     - name: Use Node.js
-      uses: actions/setup-node@v4
+      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
       with:
         node-version: '22.x'
         cache: 'npm'
         cache-dependency-path: frontend/package-lock.json
-        
+
     - name: Install dependencies
       working-directory: ./frontend
       run: npm ci
-      
+
     - name: Run tests
       working-directory: ./frontend
       run: npm run test -- --watch=false
-      
+
     - name: Build
       working-directory: ./frontend
       run: npm run build
