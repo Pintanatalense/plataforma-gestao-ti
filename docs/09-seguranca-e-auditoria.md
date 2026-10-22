@@ -42,11 +42,14 @@ A plataforma possui um sistema de auditoria centralizado através da tabela `aud
   * Chamados: `ticket.created`, `ticket.status_changed`, `ticket.interaction_added`, `ticket.assigned`, `ticket.priority_changed`, `ticket.closed`, `ticket.material_added` e os eventos de vínculo, reserva, entrega, devolução e inspeção de ativos (`ticket.asset_*`);
   * Colaborador criado (`employee.created`);
   * Backups: `backup.completed` e `backup.failed`;
+  * Identidade: `identity.login_success`, `identity.login_failed`, `identity.login_blocked`, `identity.user_created`, `identity.user_updated` (só os nomes dos campos alterados), `identity.user_deactivated`, `identity.password_reset_by_admin`, `identity.password_changed`, `identity.role_created`, `identity.role_updated`, `identity.role_deleted`;
+  * Recuperação de senha por e-mail (ADR-018): `identity.password_reset_requested`, `identity.password_reset_completed`, `identity.password_reset_send_failed`, `identity.password_reset_configured`;
+  * Empresa e e-mail: `organization.company_updated` (só os nomes dos campos), `organization.company_logo_updated`, `notifications.email_configured`;
   * Canais de notificação: `notifications.channel_unlinked` e degradação de canal;
   * Ambiente demonstrativo: `system.demo.seeded` e `system.demo.cleaned`.
-* **O que NÃO é auditado hoje (limitações conhecidas):** login, logout e falhas de login; troca ou reset de senha; criação e alteração de usuários, perfis e permissões; alteração de empresa/logo; configuração de SMTP; restauração de backup (feita por script, fora da API); importação e exportação de dados. Previsto no plano diretor (`docs/plans/plano-diretor.md`, item P3-6).
-* **Estrutura dos registros (`audit_logs`):** `id`, `event_type`, `entity_type`, `entity_id`, `data` (JSON do evento), `user_id` (nome e e-mail são derivados do usuário na consulta) e `created_at` (UTC). **Não há** campo de endereço IP nem snapshot antes/depois.
-* **Consulta:** `GET /api/v1/audit` e `GET /api/v1/audit/{entity_type}/{entity_id}` (permissão `audit.read`). Ainda não existe tela.
+* **O que NÃO é auditado hoje (limitações conhecidas):** logout (o JWT é sem estado: não há evento de saída); restauração de backup (feita por script, fora da API); importação e exportação de dados; leituras. Nenhum registro leva senha, token ou o texto digitado no campo de e-mail do login; tentativas com e-mail inexistente ficam sem usuário e só com o IP. **Risco aceito:** login com e-mail inexistente ou em conta travada grava uma linha por tentativa sem autenticação; o único freio é o `limit_req` do Nginx (30/min por IP) — não há retenção/purga da tabela.
+* **Estrutura dos registros (`audit_logs`):** `id`, `event_type`, `entity_type`, `entity_id`, `data` (JSON do evento), `user_id` (nome e e-mail são derivados do usuário na consulta) e `created_at` (UTC). **Não há** coluna própria de endereço IP nem snapshot antes/depois: o IP, quando existe, vai dentro de `data` (`ip`), e as alterações guardam só os nomes dos campos mudados.
+* **Consulta:** `GET /api/v1/audit` (filtros `event_type`, `entity_type`, `user` por trecho do e-mail, `date_from`, `date_to`; `limit` de 1 a 200; total no cabeçalho `X-Total-Count`), `GET /api/v1/audit/event-types` e `GET /api/v1/audit/{entity_type}/{entity_id}` (permissão `audit.read`). Tela: **Administração → Auditoria** (`/audit`).
 
 ---
 

@@ -11,6 +11,7 @@ from typing import Sequence
 
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.repository import AuditRepository
 from app.core.exceptions import (
     AppException,
     BusinessRuleException,
@@ -37,6 +38,8 @@ MAX_FAILED_LOGINS = 5
 LOCKOUT_MINUTES = 15
 # Hash bcrypt válido (de uma senha aleatória descartada), usado só para igualar o tempo de resposta.
 _DUMMY_HASH = hash_password("dummy-password-for-timing-only")
+# tentativas com e-mail inexistente não têm conta para ligar o registro: usam um identificador fixo
+_UNKNOWN_ACCOUNT = uuid.uuid5(uuid.NAMESPACE_OID, "identity:unknown-account")
 
 
 @dataclass(frozen=True)
@@ -60,6 +63,12 @@ class IdentityService:
     def __init__(self, session: AsyncSession):
         self.repo = IdentityRepository(session)
 
+    async def _audit(self, event_type: str, entity_id: uuid.UUID, data: dict, user_id: uuid.UUID | None) -> None:
+        """Trilha de auditoria (MOD-12). Nunca recebe senha, token nem o texto digitado no campo de e-mail."""
+        await AuditRepository(self.repo.session).create(
+            event_type=event_type, entity_type="user", entity_id=entity_id, data=data, user_id=user_id
+        )
+
     # ==========================================================================
     # Auth
     # ==========================================================================
@@ -69,6 +78,8 @@ class IdentityService:
         if not user:
             # Mesmo custo de uma verificação real, para não revelar se o e-mail existe pelo tempo de resposta.
             verify_password(password, _DUMMY_HASH)
+            await self._audit("identity.login_failed", _UNKNOWN_ACCOUNT, {"ip": ip_address, "known_account": False}, None)
+            await self.repo.session.commit()  # o get_db faria rollback ao levantar a exceção
             raise UnauthorizedException("Credenciais inválidas.")
 
         now = datetime.now(timezone.utc)
@@ -76,6 +87,8 @@ class IdentityService:
         if locked_until is not None and locked_until.tzinfo is None:
             locked_until = locked_until.replace(tzinfo=timezone.utc)
         if locked_until is not None and locked_until > now:
+            await self._audit("identity.login_blocked", user.id, {"ip": ip_address}, user.id)
+            await self.repo.session.commit()
             raise AppException(
                 "Muitas tentativas inválidas. Tente novamente em alguns minutos.",
                 code="ACCOUNT_LOCKED",
@@ -88,6 +101,10 @@ class IdentityService:
                 user.locked_until = now + timedelta(minutes=LOCKOUT_MINUTES)
                 user.failed_login_count = 0
             await self.repo.update_user(user)
+            await self._audit(
+                "identity.login_failed", user.id,
+                {"ip": ip_address, "known_account": True, "locked_now": user.locked_until is not None}, user.id,
+            )
             # Persistir a tentativa antes de responder: o get_db faria rollback ao levantar a exceção.
             await self.repo.session.commit()
             raise UnauthorizedException("Credenciais inválidas.")
@@ -98,6 +115,7 @@ class IdentityService:
         if ip_address:
             user.last_login_ip = ip_address
         await self.repo.update_user(user)
+        await self._audit("identity.login_success", user.id, {"ip": ip_address}, user.id)
 
         return self._issue_token(user)
 
@@ -115,7 +133,7 @@ class IdentityService:
         # Extrair permissions e roles (flat)
         roles = [r.name for r in user.roles]
         permissions = {p.code for r in user.roles for p in r.permissions}
-        
+
         token_data = {
             "sub": str(user.id),
             "roles": roles,
@@ -124,7 +142,7 @@ class IdentityService:
             "must_change_password": user.must_change_password,
             "tv": user.token_version or 0,
         }
-        
+
         return create_access_token(data=token_data)
 
     # ==========================================================================
@@ -258,7 +276,7 @@ class IdentityService:
     async def create_user(self, schema: UserAccountCreate, actor: Actor) -> UserAccount:
         if await self.repo.email_exists(schema.email):
             raise ConflictException("Email já cadastrado.", {"field": "email"})
-            
+
         if schema.is_admin and not actor.is_admin:
             raise ForbiddenException("Apenas administradores podem criar outro administrador.")
         roles = await self._resolve_roles(schema.role_ids)
@@ -273,8 +291,13 @@ class IdentityService:
             is_active=schema.is_active if schema.is_active is not None else True,
         )
         user.roles = roles
-        
-        return await self.repo.create_user(user)
+
+        created = await self.repo.create_user(user)
+        await self._audit(
+            "identity.user_created", created.id,
+            {"is_admin": created.is_admin, "roles": sorted(r.name for r in roles)}, actor.id,
+        )
+        return created
 
     async def update_user(self, user_id: uuid.UUID, schema: UserAccountUpdate, actor: Actor) -> UserAccount:
         user = await self.get_user(user_id, include_inactive=True)
@@ -284,37 +307,47 @@ class IdentityService:
         # rebaixar ou desativar o último administrador deixaria o sistema sem gestão
         if (schema.is_admin is False) or (schema.is_active is False):
             await self._ensure_not_last_admin(user)
-        
+
+        changes: list[str] = []
         if schema.email is not None and schema.email != user.email:
             if await self.repo.email_exists(schema.email):
                 raise ConflictException("Email já cadastrado.", {"field": "email"})
             user.email = schema.email
-            
+            changes.append("email")
+
         if schema.must_change_password is not None:
+            if schema.must_change_password != user.must_change_password:
+                changes.append("must_change_password")
             user.must_change_password = schema.must_change_password
-            
+
         if schema.is_admin is not None:
             if schema.is_admin != user.is_admin:
                 self._revoke_sessions(user)
+                changes.append("is_admin")
             user.is_admin = schema.is_admin
-            
+
         if schema.role_ids is not None:
             new_roles = await self._resolve_roles(schema.role_ids)
             self._ensure_can_grant_roles(actor, new_roles)
             if {r.id for r in new_roles} != {r.id for r in user.roles}:
                 self._revoke_sessions(user)
+                changes.append("roles")
             user.roles = new_roles
 
         if schema.is_active is not None:
             if schema.is_active != user.is_active:
                 self._revoke_sessions(user)
+                changes.append("is_active")
             user.is_active = schema.is_active
             if not schema.is_active and user.deleted_at is None:
                 user.soft_delete()
             elif schema.is_active and user.deleted_at is not None:
                 user.restore()
-            
-        return await self.repo.update_user(user)
+
+        updated = await self.repo.update_user(user)
+        if changes:
+            await self._audit("identity.user_updated", user.id, {"changed": changes}, actor.id)
+        return updated
 
     async def delete_user(self, user_id: uuid.UUID, actor: Actor) -> None:
         user = await self.get_user(user_id, include_inactive=True)
@@ -323,6 +356,7 @@ class IdentityService:
         self._revoke_sessions(user)
         user.soft_delete()
         await self.repo.update_user(user)
+        await self._audit("identity.user_deactivated", user.id, {}, actor.id)
 
     async def update_password(
         self, user_id: uuid.UUID, schema: UserAccountPasswordUpdate, actor: Actor
@@ -335,7 +369,9 @@ class IdentityService:
         user.must_change_password = True
         self._revoke_sessions(user)
         self._clear_lockout(user)
-        return await self.repo.update_user(user)
+        updated = await self.repo.update_user(user)
+        await self._audit("identity.password_reset_by_admin", user.id, {}, actor.id)
+        return updated
 
     async def change_own_password(
         self, user_id: uuid.UUID, schema: UserAccountPasswordChange
@@ -354,6 +390,7 @@ class IdentityService:
         self._revoke_sessions(user)
         self._clear_lockout(user)
         user = await self.repo.update_user(user)
+        await self._audit("identity.password_changed", user.id, {}, user.id)
         return user, self._issue_token(user)
 
     # ==========================================================================
@@ -397,34 +434,45 @@ class IdentityService:
         self._ensure_can_grant_permissions(actor, permissions)
         role.permissions = permissions
 
-        return await self.repo.create_role(role)
+        created = await self.repo.create_role(role)
+        await self._audit(
+            "identity.role_created", created.id, {"name": created.name, "permissions": len(permissions)}, actor.id
+        )
+        return created
 
     async def update_role(self, role_id: uuid.UUID, schema: RoleUpdate, actor: Actor) -> Role:
         role = await self.get_role(role_id)
         # perfil que contém permissões além das do ator não pode ser reescrito por ele
         self._ensure_can_grant_permissions(actor, list(role.permissions))
-        
+
+        role_changes: list[str] = []
         if schema.name is not None and schema.name != role.name:
             if await self.repo.get_role_by_name(schema.name):
                 raise ConflictException(f"Já existe um perfil chamado '{schema.name}'.", {"field": "name"})
             role.name = schema.name
+            role_changes.append("name")
         if schema.description is not None:
             role.description = schema.description
-            
+
         if schema.permission_ids is not None:
             permissions = await self._resolve_permissions(schema.permission_ids)
             self._ensure_can_grant_permissions(actor, permissions)
             if {p.id for p in permissions} != {p.id for p in role.permissions}:
                 await self.repo.bump_token_version_for_role(role.id)
+                role_changes.append("permissions")
             role.permissions = permissions
 
-        return await self.repo.update_role(role)
+        updated_role = await self.repo.update_role(role)
+        await self._audit("identity.role_updated", role.id, {"name": role.name, "changed": role_changes}, actor.id)
+        return updated_role
 
     async def delete_role(self, role_id: uuid.UUID, actor: Actor) -> None:
         role = await self.get_role(role_id)
         self._ensure_can_grant_permissions(actor, list(role.permissions))
         await self.repo.bump_token_version_for_role(role.id)
+        name = role.name
         await self.repo.delete_role(role)
+        await self._audit("identity.role_deleted", role.id, {"name": name}, actor.id)
 
     # ==========================================================================
     # Permission
