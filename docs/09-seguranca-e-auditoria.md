@@ -17,6 +17,7 @@ Este documento consolida os controles de segurança técnica, mecanismos de prot
 ## 2. Princípio do Menor Privilégio e Segregação de Funções
 
 * **Controle Granular por Permissões (RBAC):** Cada endpoint da API exige uma permissão explícita (ex: `system.backup.manage`, `sd.ticket.write`, `integrations.whatsapp.manage`).
+* **Anti-escalada de privilégio (gestão de usuários e perfis):** só administradores concedem ou retiram o papel de administrador; quem não é administrador só atribui perfis (e só cria perfis) com permissões que ele mesmo possui, não altera contas de administrador nem de quem tem mais permissões do que ele (incluindo redefinir a senha), e ninguém consegue desativar, excluir ou rebaixar o **último administrador ativo** (erro 409).
 * **Isolamento de Escopo Setorial:**
   * Solicitantes só visualizam e interagem com os chamados abertos por eles próprios.
   * Técnicos atendem chamados atribuídos a si ou ao seu setor responsável.

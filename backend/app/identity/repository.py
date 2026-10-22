@@ -46,6 +46,15 @@ class IdentityRepository:
         result = await self.session.execute(stmt)
         return result.first() is not None
 
+    async def count_active_admins(self, exclude_user_id: uuid.UUID | None = None) -> int:
+        """Administradores ativos (e não excluídos), opcionalmente sem contar um usuário."""
+        stmt = select(func.count()).select_from(UserAccount).where(
+            UserAccount.is_admin.is_(True), UserAccount.is_active.is_(True), UserAccount.deleted_at.is_(None)
+        )
+        if exclude_user_id is not None:
+            stmt = stmt.where(UserAccount.id != exclude_user_id)
+        return (await self.session.execute(stmt)).scalar_one()
+
     async def count_users(self) -> int:
         """Total de contas, incluindo inativas — usado para detectar instalação nova."""
         stmt = select(func.count()).select_from(UserAccount)
