@@ -100,13 +100,19 @@ export class StockDetailComponent implements OnInit {
     });
   }
 
+  movementsError: string | null = null;
+
   loadMovements(id: string): void {
+    this.movementsError = null;
     this.stockService.listMovements(id).subscribe({
       next: (movs) => {
         this.movements = movs;
         this.cdr.markForCheck();
       },
-      error: (err) => console.error('Erro ao carregar movimentações:', err)
+      error: (err) => {
+        this.movementsError = apiErrorMessage(err, 'Não foi possível carregar as movimentações.');
+        this.cdr.markForCheck();
+      }
     });
   }
 
