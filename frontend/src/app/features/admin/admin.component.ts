@@ -1,5 +1,7 @@
 import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { apiErrorMessage } from '../../core/http/api-error';
+import { LoadStateComponent } from '../../shared/components/load-state/load-state.component';
 import { FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
 import { MatTabsModule } from '@angular/material/tabs';
@@ -44,7 +46,8 @@ import {
     MatSlideToggleModule,
     MatCheckboxModule,
     MatSnackBarModule,
-    MatTooltipModule
+    MatTooltipModule,
+    LoadStateComponent
   ],
   templateUrl: './admin.component.html',
   styleUrls: ['./admin.component.scss']
@@ -133,6 +136,16 @@ export class AdminComponent implements OnInit {
     app_base_url: 'http://localhost'
   };
   smtpPasswordInput = '';
+  /** Falha ao ler a configuração salva: o formulário só tem os padrões do código e NÃO pode ser salvo por cima dela. */
+  smtpLoadError: string | null = null;
+
+  // --- Estados de carregamento/erro das listas do painel ---
+  templatesError: string | null = null;
+  backupsError: string | null = null;
+  backupsLoading = true;
+  demoStatusError: string | null = null;
+  verifyingBackup: Record<string, boolean> = {};
+  backupVerification: Record<string, { valid: boolean; message: string }> = {};
   loadingSmtpConfig = false;
   savingSmtpConfig = false;
   testSmtpEmail = '';
@@ -152,14 +165,17 @@ export class AdminComponent implements OnInit {
   // --- Templates Methods ---
   loadTemplates(): void {
     this.loadingTemplates = true;
+    this.templatesError = null;
     this.adminService.getWhatsAppTemplates(this.templateCategoryFilter || undefined).subscribe({
       next: (list) => {
         this.templates = list;
         this.loadingTemplates = false;
         this.cdr.markForCheck();
       },
-      error: () => {
+      error: (err) => {
         this.loadingTemplates = false;
+        // falha de comunicação não pode parecer "nenhum modelo cadastrado"
+        this.templatesError = apiErrorMessage(err, 'Não foi possível carregar os modelos de mensagem.');
         this.cdr.markForCheck();
       }
     });
@@ -215,7 +231,7 @@ export class AdminComponent implements OnInit {
         },
         error: (err) => {
           this.savingTemplate = false;
-          this.snackBar.open(err.error?.detail || 'Erro ao atualizar template.', 'Fechar', { duration: 3500 });
+          this.snackBar.open(apiErrorMessage(err, 'Erro ao atualizar template.'), 'Fechar', { duration: 3500 });
           this.cdr.markForCheck();
         }
       });
@@ -229,7 +245,7 @@ export class AdminComponent implements OnInit {
         },
         error: (err) => {
           this.savingTemplate = false;
-          this.snackBar.open(err.error?.detail || 'Erro ao criar template.', 'Fechar', { duration: 3500 });
+          this.snackBar.open(apiErrorMessage(err, 'Erro ao criar template.'), 'Fechar', { duration: 3500 });
           this.cdr.markForCheck();
         }
       });
@@ -244,7 +260,7 @@ export class AdminComponent implements OnInit {
         this.loadTemplates();
       },
       error: (err) => {
-        this.snackBar.open(err.error?.detail || 'Erro ao excluir template.', 'Fechar', { duration: 3000 });
+        this.snackBar.open(apiErrorMessage(err, 'Erro ao excluir template.'), 'Fechar', { duration: 3000 });
       }
     });
   }
@@ -296,7 +312,7 @@ export class AdminComponent implements OnInit {
       },
       error: (err) => {
         this.analyzingFile = false;
-        const msg = err.error?.detail || 'Erro ao analisar arquivo CSV. Verifique a formatação.';
+        const msg = apiErrorMessage(err, 'Erro ao analisar arquivo CSV. Verifique a formatação.');
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
         this.cdr.markForCheck();
       }
@@ -323,7 +339,7 @@ export class AdminComponent implements OnInit {
       },
       error: (err) => {
         this.executingImport = false;
-        const msg = err.error?.detail || 'Erro ao processar importação.';
+        const msg = apiErrorMessage(err, 'Erro ao processar importação.');
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
         this.cdr.markForCheck();
       }
@@ -368,7 +384,7 @@ export class AdminComponent implements OnInit {
       },
       error: (err) => {
         this.exporting = false;
-        const msg = err.error?.detail || 'Erro ao exportar dados.';
+        const msg = apiErrorMessage(err, 'Erro ao exportar dados.');
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
         this.cdr.markForCheck();
       }
@@ -379,12 +395,42 @@ export class AdminComponent implements OnInit {
   // DB BACKUPS METHODS
   // ==========================================
   loadBackups(): void {
+    this.backupsLoading = true;
+    this.backupsError = null;
     this.adminService.getBackups().subscribe({
       next: (data) => {
         this.backups = data;
+        this.backupsLoading = false;
         this.cdr.markForCheck();
       },
-      error: () => {}
+      error: (err) => {
+        // antes: `error: () => {}` + "Nenhum backup gerado até o momento" — perigoso para quem confia nesta tela
+        this.backupsLoading = false;
+        this.backupsError = apiErrorMessage(err, 'Não foi possível carregar a lista de backups.');
+        this.cdr.markForCheck();
+      }
+    });
+  }
+
+  /** Recalcula o SHA-256 do arquivo no servidor e compara com o registrado. */
+  verifyBackup(backup: DbBackup): void {
+    this.verifyingBackup = { ...this.verifyingBackup, [backup.id]: true };
+    this.adminService.verifyBackup(backup.id).subscribe({
+      next: (res) => {
+        this.verifyingBackup = { ...this.verifyingBackup, [backup.id]: false };
+        const message = !res.exists
+          ? res.error || 'Arquivo não encontrado no disco.'
+          : res.is_valid
+            ? 'Arquivo íntegro (SHA-256 confere). Isto não prova que o backup restaura: teste com `make verify-backup`.'
+            : 'ATENÇÃO: o SHA-256 do arquivo NÃO confere com o registrado.';
+        this.backupVerification = { ...this.backupVerification, [backup.id]: { valid: res.exists && res.is_valid, message } };
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.verifyingBackup = { ...this.verifyingBackup, [backup.id]: false };
+        this.snackBar.open(apiErrorMessage(err, 'Não foi possível verificar o backup.'), 'Fechar', { duration: 5000 });
+        this.cdr.markForCheck();
+      }
     });
   }
 
@@ -398,7 +444,7 @@ export class AdminComponent implements OnInit {
       },
       error: (err) => {
         this.generatingBackup = false;
-        const msg = err.error?.detail || 'Erro ao gerar backup do banco de dados.';
+        const msg = apiErrorMessage(err, 'Erro ao gerar backup do banco de dados.');
         this.snackBar.open(msg, 'Fechar', { duration: 4500 });
         this.cdr.markForCheck();
       }
@@ -419,7 +465,7 @@ export class AdminComponent implements OnInit {
         this.snackBar.open(`Download de ${backup.filename} iniciado.`, 'OK', { duration: 3000 });
       },
       error: (err) => {
-        const msg = err.error?.detail || 'Falha ao baixar arquivo de backup.';
+        const msg = apiErrorMessage(err, 'Falha ao baixar arquivo de backup.');
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
       }
     });
@@ -436,7 +482,7 @@ export class AdminComponent implements OnInit {
         this.loadBackups();
       },
       error: (err) => {
-        const msg = err.error?.detail || 'Erro ao excluir backup.';
+        const msg = apiErrorMessage(err, 'Erro ao excluir backup.');
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
       }
     });
@@ -447,14 +493,17 @@ export class AdminComponent implements OnInit {
   // ==========================================
   loadDemoStatus(): void {
     this.loadingDemoStatus = true;
+    this.demoStatusError = null;
     this.adminService.getDemoStatus().subscribe({
       next: (res) => {
         this.demoStatus = res;
         this.loadingDemoStatus = false;
         this.cdr.detectChanges();
       },
-      error: () => {
+      error: (err) => {
         this.loadingDemoStatus = false;
+        this.demoStatusError = apiErrorMessage(err, 'Não foi possível ler o modo do sistema (demonstração ou produção).');
+        this.cdr.markForCheck();
       }
     });
   }
@@ -471,7 +520,7 @@ export class AdminComponent implements OnInit {
       },
       error: (err) => {
         this.loadingCleanPreview = false;
-        const msg = err.error?.detail || 'Erro ao carregar prévia de limpeza.';
+        const msg = apiErrorMessage(err, 'Erro ao carregar prévia de limpeza.');
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
       }
     });
@@ -498,7 +547,7 @@ export class AdminComponent implements OnInit {
       },
       error: (err) => {
         this.cleaningDemo = false;
-        const msg = err.error?.detail || 'Falha ao executar limpeza de demonstração.';
+        const msg = apiErrorMessage(err, 'Falha ao executar limpeza de demonstração.');
         this.snackBar.open(msg, 'Fechar', { duration: 6000 });
       }
     });
@@ -517,7 +566,7 @@ export class AdminComponent implements OnInit {
       },
       error: (err) => {
         this.seedingDemo = false;
-        const msg = err.error?.detail || 'Erro ao recarregar dados demonstrativos.';
+        const msg = apiErrorMessage(err, 'Erro ao recarregar dados demonstrativos.');
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
       }
     });
@@ -536,7 +585,7 @@ export class AdminComponent implements OnInit {
       },
       error: (err) => {
         this.seedingTest = false;
-        const msg = err.error?.error?.message || err.error?.detail || 'Erro ao carregar dados de testes/homologação.';
+        const msg = apiErrorMessage(err, 'Erro ao carregar dados de testes/homologação.');
         this.snackBar.open(msg, 'Fechar', { duration: 5000 });
       }
     });
@@ -547,6 +596,7 @@ export class AdminComponent implements OnInit {
   // ==========================================
   loadSmtpConfig(): void {
     this.loadingSmtpConfig = true;
+    this.smtpLoadError = null;
     this.adminService.getSmtpConfig().subscribe({
       next: (cfg) => {
         this.smtpConfig = cfg;
@@ -554,13 +604,17 @@ export class AdminComponent implements OnInit {
         this.loadingSmtpConfig = false;
         this.cdr.detectChanges();
       },
-      error: () => {
+      error: (err) => {
         this.loadingSmtpConfig = false;
+        this.smtpLoadError = apiErrorMessage(err, 'Não foi possível ler a configuração de e-mail salva.');
+        this.cdr.detectChanges();
       }
     });
   }
 
   saveSmtpConfig(): void {
+    // sem a configuração real carregada o formulário só tem os valores padrão do código: salvar apagaria a configuração de verdade
+    if (this.smtpLoadError || this.loadingSmtpConfig) return;
     this.savingSmtpConfig = true;
     const payload: SmtpConfig = {
       ...this.smtpConfig,
@@ -575,7 +629,7 @@ export class AdminComponent implements OnInit {
       },
       error: (err) => {
         this.savingSmtpConfig = false;
-        const msg = err.error?.detail || 'Erro ao salvar configuração SMTP.';
+        const msg = apiErrorMessage(err, 'Erro ao salvar configuração SMTP.');
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
       }
     });
@@ -604,7 +658,7 @@ export class AdminComponent implements OnInit {
       },
       error: (err) => {
         this.testingSmtp = false;
-        const msg = err.error?.detail || 'Falha na conexão SMTP.';
+        const msg = apiErrorMessage(err, 'Falha na conexão SMTP.');
         this.smtpTestFeedback = { success: false, message: msg };
       }
     });

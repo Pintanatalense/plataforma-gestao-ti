@@ -53,11 +53,23 @@ export interface DbBackup {
   id: string;
   filename: string;
   size_bytes: number;
-  sha256_hash: string | null;
+  /** Nome real do campo na API (antes o frontend lia `sha256_hash`, que não existe: a coluna mostrava sempre "N/A"). */
+  checksum_sha256: string | null;
   status: 'PENDING' | 'SUCCESS' | 'FAILED';
   error_message: string | null;
   created_at: string;
   created_by_email: string | null;
+}
+
+export interface BackupVerification {
+  backup_id: string;
+  filename: string;
+  exists: boolean;
+  is_valid: boolean;
+  expected_sha256?: string;
+  calculated_sha256?: string;
+  size_bytes?: number;
+  error?: string;
 }
 
 export interface WhatsAppTemplate {
@@ -101,6 +113,11 @@ export class AdminService {
   // --- Backups ---
   getBackups(): Observable<DbBackup[]> {
     return this.http.get<DbBackup[]>(`${this.systemUrl}/backups`);
+  }
+
+  /** Recalcula o SHA-256 do arquivo e compara com o registrado (não prova que o backup restaura). */
+  verifyBackup(backupId: string): Observable<BackupVerification> {
+    return this.http.get<BackupVerification>(`${this.systemUrl}/backups/${backupId}/verify`);
   }
 
   generateBackup(): Observable<DbBackup> {

@@ -12,12 +12,14 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatProgressBarModule } from '@angular/material/progress-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
-import { firstValueFrom } from 'rxjs';
+import { HttpResponse } from '@angular/common/http';
+import { filter, firstValueFrom } from 'rxjs';
 
 import { TicketService, TicketCategory, CategoryFormField } from '../ticket.service';
 import { Asset, AssetService } from '../../../core/services/asset.service';
 import { AuthService } from '../../../core/auth/auth.service';
 import { AttachmentsService } from '../../../core/services/attachments.service';
+import { apiErrorMessage } from '../../../core/http/api-error';
 
 @Component({
   selector: 'app-ticket-create',
@@ -189,32 +191,44 @@ export class TicketCreateComponent implements OnInit {
 
     this.ticketService.createTicket(payload).subscribe({
       next: async (ticket) => {
+        const failedUploads: string[] = [];
         if (this.selectedFiles.length > 0) {
           this.uploadProgressText = `Enviando ${this.selectedFiles.length} anexo(s)...`;
           for (let i = 0; i < this.selectedFiles.length; i++) {
             const f = this.selectedFiles[i];
             try {
-              await firstValueFrom(this.attachmentsService.uploadFile(f, 'TICKET', ticket.id));
+              // uploadFile() emite eventos (Sent, progresso, resposta). `firstValueFrom` sem filtro resolvia no primeiro
+              // evento (Sent) e CANCELAVA o upload: o chamado era criado e o anexo nunca chegava ao servidor.
+              await firstValueFrom(
+                this.attachmentsService.uploadFile(f, 'TICKET', ticket.id).pipe(filter((e) => e instanceof HttpResponse))
+              );
             } catch (err) {
               console.error('Erro ao enviar anexo:', f.name, err);
+              failedUploads.push(f.name);
             }
           }
         }
 
         this.isSubmitting = false;
-        const msg = this.selectedFiles.length > 0
-          ? `Chamado aberto com sucesso com ${this.selectedFiles.length} anexo(s) vinculado(s)!`
-          : 'Chamado aberto com sucesso!';
-        this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+        if (failedUploads.length > 0) {
+          // o chamado existe, mas nem todos os anexos foram: não anuncia sucesso total
+          this.snackBar.open(
+            `Chamado aberto, mas ${failedUploads.length} anexo(s) NÃO foram enviados: ${failedUploads.join(', ')}. Anexe de novo pela tela do chamado.`,
+            'Fechar',
+            { duration: 10000 }
+          );
+        } else {
+          const msg = this.selectedFiles.length > 0
+            ? `Chamado aberto com sucesso com ${this.selectedFiles.length} anexo(s) vinculado(s)!`
+            : 'Chamado aberto com sucesso!';
+          this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+        }
         this.router.navigate(['/service-desk', ticket.id]);
       },
       error: (err) => {
         this.isSubmitting = false;
         console.error(err);
-        const msg =
-          err?.error?.error?.message ||
-          err?.error?.detail ||
-          'Erro ao abrir chamado. Verifique os pré-requisitos.';
+        const msg = apiErrorMessage(err, 'Erro ao abrir chamado. Verifique os pré-requisitos.');
         this.snackBar.open(msg, 'Fechar', { duration: 6000 });
       }
     });

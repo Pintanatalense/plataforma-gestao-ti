@@ -48,7 +48,7 @@
           </div>
 
           <!-- Grid de Templates -->
-          <div class="templates-grid" *ngIf="!loadingTemplates && templates.length > 0">
+          <div class="templates-grid" *ngIf="!loadingTemplates && !templatesError && templates.length > 0">
             <mat-card class="template-card" *ngFor="let tpl of templates">
               <mat-card-header>
                 <span class="category-badge" [attr.data-cat]="tpl.category">{{ tpl.category }}</span>
@@ -70,7 +70,8 @@
             </mat-card>
           </div>
 
-          <div class="empty-state" *ngIf="!loadingTemplates && templates.length === 0">
+          <app-load-state [error]="templatesError" (retry)="loadTemplates()"></app-load-state>
+          <div class="empty-state" *ngIf="!loadingTemplates && !templatesError && templates.length === 0">
             <mat-icon class="empty-icon">chat_bubble_outline</mat-icon>
             <h3>Nenhum template encontrado</h3>
             <p>Cadastre respostas rápidas para agilizar o atendimento dos seus técnicos.</p>
@@ -473,7 +474,9 @@
               </button>
             </div>
 
-            <div class="backup-table-container">
+            <app-load-state [loading]="backupsLoading && backups.length === 0" [error]="backupsError" loadingText="Carregando backups…" (retry)="loadBackups()"></app-load-state>
+
+            <div class="backup-table-container" *ngIf="!backupsError && !(backupsLoading && backups.length === 0)">
               <table class="data-table">
                 <thead>
                   <tr>
@@ -496,7 +499,8 @@
                     </td>
                     <td>{{ formatBytes(b.size_bytes) }}</td>
                     <td>
-                      <code class="hash-code" [title]="b.sha256_hash">{{ b.sha256_hash ? b.sha256_hash.substring(0, 16) + '...' : 'N/A' }}</code>
+                      <code class="hash-code" [title]="b.checksum_sha256">{{ b.checksum_sha256 ? b.checksum_sha256.substring(0, 16) + '...' : 'N/A' }}</code>
+                      <div class="verify-result" *ngIf="backupVerification[b.id] as v" [style.color]="v.valid ? '#166534' : '#b3261e'" style="font-size: 12px; margin-top: 4px;">{{ v.message }}</div>
                     </td>
                     <td>
                       <span class="status-badge" [class.success]="b.status === 'SUCCESS'" [class.failed]="b.status === 'FAILED'">
@@ -506,6 +510,9 @@
                     <td>{{ b.created_at | date:'dd/MM/yyyy HH:mm' }}</td>
                     <td>{{ b.created_by_email || 'Sistema' }}</td>
                     <td class="action-buttons-cell">
+                      <button *ngIf="b.status === 'SUCCESS'" mat-icon-button title="Verificar integridade (SHA-256)" [disabled]="verifyingBackup[b.id]" (click)="verifyBackup(b)">
+                        <mat-icon>verified</mat-icon>
+                      </button>
                       <button mat-icon-button color="primary" title="Baixar Backup" (click)="downloadBackupFile(b)">
                         <mat-icon>download</mat-icon>
                       </button>
@@ -524,9 +531,11 @@
             <!-- Instruções de Restauração -->
             <div class="restore-guide-card">
               <h4><mat-icon>terminal</mat-icon> Procedimento Operacional de Restauração</h4>
-              <p>Para restaurar o banco de dados a partir de um backup <code>.sql.gz</code> baixado:</p>
-              <pre><code># 1. Descompactar e aplicar no container do banco de dados:
-gzip -d &lt; backup_YYYYMMDD_HHMMSS.sql.gz | docker exec -i gestao-ti-db psql -U gestao_user -d gestao_ti_db</code></pre>
+              <p>Não há restauração por esta tela. No servidor, na pasta do projeto, use o script (ele faz uma cópia de segurança antes, para o backend e o worker e restaura em transação única):</p>
+              <pre><code>scripts/restore-backup.sh /caminho/backup_gestao_ti_AAAAMMDD_HHMMSS.sql.gz
+# para anexos e logomarca, informe também o arquivo gerado por `make backup`:
+scripts/restore-backup.sh banco.sql.gz arquivos_AAAAMMDD_HHMMSS.tar.gz</code></pre>
+              <p>Detalhes e cuidados (chave APP_ENCRYPTION_KEY, cópia fora do servidor): <code>docs/05-backup-e-restauracao.md</code>. Este painel e o job das 02:00 copiam <strong>só o banco</strong>; anexos e logomarca vão pelo <code>make backup</code>.</p>
             </div>
           </mat-card-content>
         </mat-card>
@@ -637,7 +646,8 @@ gzip -d &lt; backup_YYYYMMDD_HHMMSS.sql.gz | docker exec -i gestao-ti-db psql -U
               <mat-card-subtitle>Diagnóstico operacional e classificação da base de dados</mat-card-subtitle>
             </mat-card-header>
             <mat-card-content>
-              <div class="status-toggle-box" [class.active]="demoStatus?.system_mode === 'DEMO'">
+              <app-load-state [error]="demoStatusError" (retry)="loadDemoStatus()"></app-load-state>
+              <div class="status-toggle-box" *ngIf="!demoStatusError" [class.active]="demoStatus?.system_mode === 'DEMO'">
                 <div class="toggle-info">
                   <strong>Modo do Sistema: {{ demoStatus?.system_mode === 'DEMO' ? 'AMBIENTE DEMONSTRATIVO' : 'PRODUÇÃO / EMPRESARIAL' }}</strong>
                   <span>{{ demoStatus?.system_mode === 'DEMO' ? 'O sistema está operando com dados fictícios para fins de apresentação e testes.' : 'O sistema está operando em base limpa, pronto para utilização empresarial real.' }}</span>
@@ -745,6 +755,7 @@ gzip -d &lt; backup_YYYYMMDD_HHMMSS.sql.gz | docker exec -i gestao-ti-db psql -U
               <mat-card-subtitle>Envio de notificações de chamados e alertas transacionais</mat-card-subtitle>
             </mat-card-header>
             <mat-card-content>
+              <app-load-state [error]="smtpLoadError" (retry)="loadSmtpConfig()"></app-load-state>
               <div class="status-toggle-box" [class.active]="smtpConfig.is_enabled">
                 <div class="toggle-info">
                   <strong>Notificações por E-mail</strong>
@@ -806,7 +817,7 @@ gzip -d &lt; backup_YYYYMMDD_HHMMSS.sql.gz | docker exec -i gestao-ti-db psql -U
               </div>
 
               <div class="action-row">
-                <button mat-flat-button color="primary" [disabled]="savingSmtpConfig" (click)="saveSmtpConfig()">
+                <button mat-flat-button color="primary" [disabled]="savingSmtpConfig || loadingSmtpConfig || !!smtpLoadError" (click)="saveSmtpConfig()">
                   <mat-icon>save</mat-icon> Salvar Parâmetros SMTP
                 </button>
               </div>
