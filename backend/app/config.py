@@ -60,6 +60,12 @@ class Settings(BaseSettings):
     # --- Arquivos públicos (logomarca) ---
     STATIC_DIR: str | None = None  # padrão: backend/static (no container: /app/static)
 
+    # --- Segurança operacional ---
+    # Carga de QA cria o usuário admin@teste.local com senha conhecida: nunca ligar em produção.
+    ENABLE_QA_SEED: bool = False
+    # Swagger/ReDoc/openapi.json. Em produção exposta à internet, desligue.
+    ENABLE_API_DOCS: bool = True
+
     # --- Chamados ---
     TICKET_REOPEN_DAYS: int = 3
 

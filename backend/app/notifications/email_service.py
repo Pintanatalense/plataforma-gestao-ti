@@ -142,13 +142,29 @@ class EmailService:
 
     async def test_smtp(self, req: SmtpTestEmailRequest) -> tuple[bool, str]:
         current_cfg = await self.get_config()
+        typed_password = req.password if (req.password and req.password != MASKED_PASSWORD) else None
+        target_host = (req.host or current_cfg.host).strip().lower()
+        target_port = req.port or current_cfg.port
+        target_user = req.username if req.username is not None else current_cfg.username
+        same_endpoint = (
+            target_host == (current_cfg.host or "").strip().lower()
+            and target_port == current_cfg.port
+            and target_user == current_cfg.username
+        )
+        # A senha guardada só pode ser usada contra o MESMO servidor, porta e usuário com que foi salva;
+        # caso contrário, quem tem acesso à tela de teste poderia apontar o host para um servidor seu e capturá-la.
+        if typed_password is None and not same_endpoint:
+            return False, (
+                "Para testar outro servidor, porta ou usuário, informe a senha: "
+                "a senha salva só é usada com a configuração salva."
+            )
         config = SmtpConfigSchema(
             is_enabled=True,
             host=req.host or current_cfg.host,
             port=req.port or current_cfg.port,
             security=req.security or current_cfg.security,
             username=req.username if req.username is not None else current_cfg.username,
-            password=req.password if (req.password and req.password != MASKED_PASSWORD) else current_cfg.password,
+            password=typed_password if typed_password is not None else current_cfg.password,
             from_email=req.from_email or current_cfg.from_email,
             from_name=req.from_name or current_cfg.from_name,
             app_base_url=current_cfg.app_base_url,

@@ -85,6 +85,9 @@ make seed-test-reset
 python -m app.seed_test --reset
 ```
 
+> [!WARNING]
+> A carga de QA cria o administrador `admin@teste.local` com senha conhecida. Por isso o botão **Popular Base de Testes / Homologação (QA)** do Painel Administrativo (`POST /system/demo/seed-test`) fica **desabilitado por padrão** e responde 403. Para usá-lo em um ambiente de homologação, defina `ENABLE_QA_SEED=true` no `.env` e recrie o backend (`docker compose up -d backend`). **Nunca ligue em produção.** Os comandos `make seed-test` / `python -m app.seed_test` continuam disponíveis para quem tem acesso ao servidor.
+
 ### 4.1. Matriz de Credenciais de Homologação
 
 Todas as contas de teste são criadas com a senha padrão unificada: **`Teste@2026`** (com `must_change_password=False` para facilitar o fluxo automatizado):
