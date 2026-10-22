@@ -45,6 +45,8 @@ services:
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?Defina APP_ENCRYPTION_KEY no .env (veja .env.example)}
       APP_TIMEZONE: ${APP_TIMEZONE:-America/Fortaleza}
       DEBUG: ${DEBUG:-false}
+      ENABLE_QA_SEED: ${ENABLE_QA_SEED:-false}
+      ENABLE_API_DOCS: ${ENABLE_API_DOCS:-true}
       ATTACHMENT_STORAGE_PATH: /data/attachments
       BACKUP_STORAGE_PATH: /data/backups
       CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost"]}

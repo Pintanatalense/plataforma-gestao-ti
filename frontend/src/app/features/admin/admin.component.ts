@@ -536,7 +536,7 @@ export class AdminComponent implements OnInit {
       },
       error: (err) => {
         this.seedingTest = false;
-        const msg = err.error?.detail || 'Erro ao carregar dados de testes/homologação.';
+        const msg = err.error?.error?.message || err.error?.detail || 'Erro ao carregar dados de testes/homologação.';
         this.snackBar.open(msg, 'Fechar', { duration: 5000 });
       }
     });

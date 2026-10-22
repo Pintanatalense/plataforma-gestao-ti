@@ -82,9 +82,9 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.APP_VERSION,
-        docs_url=f"{settings.API_V1_PREFIX}/docs",
-        redoc_url=f"{settings.API_V1_PREFIX}/redoc",
-        openapi_url=f"{settings.API_V1_PREFIX}/openapi.json",
+        docs_url=f"{settings.API_V1_PREFIX}/docs" if settings.ENABLE_API_DOCS else None,
+        redoc_url=f"{settings.API_V1_PREFIX}/redoc" if settings.ENABLE_API_DOCS else None,
+        openapi_url=f"{settings.API_V1_PREFIX}/openapi.json" if settings.ENABLE_API_DOCS else None,
         lifespan=lifespan,
     )
 

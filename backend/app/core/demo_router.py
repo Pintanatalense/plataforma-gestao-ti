@@ -11,6 +11,8 @@ from pydantic import BaseModel, Field
 from fastapi import APIRouter, Depends, status, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
+from app.core.exceptions import ForbiddenException
 from app.database import get_db
 from app.core.dependencies import require_permission, get_token_payload, get_current_user_ip
 from app.core.demo_service import DemoManagementService
@@ -94,6 +96,11 @@ async def seed_test_data(
     payload: Annotated[dict, Depends(get_token_payload)],
     session: Annotated[AsyncSession, Depends(get_db)]
 ):
+    if not get_settings().ENABLE_QA_SEED:
+        raise ForbiddenException(
+            "A carga de QA está desabilitada neste ambiente (ENABLE_QA_SEED=false). "
+            "Ela cria um administrador com senha conhecida e só deve ser usada em homologação."
+        )
     from app.seed_test import seed_test
     await seed_test(reset=False)
     return {
