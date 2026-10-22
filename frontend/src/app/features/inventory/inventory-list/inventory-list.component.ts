@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
@@ -37,6 +37,7 @@ import { CreateAuditDialogComponent } from './create-audit-dialog.component';
 })
 export class InventoryListComponent implements OnInit {
   private inventoryService = inject(InventoryService);
+  private cdr = inject(ChangeDetectorRef);
   private orgService = inject(OrganizationService);
   private dialog = inject(MatDialog);
   private snackBar = inject(MatSnackBar);
@@ -66,6 +67,7 @@ export class InventoryListComponent implements OnInit {
     this.inventoryService.listAudits().subscribe({
       next: (audits) => {
         this.loading = false;
+        this.cdr.markForCheck();
         this.dataSource.data = audits;
         this.dataSource.filterPredicate = (data: InventoryAudit, filter: string) => {
           const unit = data.unit_name || this.getUnitName(data.unit_id);
@@ -77,6 +79,7 @@ export class InventoryListComponent implements OnInit {
         // falha de comunicação não pode parecer "nenhuma auditoria cadastrada"
         this.loading = false;
         this.loadError = apiErrorMessage(err, 'Não foi possível carregar os inventários.');
+        this.cdr.markForCheck();
       }
     });
   }

@@ -1,4 +1,6 @@
-<div class="page-container" *ngIf="audit">
+<app-load-state [loading]="!audit && !loadError" [error]="loadError" loadingText="Carregando auditoria…" (retry)="retryLoad()"></app-load-state>
+
+<div class="page-container" *ngIf="audit && !loadError">
   <div class="page-header">
     <div class="header-content">
       <button mat-icon-button class="back-btn" routerLink="/inventory">

@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -14,6 +14,8 @@ import { InventoryAudit, InventoryAuditItem, InventoryService } from '../../../c
 import { OrganizationService } from '../../../core/services/organization.service';
 import { Asset, AssetService } from '../../../core/services/asset.service';
 import { StockItem, StockService } from '../../../core/services/stock.service';
+import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
+import { apiErrorMessage } from '../../../core/http/api-error';
 
 @Component({
   selector: 'app-inventory-detail',
@@ -28,13 +30,15 @@ import { StockItem, StockService } from '../../../core/services/stock.service';
     MatInputModule,
     MatFormFieldModule,
     MatSelectModule,
-    MatSnackBarModule
+    MatSnackBarModule,
+    LoadStateComponent
   ],
   templateUrl: './inventory-detail.component.html',
   styleUrls: ['./inventory-detail.component.scss']
 })
 export class InventoryDetailComponent implements OnInit {
   private route = inject(ActivatedRoute);
+  private cdr = inject(ChangeDetectorRef);
   private fb = inject(FormBuilder);
   private inventoryService = inject(InventoryService);
   private orgService = inject(OrganizationService);
@@ -43,6 +47,8 @@ export class InventoryDetailComponent implements OnInit {
   private snackBar = inject(MatSnackBar);
 
   audit: InventoryAudit | null = null;
+  auditId: string | null = null;
+  loadError: string | null = null;
   unitName: string = '';
   auditorName: string = '';
   populatingItems = false;
@@ -66,21 +72,32 @@ export class InventoryDetailComponent implements OnInit {
   ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {
+      this.auditId = id;
       this.loadAudit(id);
     }
   }
 
+  retryLoad(): void {
+    if (this.auditId) this.loadAudit(this.auditId);
+  }
+
   loadAudit(id: string): void {
+    this.loadError = null;
     this.inventoryService.getAudit(id).subscribe({
       next: (audit) => {
         this.audit = audit;
+        this.cdr.markForCheck();
         this.itemsDataSource.data = audit.items || [];
         if (audit.unit_name) this.unitName = audit.unit_name;
         if (audit.auditor_name) this.auditorName = audit.auditor_name;
         this.loadUnitAndAuditor(audit.unit_id, audit.auditor_id);
         this.loadAvailableItems(audit.unit_id);
       },
-      error: (err) => console.error('Erro ao carregar auditoria:', err)
+      error: (err) => {
+        // sem isso a tela ficava em branco
+        this.loadError = apiErrorMessage(err, 'Não foi possível carregar a auditoria.');
+        this.cdr.markForCheck();
+      }
     });
   }
 

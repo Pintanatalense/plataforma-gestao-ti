@@ -1,4 +1,6 @@
-<div class="page-container" *ngIf="item">
+<app-load-state [loading]="!item && !loadError" [error]="loadError" loadingText="Carregando item…" (retry)="retryLoad()"></app-load-state>
+
+<div class="page-container" *ngIf="item && !loadError">
   <div class="page-header">
     <div class="header-content">
       <button mat-icon-button class="back-btn" routerLink="/stock">

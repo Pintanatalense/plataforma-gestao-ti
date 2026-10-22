@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
@@ -32,6 +32,7 @@ import { OrganizationService, Unit } from '../../../core/services/organization.s
 })
 export class StockListComponent implements OnInit {
   private stockService = inject(StockService);
+  private cdr = inject(ChangeDetectorRef);
   private orgService = inject(OrganizationService);
 
   displayedColumns: string[] = ['name', 'unit', 'quantity', 'status', 'actions'];
@@ -60,6 +61,7 @@ export class StockListComponent implements OnInit {
     this.stockService.getItems().subscribe({
       next: (items) => {
         this.loading = false;
+        this.cdr.markForCheck();
         const enriched = items.map((item) => {
           const unit = this.units.find((u) => u.id === item.unit_id);
           return {
@@ -77,6 +79,7 @@ export class StockListComponent implements OnInit {
         // falha de comunicação não pode parecer "nenhum item"
         this.loading = false;
         this.loadError = apiErrorMessage(err, 'Não foi possível carregar o estoque.');
+        this.cdr.markForCheck();
       }
     });
   }

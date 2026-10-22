@@ -1,4 +1,6 @@
-<div class="chat-page-container" *ngIf="ticket">
+<app-load-state [loading]="!ticket && !loadError" [error]="loadError" loadingText="Carregando chamado…" (retry)="retryLoadTicket()"></app-load-state>
+
+<div class="chat-page-container" *ngIf="ticket && !loadError">
   <!-- Header -->
   <div class="chat-header mat-elevation-z2">
     <div class="header-info">

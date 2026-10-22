@@ -4,7 +4,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
-import { of, throwError } from 'rxjs';
+import { map, of, switchMap, throwError, timer } from 'rxjs';
 
 import { AssetService } from '../core/services/asset.service';
 import { InventoryService } from '../core/services/inventory.service';
@@ -28,6 +28,13 @@ interface ListCase {
   method: string;
   extraProviders?: unknown[];
 }
+
+/**
+ * Respostas ASSÍNCRONAS, como as reais. Os componentes são OnPush (padrão do Angular 22): estado alterado numa
+ * resposta HTTP só chega à tela com markForCheck(). Com mocks síncronos o teste passaria mesmo sem ele.
+ */
+const later = <T>(value: T) => timer(0).pipe(map(() => value));
+const laterError = (err: unknown) => timer(0).pipe(switchMap(() => throwError(() => err)));
 
 const units = { provide: OrganizationService, useValue: { getUnits: () => of([]) } };
 
@@ -61,7 +68,7 @@ describe.each(CASES)('Tela de lista: $name', (c) => {
   }
 
   it('on failure shows the error and retry, not an empty list', async () => {
-    await mount(vi.fn().mockReturnValue(throwError(() => ({ status: 500, error: {} }))));
+    await mount(vi.fn().mockReturnValue(laterError({ status: 500, error: {} })));
     expect(q('[data-testid="state-error"]')).toBeTruthy();
     expect(q('[data-testid="state-retry"]')).toBeTruthy();
     expect(q('table')).toBeNull();
@@ -71,8 +78,8 @@ describe.each(CASES)('Tela de lista: $name', (c) => {
   it('"Tentar novamente" loads again and then shows the screen', async () => {
     const load = vi
       .fn()
-      .mockReturnValueOnce(throwError(() => ({ status: 0 })))
-      .mockReturnValue(of([]));
+      .mockReturnValueOnce(laterError({ status: 0 }))
+      .mockReturnValue(later([]));
     await mount(load);
     expect(q('[data-testid="state-error"]')).toBeTruthy();
 
@@ -87,7 +94,7 @@ describe.each(CASES)('Tela de lista: $name', (c) => {
   });
 
   it('when the call succeeds with no items, shows the screen (with its own empty message), not the error', async () => {
-    await mount(vi.fn().mockReturnValue(of([])));
+    await mount(vi.fn().mockReturnValue(later([])));
     expect(q('[data-testid="state-error"]')).toBeNull();
     expect(q('table')).toBeTruthy();
   });

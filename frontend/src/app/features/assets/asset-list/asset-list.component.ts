@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
@@ -34,6 +34,7 @@ import { apiErrorMessage } from '../../../core/http/api-error';
 })
 export class AssetListComponent implements OnInit {
   private assetService = inject(AssetService);
+  private cdr = inject(ChangeDetectorRef);
   private dialog = inject(MatDialog);
 
   displayedColumns: string[] = ['tag', 'name', 'category', 'unit', 'employee', 'status', 'actions'];
@@ -52,6 +53,7 @@ export class AssetListComponent implements OnInit {
       next: (data) => {
         this.loading = false;
         this.dataSource.data = data;
+        this.cdr.markForCheck();
         this.dataSource.filterPredicate = (asset: Asset, filter: string) => {
           const searchStr = `${asset.tag} ${asset.name} ${asset.category?.name || ''} ${asset.unit?.name || ''} ${asset.employee?.name || ''}`.toLowerCase();
           return searchStr.includes(filter);
@@ -61,6 +63,7 @@ export class AssetListComponent implements OnInit {
         // falha de comunicação não pode parecer "nenhum ativo registrado"
         this.loading = false;
         this.loadError = apiErrorMessage(err, 'Não foi possível carregar os ativos.');
+        this.cdr.markForCheck();
       }
     });
   }
