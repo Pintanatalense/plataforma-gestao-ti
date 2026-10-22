@@ -4,7 +4,6 @@ import { HttpTestingController, provideHttpClientTesting } from '@angular/common
 import { ActivatedRoute, convertToParamMap, provideRouter, Router } from '@angular/router';
 import { provideNoopAnimations } from '@angular/platform-browser/animations';
 import { MatSnackBar } from '@angular/material/snack-bar';
-import { of } from 'rxjs';
 import { TicketCreateComponent } from './ticket-create.component';
 
 describe('Abrir chamado: anexo que falha não pode virar "sucesso"', () => {
@@ -46,7 +45,6 @@ describe('Abrir chamado: anexo que falha não pode virar "sucesso"', () => {
     (component as unknown as { snackBar: MatSnackBar }).snackBar = snack as unknown as MatSnackBar;
     fixture.detectChanges();
     backend.match(() => true); // chamadas do ngOnInit (categorias, ativos): não interessam aqui
-    void of;
   });
 
   it('warns which attachments were NOT sent instead of announcing full success', async () => {
