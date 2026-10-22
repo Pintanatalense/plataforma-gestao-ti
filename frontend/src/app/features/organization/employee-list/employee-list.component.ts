@@ -5,6 +5,8 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
 import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
+import { apiErrorMessage } from '../../../core/http/api-error';
+import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
 import { OrganizationService, Employee } from '../../../core/services/organization.service';
 import { EmployeeDialogComponent } from './employee-dialog.component';
 
@@ -17,7 +19,8 @@ import { EmployeeDialogComponent } from './employee-dialog.component';
     MatButtonModule,
     MatIconModule,
     MatDialogModule,
-    MatSnackBarModule
+    MatSnackBarModule,
+    LoadStateComponent
   ],
   templateUrl: './employee-list.component.html',
   styleUrls: ['./employee-list.component.scss']
@@ -31,18 +34,37 @@ export class EmployeeList implements OnInit {
   displayedColumns: string[] = ['sector', 'registration', 'name', 'phone', 'job_title', 'status', 'actions'];
   dataSource: Employee[] = [];
 
+  /** Primeira carga em andamento / falha (uma recarga que falha mantém a tabela e só avisa). */
+  isLoading = true;
+  loadError: string | null = null;
+  private loaded = false;
+
   ngOnInit(): void {
     this.loadData();
   }
 
   loadData() {
+    if (!this.loaded) {
+      this.isLoading = true;
+      this.loadError = null;
+    }
     this.orgService.getEmployees().subscribe({
       next: (data) => {
         this.dataSource = data;
+        this.loaded = true;
+        this.isLoading = false;
+        this.loadError = null;
         this.cdr.markForCheck();
       },
       error: (err) => {
-        this.snackBar.open(err.error?.detail || 'Erro ao carregar colaboradores', 'Fechar', { duration: 3000 });
+        const msg = apiErrorMessage(err, 'Erro ao carregar colaboradores.');
+        if (this.loaded) {
+          this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+        } else {
+          this.isLoading = false;
+          this.loadError = msg;
+        }
+        this.cdr.markForCheck();
       }
     });
   }
@@ -62,7 +84,7 @@ export class EmployeeList implements OnInit {
               this.loadData();
             },
             error: (err) => {
-              this.snackBar.open(err.error?.detail || 'Erro ao atualizar colaborador', 'Fechar', { duration: 4000 });
+              this.snackBar.open(apiErrorMessage(err, 'Erro ao atualizar colaborador'), 'Fechar', { duration: 4000 });
             }
           });
         } else {
@@ -72,7 +94,7 @@ export class EmployeeList implements OnInit {
               this.loadData();
             },
             error: (err) => {
-              this.snackBar.open(err.error?.detail || 'Erro ao criar colaborador', 'Fechar', { duration: 4000 });
+              this.snackBar.open(apiErrorMessage(err, 'Erro ao criar colaborador'), 'Fechar', { duration: 4000 });
             }
           });
         }
@@ -88,7 +110,7 @@ export class EmployeeList implements OnInit {
           this.loadData();
         },
         error: (err) => {
-          this.snackBar.open(err.error?.detail || 'Erro ao inativar colaborador', 'Fechar', { duration: 4000 });
+          this.snackBar.open(apiErrorMessage(err, 'Erro ao inativar colaborador'), 'Fechar', { duration: 4000 });
         }
       });
     }
