@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, ForeignKey, String, Text, Integer
+from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Table, Text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -87,8 +87,6 @@ class Ticket(Base, TimestampMixin):
             return self.assignee.email
         return None
 
-
-from sqlalchemy import Table, Column
 
 ticket_assets = Table(
     "sd_ticket_assets",

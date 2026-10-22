@@ -21,11 +21,9 @@ import uuid
 import httpx
 from sqlalchemy import select
 
-import app.main
 from app.database import AsyncSessionLocal
 from app.core.security import create_access_token
 from app.identity.models import UserAccount, Permission
-from app.organization.models import Employee
 
 BASE_URL = "http://127.0.0.1:8000/api/v1"
 
@@ -36,7 +34,7 @@ async def run_all_tests():
 
     # 1. Obter usuário admin e permissões para gerar token JWT válido
     async with AsyncSessionLocal() as session:
-        stmt_user = select(UserAccount).where(UserAccount.is_admin == True).limit(1)
+        stmt_user = select(UserAccount).where(UserAccount.is_admin.is_(True)).limit(1)
         res_user = await session.execute(stmt_user)
         admin_user = res_user.scalar_one_or_none()
         if not admin_user:
@@ -314,16 +312,16 @@ async def run_all_tests():
         }
         res = await client.post(f"/tickets/{ticket_id}/interactions", json=interaction_payload)
         assert res.status_code == 201, f"Falha ao adicionar interação no chamado: {res.text}"
-        print(f"[PASSED] Interação registrada no chamado com sucesso")
+        print("[PASSED] Interação registrada no chamado com sucesso")
 
         # Atualizar status do chamado (IN_PROGRESS e RESOLVED)
         res = await client.patch(f"/tickets/{ticket_id}", json={"status": "IN_PROGRESS"})
         assert res.status_code == 200, f"Falha ao atualizar status do chamado: {res.text}"
-        print(f"[PASSED] Chamado atualizado para: IN_PROGRESS")
+        print("[PASSED] Chamado atualizado para: IN_PROGRESS")
 
         res = await client.patch(f"/tickets/{ticket_id}", json={"status": "RESOLVED"})
         assert res.status_code == 200, f"Falha ao resolver chamado: {res.text}"
-        print(f"[PASSED] Chamado atualizado para: RESOLVED")
+        print("[PASSED] Chamado atualizado para: RESOLVED")
 
         # ---------------------------------------------------------------------
         # ROTINA 9: Estoque - Insumos e Movimentações
@@ -351,7 +349,7 @@ async def run_all_tests():
         }
         res = await client.post("/stock/movements", json=mov_payload)
         assert res.status_code in (200, 201), f"Falha ao registrar movimentação de estoque: {res.text}"
-        print(f"[PASSED] Saída de estoque registrada com sucesso: -3 unidades")
+        print("[PASSED] Saída de estoque registrada com sucesso: -3 unidades")
 
         # ---------------------------------------------------------------------
         # ROTINA 10: Inventário Periódico (Auditorias)

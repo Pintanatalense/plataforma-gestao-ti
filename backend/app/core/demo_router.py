@@ -8,7 +8,7 @@ preview de impacto, exclusão segura de dados fictícios e recarga.
 import uuid
 from typing import Annotated
 from pydantic import BaseModel, Field
-from fastapi import APIRouter, Depends, status, Request
+from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings

@@ -16,7 +16,7 @@ class AssetRepository:
         return await self.session.get(AssetCategory, category_id)
 
     async def list_categories(self) -> Sequence[AssetCategory]:
-        stmt = select(AssetCategory).where(AssetCategory.is_active == True).order_by(AssetCategory.name)
+        stmt = select(AssetCategory).where(AssetCategory.is_active.is_(True)).order_by(AssetCategory.name)
         result = await self.session.execute(stmt)
         return result.scalars().all()
 
@@ -37,13 +37,13 @@ class AssetRepository:
                 selectinload(Asset.unit),
                 selectinload(Asset.employee),
             )
-            .where(Asset.id == asset_id, Asset.is_active == True)
+            .where(Asset.id == asset_id, Asset.is_active.is_(True))
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def get_asset_for_update(self, asset_id: uuid.UUID) -> Asset | None:
-        stmt = select(Asset).options(selectinload(Asset.category)).where(Asset.id == asset_id, Asset.is_active == True).with_for_update()
+        stmt = select(Asset).options(selectinload(Asset.category)).where(Asset.id == asset_id, Asset.is_active.is_(True)).with_for_update()
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
         
@@ -55,7 +55,7 @@ class AssetRepository:
                 selectinload(Asset.unit),
                 selectinload(Asset.employee),
             )
-            .where(Asset.tag == tag, Asset.is_active == True)
+            .where(Asset.tag == tag, Asset.is_active.is_(True))
         )
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -72,7 +72,7 @@ class AssetRepository:
             .where(Asset.serial_number == serial_number)
         )
         if not include_inactive:
-            stmt = stmt.where(Asset.is_active == True)
+            stmt = stmt.where(Asset.is_active.is_(True))
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -84,7 +84,7 @@ class AssetRepository:
                 selectinload(Asset.unit),
                 selectinload(Asset.employee),
             )
-            .where(Asset.is_active == True)
+            .where(Asset.is_active.is_(True))
         )
         if unit_id:
             stmt = stmt.where(Asset.unit_id == unit_id)

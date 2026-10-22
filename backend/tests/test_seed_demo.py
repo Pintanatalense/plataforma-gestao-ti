@@ -16,9 +16,9 @@ import pytest
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.assets.models import Asset, AssetCategory
-from app.identity.models import Role, UserAccount
-from app.organization.models import Company, Employee, Sector, Unit
+from app.assets.models import Asset
+from app.identity.models import UserAccount
+from app.organization.models import Company, Sector, Unit
 from app.seed_demo import seed_demo
 from app.service_desk.models import Ticket, TicketCategory
 from app.stock.models import StockCategory, StockItem

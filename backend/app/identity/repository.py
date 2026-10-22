@@ -27,7 +27,7 @@ class IdentityRepository:
             selectinload(UserAccount.roles).selectinload(Role.permissions)
         ).where(UserAccount.id == user_id)
         if not include_inactive:
-            stmt = stmt.where(UserAccount.is_active == True)
+            stmt = stmt.where(UserAccount.is_active.is_(True))
         
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -35,7 +35,7 @@ class IdentityRepository:
     async def get_user_by_email(self, email: str) -> UserAccount | None:
         stmt = select(UserAccount).options(
             selectinload(UserAccount.roles).selectinload(Role.permissions)
-        ).where(UserAccount.email == email, UserAccount.is_active == True)
+        ).where(UserAccount.email == email, UserAccount.is_active.is_(True))
         
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
@@ -73,7 +73,7 @@ class IdentityRepository:
             selectinload(UserAccount.roles).selectinload(Role.permissions)
         )
         if not include_inactive:
-            stmt = stmt.where(UserAccount.is_active == True)
+            stmt = stmt.where(UserAccount.is_active.is_(True))
         stmt = stmt.order_by(UserAccount.email)
         
         result = await self.session.execute(stmt)

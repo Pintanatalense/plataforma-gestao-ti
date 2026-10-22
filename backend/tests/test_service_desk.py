@@ -1,5 +1,4 @@
 import pytest
-from uuid import uuid4
 from httpx import AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -383,7 +382,7 @@ async def test_tripartite_rbac_gestao_atendente_solicitante(client: AsyncClient,
     from app.core.security import hash_password
     from sqlalchemy import select
     from app.organization.models import Company, Unit, Sector, Employee
-    from app.identity.models import UserAccount, Role, Permission
+    from app.identity.models import UserAccount
     from app.service_desk.models import TicketCategory
 
     # 1. Setup da estrutura organizacional

@@ -11,7 +11,6 @@ Gerenciamento seguro de ciclo de vida de dados demonstrativos:
 import logging
 import uuid
 from datetime import date, datetime, timedelta, timezone
-from pathlib import Path
 
 from sqlalchemy import and_, delete, func, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -20,14 +19,13 @@ from sqlalchemy.orm import selectinload
 from app.assets.models import Asset, AssetCategory, AssetStatus
 from app.attachments.models import Attachment
 from app.audit.models import AuditLog
-from app.backup.models import DatabaseBackup
 from app.backup.services import BackupService
 from app.config import get_settings
-from app.core.exceptions import BusinessRuleException, ForbiddenException
+from app.core.exceptions import BusinessRuleException
 from app.core.security import hash_password
 from app.core.settings_model import SystemSetting
-from app.identity.models import Permission, Role, UserAccount, user_role_association
-from app.movements.models import AssetMovement, MovementType
+from app.identity.models import Role, UserAccount, user_role_association
+from app.movements.models import AssetMovement
 from app.organization.models import Company, Employee, Sector, Unit
 from app.service_desk.models import (
     Ticket,
@@ -79,7 +77,7 @@ class DemoManagementService:
             ("tickets", Ticket),
             ("attachments", Attachment),
         ]:
-            stmt = select(func.count()).select_from(model).where(model.is_demo == True)
+            stmt = select(func.count()).select_from(model).where(model.is_demo.is_(True))
             counts[name] = (await self.session.execute(stmt)).scalar() or 0
 
         has_backup, recent_backup = await self.backup_service.get_recent_valid_backup(max_age_hours=24)
@@ -147,31 +145,31 @@ class DemoManagementService:
             safety_backup = recent_b
 
         # 2. Levantamento dos registros a excluir
-        demo_emp_stmt = select(Employee.id).where(Employee.is_demo == True)
+        demo_emp_stmt = select(Employee.id).where(Employee.is_demo.is_(True))
         demo_emp_ids = list((await self.session.execute(demo_emp_stmt)).scalars().all())
 
         demo_tickets_stmt = select(Ticket.id).where(
-            or_(Ticket.is_demo == True, Ticket.requester_id.in_(demo_emp_ids))
+            or_(Ticket.is_demo.is_(True), Ticket.requester_id.in_(demo_emp_ids))
         )
         demo_ticket_ids = list((await self.session.execute(demo_tickets_stmt)).scalars().all())
 
-        demo_assets_stmt = select(Asset.id).where(Asset.is_demo == True)
+        demo_assets_stmt = select(Asset.id).where(Asset.is_demo.is_(True))
         demo_asset_ids = list((await self.session.execute(demo_assets_stmt)).scalars().all())
 
-        demo_stock_stmt = select(StockItem.id).where(StockItem.is_demo == True)
+        demo_stock_stmt = select(StockItem.id).where(StockItem.is_demo.is_(True))
         demo_stock_ids = list((await self.session.execute(demo_stock_stmt)).scalars().all())
 
         demo_users_stmt = select(UserAccount.id).where(
-            UserAccount.is_demo == True,
+            UserAccount.is_demo.is_(True),
             UserAccount.id != admin_user_id,
-            UserAccount.is_admin == False
+            UserAccount.is_admin.is_(False)
         )
         demo_user_ids = list((await self.session.execute(demo_users_stmt)).scalars().all())
 
         # Excluir arquivos físicos de anexos demo
         demo_att_stmt = select(Attachment).where(
             or_(
-                Attachment.is_demo == True,
+                Attachment.is_demo.is_(True),
                 and_(Attachment.entity_type == "ticket", Attachment.entity_id.in_(demo_ticket_ids))
             )
         )
@@ -211,9 +209,9 @@ class DemoManagementService:
         from app.core.starter_catalog import TI_SECTOR_CODE
 
         real_ti_id = (
-            await self.session.execute(select(Sector.id).where(Sector.code == TI_SECTOR_CODE, Sector.is_demo == False))
+            await self.session.execute(select(Sector.id).where(Sector.code == TI_SECTOR_CODE, Sector.is_demo.is_(False)))
         ).scalar_one_or_none()
-        demo_sector_ids = select(Sector.id).where(Sector.is_demo == True)
+        demo_sector_ids = select(Sector.id).where(Sector.is_demo.is_(True))
         await self.session.execute(
             update(TicketCategory).where(TicketCategory.default_sector_id.in_(demo_sector_ids)).values(default_sector_id=real_ti_id)
         )
@@ -224,18 +222,18 @@ class DemoManagementService:
             await self.session.execute(delete(UserAccount).where(UserAccount.id.in_(demo_user_ids)))
 
         # Excluir colaboradores demo
-        await self.session.execute(delete(Employee).where(Employee.is_demo == True))
+        await self.session.execute(delete(Employee).where(Employee.is_demo.is_(True)))
 
         # Excluir setores demo
-        await self.session.execute(delete(Sector).where(Sector.is_demo == True))
+        await self.session.execute(delete(Sector).where(Sector.is_demo.is_(True)))
 
         # Excluir unidades demo (menos as que ainda abrigam setores reais, como o de TI do catálogo inicial)
         await self.session.execute(
-            delete(Unit).where(Unit.is_demo == True, Unit.id.not_in(select(Sector.unit_id)))
+            delete(Unit).where(Unit.is_demo.is_(True), Unit.id.not_in(select(Sector.unit_id)))
         )
 
         # Excluir empresas demo
-        await self.session.execute(delete(Company).where(Company.is_demo == True))
+        await self.session.execute(delete(Company).where(Company.is_demo.is_(True)))
 
         # 4. Transição de modo para PRODUÇÃO
         await self.set_system_mode("PRODUCTION")
@@ -450,7 +448,7 @@ class DemoManagementService:
         await self.session.flush()
 
         # Criar colaborador dedicado para o Administrador caso ele não possua
-        stmt_adm = select(UserAccount).where(UserAccount.is_admin == True).limit(1)
+        stmt_adm = select(UserAccount).where(UserAccount.is_admin.is_(True)).limit(1)
         adm_usr = (await self.session.execute(stmt_adm)).scalar_one_or_none()
         if adm_usr and not adm_usr.employee_id:
             sec_ti = sectors["TI-02"]
@@ -549,7 +547,7 @@ class DemoManagementService:
         ]
         for name, quantity, minimum, category in sample:
             exists = (
-                await self.session.execute(select(StockItem.id).where(StockItem.name == name, StockItem.is_demo == True))
+                await self.session.execute(select(StockItem.id).where(StockItem.name == name, StockItem.is_demo.is_(True)))
             ).first()
             if not exists:
                 self.session.add(

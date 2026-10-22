@@ -53,6 +53,10 @@ jobs:
       working-directory: ./backend
       run: uv sync --frozen
 
+    - name: Lint (ruff)
+      working-directory: ./backend
+      run: uv run ruff check app tests alembic
+
     - name: Migrations apply on an empty database
       working-directory: ./backend
       env:

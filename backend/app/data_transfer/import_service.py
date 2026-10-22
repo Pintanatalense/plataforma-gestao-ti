@@ -11,8 +11,6 @@ Importação de dados em CSV com:
 
 import csv
 import io
-import uuid
-from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -41,8 +39,8 @@ class DataImportService:
         reader = csv.reader(io.StringIO(content_str), delimiter=delimiter)
         try:
             headers = next(reader)
-        except StopIteration:
-            raise BusinessRuleException("O arquivo CSV enviado está vazio.")
+        except StopIteration as exc:
+            raise BusinessRuleException("O arquivo CSV enviado está vazio.") from exc
 
         headers = [h.strip() for h in headers if h.strip()]
         if not headers:
@@ -109,8 +107,8 @@ class DataImportService:
         reader = csv.reader(io.StringIO(content_str), delimiter=delimiter)
         try:
             headers = [h.strip() for h in next(reader)]
-        except StopIteration:
-            raise BusinessRuleException("O arquivo CSV está vazio.")
+        except StopIteration as exc:
+            raise BusinessRuleException("O arquivo CSV está vazio.") from exc
 
         header_indices = {h: idx for idx, h in enumerate(headers)}
         entity_lower = entity.lower()

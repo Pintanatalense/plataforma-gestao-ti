@@ -6,7 +6,7 @@ from datetime import datetime
 import uuid
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 # ==============================================================================
@@ -36,8 +36,6 @@ class CompanyOut(CompanyBase):
 
     model_config = ConfigDict(from_attributes=True)
 
-
-from pydantic import BaseModel, ConfigDict, Field, computed_field
 
 
 # ==============================================================================

@@ -5,7 +5,6 @@ do app); entrada = Events API em `/integrations/slack/events` (ver `slack_webhoo
 Configuração em `channel_configs['slack']`: config = {bot_name, team_id, app_base_url},
 segredos = {bot_token, signing_secret}.
 """
-import logging
 from typing import Any, ClassVar
 
 import httpx

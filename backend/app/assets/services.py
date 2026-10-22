@@ -196,7 +196,6 @@ class AssetService:
 
         from datetime import datetime
         now_str = datetime.now().strftime("%d/%m/%Y às %H:%M")
-        today_date = datetime.now().strftime("%d/%m/%Y")
 
         return f"""<!DOCTYPE html>
 <html lang="pt-BR">
