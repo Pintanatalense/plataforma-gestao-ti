@@ -1,6 +1,6 @@
 # 12. Roteiro de testes em ambiente real
 
-Tudo abaixo foi coberto por testes automatizados com serviços simulados (backend 300+, frontend 90+), **mas nunca rodou junto**: o Docker Desktop do desenvolvimento não subiu, então a pilha completa (Compose, Nginx, WebSocket, migrations em banco povoado) e os provedores reais (Telegram, Meta, Slack) **não foram exercitados**. Este roteiro existe para fechar essa lacuna, em ordem: cada etapa depende da anterior. Pare na primeira que falhar e anote o que apareceu.
+Tudo abaixo foi coberto por testes automatizados com serviços simulados (backend 450+, frontend 230+, mais a suíte em PostgreSQL no CI), **mas nunca rodou junto**: o Docker Desktop do desenvolvimento não subiu, então a pilha completa (Compose, Nginx, WebSocket, migrations em banco povoado) e os provedores reais (Telegram, Meta, Slack) **não foram exercitados**. Este roteiro existe para fechar essa lacuna, em ordem: cada etapa depende da anterior. Pare na primeira que falhar e anote o que apareceu.
 
 Marque `[x]` ao concluir. "Esperado" diz o que deve acontecer; qualquer outra coisa é defeito a relatar (mensagem na tela + `docker compose logs --tail=80 backend worker`).
 
@@ -11,7 +11,7 @@ Marque `[x]` ao concluir. "Esperado" diz o que deve acontecer; qualquer outra co
 ## Etapa 0 — Preparar a máquina
 
 - [ ] Docker Desktop **aberto e com o motor rodando** (`docker info` mostra `Server:`; se só mostra `Client:`, o motor está parado).
-- [ ] `git pull` na `main` (todas as fases já estão mescladas: 0, A a F, instalação).
+- [ ] `git pull` na `main` (o plano diretor das fases 1 a 3 e a recuperação de senha já estão mesclados; SLA ainda não existe).
 
 ## Etapa 1 — Instalação guiada
 
@@ -53,6 +53,23 @@ Com a base limpa, crie 2 usuários pela tela de Usuários: um com perfil **Solic
 6. Como administrador, abra Notificações → Entregas e regras: as entregas aparecem como `SENT`; em Regras, use o **simulador** com um evento de chamado.
 7. Em "Saúde dos canais", confira que o worker aparece ativo e que os jobs `backup.daily`, `retention.cleanup`, `stock.low_check` e `assets.warranty_check` estão listados.
 
+## Etapa 4c — Sessões, senhas e limites (segurança)
+
+Com 2 usuários comuns criados (A e B) e o administrador.
+
+1. Entre como A em **dois navegadores** (ou janela anônima). Em um deles, troque a senha pelo menu do seu usuário (canto superior direito) → **Alterar Senha**. **Esperado:** o outro navegador cai para o login na próxima ação ("Sessão encerrada"); o que trocou segue logado.
+2. Como administrador, em **Usuários**, use o botão **Resetar Senha** (ícone de cadeado) do usuário B. **Esperado:** aparece uma senha temporária **aleatória** (16 caracteres) para copiar, uma única vez; B perde a sessão aberta e, ao entrar com a senha temporária, é obrigado a trocá-la.
+3. Digite a senha errada 5 vezes seguidas para B. **Esperado:** na 6ª tentativa, "Muitas tentativas inválidas" (conta travada por 15 min); o administrador redefinindo a senha destrava.
+4. Com um usuário **sem** o perfil de administrador (A com `identity.users.update`), tente dar o papel de administrador a alguém ou mexer na conta de um administrador. **Esperado:** recusado ("Apenas administradores...").
+5. Tente rebaixar/inativar o **último** administrador. **Esperado:** recusado (409).
+6. Em um terminal: `for i in $(seq 1 60); do curl -s -o /dev/null -w "%{http_code} " -d "username=x@y.com&password=z" http://localhost/api/v1/identity/login; done`. **Esperado:** depois de algumas respostas `401`, passam a vir `429` (limite do Nginx por IP).
+
+## Etapa 4d — Empresa e Auditoria
+
+1. Organização → **Empresa**: troque o nome e envie uma logomarca PNG/JPEG/WebP de até 2 MB. **Esperado:** o menu lateral muda na hora; ao sair, a tela de **login** mostra a logo e o nome. SVG ou arquivo grande é recusado com mensagem clara.
+2. Administração & Sistema → **Auditoria**: **Esperado:** aparecem seus logins, a falha de senha da Etapa 4c, a criação/alteração de usuários, a redefinição de senha, a troca de nome da empresa e da logo (cada um com usuário e data/hora; o IP aparece nos detalhes só nos eventos de login e de recuperação de senha, e as alterações de usuário e de empresa mostram apenas os **nomes dos campos** alterados). Nenhuma linha mostra senha ou token.
+3. Filtre por **evento**, por trecho do **e-mail** e por **período**; use "Próxima/Anterior" (50 por página). Uma busca sem resultado mostra "Nenhum registro", e desligar o backend (`docker compose stop backend`) mostra **erro com Tentar novamente** (nunca "vazio").
+
 ## Etapa 4b — Importar inventário do GLPI Agent (XML)
 
 Menu **Importar Inventário (GLPI)** (exige `assets.write`). Use XMLs gerados pelo GLPI Agent (`glpi-agent --tasks inventory --local <pasta>`).
@@ -80,9 +97,25 @@ Faça na instalação com o **modelo de exemplo** (Etapa 2) ou cadastre itens na
 3. Gere um chamado novo: o e-mail deve chegar **fora** do horário de silêncio (20h–07h, fuso Fortaleza); dentro dele fica agendado para as 07h (o sino não atrasa).
 4. Reinicie tudo (`docker compose restart`) e repita o teste de envio: confirma que a senha cifrada continua legível (mesma `APP_ENCRYPTION_KEY`).
 
+## Etapa 6b — Recuperação de senha por e-mail
+
+Depende da Etapa 6 (SMTP funcionando). **Nasce desativada**: antes de ativar, a tela de login **não** tem "Esqueci minha senha" e `POST /api/v1/identity/password-reset/request` responde 404.
+
+1. Administração → aba de e-mail → cartão **Recuperação de senha por e-mail**. **Esperado:** botão **desabilitado** com a explicação enquanto o SMTP não estiver habilitado com **STARTTLS ou SSL/TLS** e **testado com sucesso** (use o teste de envio da Etapa 6 com a configuração salva).
+2. Como **administrador**, clique em **Ativar recuperação de senha** (depois de ativo, o botão vira **Desativar recuperação de senha**). **Esperado:** uma confirmação mostra servidor, remetente e **endereço dos links** — confira que o endereço é o que os usuários acessam (`app_base_url`); confirme. (Quem só gerencia o SMTP, sem ser administrador, é recusado.)
+3. Na tela de login, clique em **Esqueci minha senha**, informe o e-mail de um usuário. **Esperado:** mensagem genérica ("Se o e-mail estiver cadastrado...") — a mesma para e-mail inexistente; o e-mail com o link chega em instantes.
+4. Abra o link. **Esperado:** a barra de endereço **perde o token** (`/reset-password` sem `?token=`); defina a senha nova (8+ caracteres, confirmação igual) → "Senha redefinida". Entre com a nova senha; **sessões antigas** desse usuário caem.
+5. Abra o **mesmo link de novo**. **Esperado:** "Link inválido ou expirado". Peça dois links seguidos: só o **mais recente** funciona. O link vale 30 minutos.
+6. Peça 4 links para o mesmo e-mail em menos de 1 hora. **Esperado:** a resposta continua igual, mas só 3 e-mails chegam.
+7. Altere **qualquer** campo do SMTP (ex.: remetente) e salve. **Esperado:** a recuperação volta para **Desativada** (e some do login); é preciso testar o envio de novo e reativar.
+8. Em **Auditoria**, confira os eventos de recuperação (solicitada, concluída, configurada), sem o token e sem o e-mail.
+
+> O envio de e-mail real **nunca foi exercitado** nos testes automatizados (SMTP simulado): esta etapa é a primeira validação com o servidor da empresa. Se o link chegar com endereço errado, corrija o campo **URL Base da Plataforma (para links nos e-mails)** na configuração do SMTP.
+
 ## Etapa 7 — Backup e restauração
 
-1. Administração → **Backups do Banco de Dados** → gerar backup. **Esperado:** arquivo `.sql.gz` com SHA-256.
+1. Administração → **Backups do Banco de Dados** → gerar backup. **Esperado:** arquivo `.sql.gz` com SHA-256 visível na tabela; o botão de **Verificar integridade** da linha confere o arquivo e responde "Arquivo íntegro (SHA-256 confere)". Se a lista não carregar, a tela mostra **erro com Tentar novamente** (nunca "nenhum backup").
+   - Pelo terminal: `make backup` (banco + anexos/logo), `make verify-backup` e `make restore` (guia em [05](05-backup-e-restauracao.md)); o restore para o backend e o worker, valida o arquivo e guarda cópia de segurança antes de trocar os dados.
 2. Num ambiente **descartável**, siga [05-backup-e-restauracao.md](05-backup-e-restauracao.md) (`scripts/restore-backup.sh`). **Esperado:** dados voltam; a configuração de e-mail continua utilizável com a mesma chave.
 3. No demonstrativo: Administração → **Ambientes & Dados** → **Limpar dados de demonstração** (digite a frase pedida). **Esperado:** sai só o exemplo; catálogo inicial e Matriz permanecem; você continua logado.
 
@@ -133,7 +166,9 @@ Se existir instalação anterior com dados reais:
 
 1. **Backup antes** (Etapa 7). A migration da Fase D apaga `wa_outbox`, `wa_sessions` e `wa_configs` de forma **irreversível**.
 2. Defina `APP_ENCRYPTION_KEY` no `.env`, `git pull`, `docker compose up -d --build`, `docker compose logs -f backend`.
-3. **Esperado:** migrations aplicam sem erro; a senha SMTP antiga continua funcionando (foi cifrada pela migration `j0e1f2a3b4c5`); login funciona; chamados antigos aparecem.
+3. **Esperado:** migrations aplicam sem erro (inclui `q7a8b9c0d1e2` sessão por usuário, `r8b9c0d1e2f3` ajustes de índices e `s9c0d1e2f3a4` recuperação de senha); a senha SMTP antiga continua funcionando (foi cifrada pela migration `j0e1f2a3b4c5`); login funciona **sem deslogar ninguém** por causa da migration; chamados antigos aparecem.
+4. Novas variáveis no `.env` (veja `.env.example`): `ENABLE_QA_SEED` (padrão `false`: o botão de carga de QA responde 403) e `ENABLE_API_DOCS`. A imagem do backend agora usa `PyJWT`: tokens já emitidos continuam válidos.
+5. Recuperação de senha por e-mail vem **desativada**; ative só depois da Etapa 6b.
 
 ---
 
