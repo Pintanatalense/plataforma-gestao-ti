@@ -235,6 +235,7 @@ export class SidebarComponent implements OnInit {
       title: 'Administração & Sistema',
       items: [
         { icon: 'settings_applications', label: 'Painel Administrativo', route: '/admin', permission: 'identity.roles.read' },
+        { icon: 'history', label: 'Auditoria', route: '/audit', permission: 'audit.read' },
         { icon: 'people', label: 'Usuários', route: '/identity/users', permission: 'identity.users.read' },
         { icon: 'admin_panel_settings', label: 'Perfis (Roles)', route: '/identity/roles', permission: 'identity.roles.read' }
       ]

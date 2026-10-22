@@ -10,7 +10,8 @@ import os
 import time
 import aiofiles
 
-from app.core.dependencies import require_permission, get_token_payload
+from app.audit.repository import AuditRepository
+from app.core.dependencies import get_current_user_id, require_permission, get_token_payload
 from app.config import get_settings
 from app.core.exceptions import ValidationException
 from app.database import get_db
@@ -55,13 +56,27 @@ async def initialize_company(schema: CompanyCreate, db: AsyncSession = Depends(g
 
 
 @router.patch("/company", response_model=CompanyOut, dependencies=[Depends(require_permission("organization.company.update"))])
-async def update_company(schema: CompanyUpdate, db: AsyncSession = Depends(get_db)):
+async def update_company(
+    schema: CompanyUpdate,
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
     service = OrganizationService(db)
-    return await service.update_company(schema)
+    company = await service.update_company(schema)
+    # só os nomes dos campos: o conteúdo (CNPJ etc.) não precisa ir para a trilha
+    await AuditRepository(db).create(
+        event_type="organization.company_updated", entity_type="company", entity_id=company.id,
+        data={"changed": sorted(schema.model_dump(exclude_unset=True))}, user_id=user_id,
+    )
+    return company
 
 
 @router.post("/company/logo", summary="Upload da logomarca do sistema", dependencies=[Depends(require_permission("organization.company.update"))])
-async def upload_company_logo(file: UploadFile = File(...), db: AsyncSession = Depends(get_db)):
+async def upload_company_logo(
+    file: UploadFile = File(...),
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
     """Aceita apenas PNG/JPEG/WebP (até 2 MB), conferindo a assinatura do arquivo; SVG/HTML são recusados."""
     content = await file.read(_LOGO_MAX_BYTES + 1)
     if len(content) > _LOGO_MAX_BYTES:
@@ -87,7 +102,11 @@ async def upload_company_logo(file: UploadFile = File(...), db: AsyncSession = D
 
     # ?v=<epoch>: o nome do arquivo é sempre o mesmo, então sem isso o navegador mostraria a logo antiga em cache
     logo_url = f"/static/{filename}?v={int(time.time())}"
-    await service.update_company(CompanyUpdate(logo_url=logo_url))
+    company = await service.update_company(CompanyUpdate(logo_url=logo_url))
+    await AuditRepository(db).create(
+        event_type="organization.company_logo_updated", entity_type="company", entity_id=company.id,
+        data={"extension": extension}, user_id=user_id,
+    )
     return {"logo_url": logo_url, "message": "Logo atualizada com sucesso"}
 
 

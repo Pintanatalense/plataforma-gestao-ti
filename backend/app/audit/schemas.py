@@ -16,4 +16,6 @@ class AuditLogOut(BaseModel):
     entity_id: uuid.UUID
     data: dict[str, Any]
     user_id: uuid.UUID | None
+    user_email: str | None = None
+    user_name: str | None = None
     created_at: datetime
