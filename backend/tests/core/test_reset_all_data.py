@@ -12,6 +12,7 @@ from app.audit.models import AuditLog
 from app.backup.services import BackupService
 from app.identity.models import UserAccount
 from app.organization.models import Company, Employee, Sector, Unit
+from app.service_desk.models import Ticket, TicketInteraction
 from app.stock.models import StockItem
 from tests.factories import (
     headers_for,
@@ -20,6 +21,7 @@ from tests.factories import (
     make_employee,
     make_org,
     make_stock_item,
+    make_ticket_category,
     make_user,
 )
 
@@ -47,6 +49,17 @@ async def _populate(db: AsyncSession):
     cat = await make_asset_category(db)
     await make_asset(db, org, cat, employee=emp)
     await make_stock_item(db, org.unit)
+    category = await make_ticket_category(db, org.sector)
+    user = await make_user(db, emp)
+    ticket = Ticket(
+        title="Chamado", description="x", priority="LOW", status="OPENED", custom_fields={}, requester_id=emp.id,
+        origin_unit_id=org.unit.id, origin_sector_id=org.sector.id, responsible_sector_id=org.sector.id,
+        category_id=category.id,
+    )
+    db.add(ticket)
+    await db.commit()
+    db.add(TicketInteraction(ticket_id=ticket.id, author_id=user.id, message="oi", is_internal=False))
+    await db.commit()
     return org
 
 
@@ -59,10 +72,15 @@ async def test_admin_resets_work_data_and_keeps_accounts(client: AsyncClient, db
 
     assert resp.status_code == 200, resp.text
     assert resp.json()["summary"]["assets_removed"] == 1
-    for model in (Asset, StockItem, Employee, Unit, Sector):
+    assert resp.json()["summary"]["tickets_removed"] == 1
+    for model in (Asset, StockItem, Employee, Ticket, TicketInteraction):
         assert await _count(db_session, model) == 0, model.__name__
-    assert await _count(db_session, Company) == 1
-    assert await _count(db_session, UserAccount) == 2  # contas continuam
+    # a estrutura inicial (setor de TI) é recriada e as categorias voltam a apontar para ela
+    sectors = (await db_session.execute(select(Sector))).scalars().all()
+    assert [s.code for s in sectors] == ["TI-00"]
+    assert await _count(db_session, Unit) == 1
+    assert (await db_session.execute(select(UserAccount).where(UserAccount.employee_id.is_not(None)))).first() is None
+    assert await _count(db_session, UserAccount) == 3  # contas continuam (admin, outro e o do colaborador)
     assert (await db_session.get(UserAccount, other.id)) is not None
     event = (await db_session.execute(select(AuditLog).where(AuditLog.event_type == "system.data.reset"))).scalar_one()
     assert event.user_id == admin.id

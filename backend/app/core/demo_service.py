@@ -96,7 +96,7 @@ class DemoManagementService:
                 "filename": recent_backup.filename,
                 "created_at": recent_backup.created_at.isoformat() if recent_backup.created_at else None,
                 "size_bytes": recent_backup.size_bytes,
-                "is_usable": True,
+                "is_usable": has_backup,
             } if recent_backup else None,
         }
 
@@ -286,10 +286,10 @@ class DemoManagementService:
                 f"Confirmação inválida. Digite exatamente '{RESET_CONFIRMATION_PHRASE}' para prosseguir."
             )
 
-        has_backup, recent = await self.backup_service.get_recent_valid_backup(max_age_hours=24)
-        safety_backup = recent if has_backup else await self.backup_service.create_backup(user_id=admin_user_id)
+        # Operação destrutiva: sempre um backup novo (um de 24 h atrás não cobriria o trabalho de hoje).
+        safety_backup = await self.backup_service.create_backup(user_id=admin_user_id)
 
-        from app.core.starter_catalog import TI_SECTOR_CODE
+        from app.core.starter_catalog import TI_SECTOR_CODE, seed_starter_catalog
 
         ti_sector = (
             await self.session.execute(select(Sector).where(Sector.code == TI_SECTOR_CODE))
@@ -310,16 +310,7 @@ class DemoManagementService:
             "ip_address": ip_address,
         }
 
-        files_removed = 0
-        for att in (await self.session.execute(select(Attachment))).scalars().all():
-            physical_file = settings.attachment_storage_dir / att.file_path
-            if physical_file.exists():
-                try:
-                    physical_file.unlink()
-                    files_removed += 1
-                except OSError as err:
-                    logger.warning("Falha ao remover arquivo de anexo %s: %s", physical_file, err)
-        summary["physical_files_unlinked"] = files_removed
+        attachment_paths = [a.file_path for a in (await self.session.execute(select(Attachment))).scalars().all()]
 
         # Ordem das dependências: filhos antes dos pais.
         await self.session.execute(delete(Notification))
@@ -350,6 +341,15 @@ class DemoManagementService:
             unit_stmt = unit_stmt.where(Unit.id != keep_unit_id)
         await self.session.execute(sector_stmt)
         await self.session.execute(unit_stmt)
+        await self.session.flush()
+
+        # Sem o setor de TI inicial o sistema ficaria sem estrutura: recria o catálogo inicial e religa as categorias.
+        await seed_starter_catalog(self.session)
+        ti_id = (await self.session.execute(select(Sector.id).where(Sector.code == TI_SECTOR_CODE))).scalar_one()
+        await self.session.execute(update(TicketCategory).where(TicketCategory.default_sector_id.is_(None)).values(default_sector_id=ti_id))
+        # O que sobra é a estrutura real da instalação, não exemplo.
+        for model in (Company, Unit, Sector):
+            await self.session.execute(update(model).values(is_demo=False))
 
         await self.set_system_mode("PRODUCTION")
         self.session.add(
@@ -362,6 +362,18 @@ class DemoManagementService:
             )
         )
         await self.session.commit()
+
+        # Arquivos só saem do disco depois que o banco confirmou; antes, um erro deixaria anexos sem arquivo.
+        files_removed = 0
+        for rel in attachment_paths:
+            physical_file = settings.attachment_storage_dir / rel
+            if physical_file.exists():
+                try:
+                    physical_file.unlink()
+                    files_removed += 1
+                except OSError as err:
+                    logger.warning("Falha ao remover arquivo de anexo %s: %s", physical_file, err)
+        summary["physical_files_unlinked"] = files_removed
         logger.warning("Base zerada pelo usuário %s: %s", admin_user_id, summary)
 
         return {

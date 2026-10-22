@@ -722,7 +722,7 @@ scripts/restore-backup.sh banco.sql.gz arquivos_AAAAMMDD_HHMMSS.tar.gz</code></p
                 <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">
                   Apaga chamados, ativos, estoque, colaboradores, setores, unidades, anexos, notificações e inventários.
                   Mantém usuários, perfis, categorias, configurações (SMTP e canais), a empresa com a unidade e o setor de TI
-                  iniciais, a auditoria e os backups. Gera um backup de segurança antes. Só administradores.
+                  iniciais, a auditoria e os backups. As contas de usuário perdem o vínculo com o colaborador (revincule na tela Identidade). Gera um backup novo antes. Só administradores.
                 </p>
                 <button mat-flat-button color="warn" data-testid="reset-all-open" (click)="openResetAll()">
                   <mat-icon>delete_forever</mat-icon> Zerar toda a base
