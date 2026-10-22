@@ -1,4 +1,4 @@
-import { Component, Input, Output, EventEmitter, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, Input, Output, EventEmitter, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -7,6 +7,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { HttpEventType, HttpResponse } from '@angular/common/http';
 import { AttachmentsService, Attachment } from '../../../core/services/attachments.service';
+import { apiErrorMessage } from '../../../core/http/api-error';
 
 @Component({
   selector: 'app-attachments',
@@ -28,6 +29,12 @@ import { AttachmentsService, Attachment } from '../../../core/services/attachmen
         <button mat-stroked-button color="primary" (click)="fileInput.click()" [disabled]="isUploading">
           <mat-icon>upload_file</mat-icon> Anexar Arquivo
         </button>
+      </div>
+
+      <div *ngIf="loadError" class="attachments-error" role="alert" data-testid="attachments-error"
+           style="display:flex;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 14px;border-radius:8px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;margin-bottom:12px">
+        <span style="flex:1 1 220px">{{ loadError }}</span>
+        <button mat-stroked-button type="button" data-testid="attachments-retry" (click)="loadAttachments()">Tentar novamente</button>
       </div>
 
       <div *ngIf="isUploading" class="upload-progress">
@@ -213,6 +220,10 @@ export class AttachmentsComponent implements OnInit {
 
   private attachmentsService = inject(AttachmentsService);
   private snackBar = inject(MatSnackBar);
+  private cdr = inject(ChangeDetectorRef);
+
+  /** Falha ao listar: nunca aparece como "Nenhum anexo" (a lista pode existir e não ter sido lida). */
+  loadError: string | null = null;
 
   ngOnInit() {
     this.loadAttachments();
@@ -225,9 +236,17 @@ export class AttachmentsComponent implements OnInit {
 
   loadAttachments() {
     if (!this.entityType || !this.entityId) return;
-    this.attachmentsService.getAttachments(this.entityType, this.entityId).subscribe(data => {
-      this.attachments = data;
-      this.attachmentsChange.emit(this.attachments);
+    this.loadError = null;
+    this.attachmentsService.getAttachments(this.entityType, this.entityId).subscribe({
+      next: (data) => {
+        this.attachments = data;
+        this.attachmentsChange.emit(this.attachments);
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.loadError = apiErrorMessage(err, 'Não foi possível carregar os anexos.');
+        this.cdr.markForCheck();
+      }
     });
   }
 
