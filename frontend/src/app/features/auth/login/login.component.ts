@@ -65,6 +65,8 @@ export class LoginComponent {
       },
       error: (err: any) => {
         this.isLoading = false;
+        // sem conexão / erro do servidor: o interceptor já avisou (evita dois avisos iguais empilhados)
+        if (err?.status === 0 || err?.status >= 500) return;
         this.snackBar.open(apiErrorMessage(err, 'Não foi possível entrar. Tente novamente.'), 'Fechar', {
           duration: 5000,
           panelClass: ['error-snackbar']

@@ -1,5 +1,5 @@
+import { Location } from '@angular/common';
 import { Injectable, inject } from '@angular/core';
-import { Router } from '@angular/router';
 import { MatSnackBar } from '@angular/material/snack-bar';
 
 import { AuthService } from '../auth/auth.service';
@@ -11,13 +11,15 @@ const NOTICE_WINDOW_MS = 5000;
 @Injectable({ providedIn: 'root' })
 export class ErrorNotifier {
   private snackBar = inject(MatSnackBar);
-  private router = inject(Router);
+  private location = inject(Location);
   private auth = inject(AuthService);
   private lastNotice = 0;
 
   /** Token expirado/revogado: guarda a página atual para voltar a ela depois do login e encerra a sessão. */
   sessionEnded(): void {
-    this.auth.rememberReturnUrl(this.router.url);
+    // Location (endereço real do navegador), não router.url: num link aberto direto com token vencido a navegação
+    // inicial ainda não terminou e router.url vale "/".
+    this.auth.rememberReturnUrl(this.location.path());
     this.auth.logout();
     // sem dedupe: o usuário caiu no login e precisa saber por quê, mesmo que um aviso de rede tenha saído há pouco
     this.show('Sua sessão expirou ou foi encerrada. Entre novamente.', true);
