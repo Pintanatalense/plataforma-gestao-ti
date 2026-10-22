@@ -129,8 +129,8 @@ Os scripts na pasta `tests/` suportam direcionamento dinâmico via variável de 
 
 ```bash
 # Executando contra a base local padrão
-python tests/test_flow.py
+python scripts/smoke/smoke_flow.py
 
 # Executando contra um ambiente de homologação remoto ou containerizado
-TARGET_URL=http://staging.empresa.local:8000 python tests/test_flow.py
+TARGET_URL=http://staging.empresa.local:8000 python scripts/smoke/smoke_flow.py
 ```
