@@ -9,7 +9,9 @@
     </button>
   </div>
 
-  <div class="table-card mat-elevation-z1">
+  <app-load-state [loading]="isLoading" [error]="loadError" loadingText="Carregando chamados…" (retry)="loadTickets()"></app-load-state>
+
+  <div class="table-card mat-elevation-z1" *ngIf="!isLoading && !loadError">
     <table mat-table [dataSource]="tickets" class="tickets-table">
 
       <!-- Título Column -->

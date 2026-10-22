@@ -7,6 +7,8 @@ import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Router, RouterModule } from '@angular/router';
 import { Ticket, TicketService } from '../ticket.service';
+import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
+import { apiErrorMessage } from '../../../core/http/api-error';
 
 @Component({
   selector: 'app-ticket-list',
@@ -18,7 +20,8 @@ import { Ticket, TicketService } from '../ticket.service';
     MatIconModule,
     MatChipsModule,
     MatTooltipModule,
-    RouterModule
+    RouterModule,
+    LoadStateComponent
   ],
   templateUrl: './ticket-list.component.html',
   styleUrls: ['./ticket-list.component.scss']
@@ -31,6 +34,7 @@ export class TicketListComponent implements OnInit {
   tickets: Ticket[] = [];
   displayedColumns: string[] = ['title', 'requester', 'status', 'priority', 'created_at', 'actions'];
   isLoading = false;
+  loadError: string | null = null;
 
   ngOnInit() {
     this.loadTickets();
@@ -38,6 +42,7 @@ export class TicketListComponent implements OnInit {
 
   loadTickets() {
     this.isLoading = true;
+    this.loadError = null;
     this.ticketService.listTickets().subscribe({
       next: (data) => {
         this.tickets = [...data];
@@ -45,7 +50,8 @@ export class TicketListComponent implements OnInit {
         this.cdr.markForCheck();
       },
       error: (err) => {
-        console.error(err);
+        // falha de comunicação não pode parecer "nenhum chamado"
+        this.loadError = apiErrorMessage(err, 'Não foi possível carregar os chamados.');
         this.isLoading = false;
         this.cdr.markForCheck();
       }

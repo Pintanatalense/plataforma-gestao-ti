@@ -35,6 +35,8 @@ import { AttachmentsComponent } from '../../../shared/components/attachments/att
 import { AttachmentsService, Attachment } from '../../../core/services/attachments.service';
 import { Asset, AssetService } from '../../../core/services/asset.service';
 import { HttpResponse } from '@angular/common/http';
+import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
+import { apiErrorMessage } from '../../../core/http/api-error';
 
 @Component({
   selector: 'app-ticket-detail',
@@ -58,7 +60,8 @@ import { HttpResponse } from '@angular/common/http';
     MatMenuModule,
     MatTooltipModule,
     MatProgressSpinnerModule,
-    AttachmentsComponent
+    AttachmentsComponent,
+    LoadStateComponent
   ],
   templateUrl: './ticket-detail.component.html',
   styleUrls: ['./ticket-detail.component.scss']
@@ -84,6 +87,7 @@ export class TicketDetailComponent implements OnInit {
 
 
   ticket: Ticket | null = null;
+  loadError: string | null = null;
   history: TicketHistoryItem[] = [];
   attachments: Attachment[] = [];
   isLoadingHistory = false;
@@ -163,7 +167,14 @@ export class TicketDetailComponent implements OnInit {
     }
   }
 
+  /** Recarrega o chamado da rota (botão "Tentar novamente" do estado de erro). */
+  retryLoadTicket(): void {
+    const id = this.route.snapshot.paramMap.get('id');
+    if (id) this.loadTicket(id);
+  }
+
   loadTicket(id: string) {
+    this.loadError = null;
     this.ticketService.getTicket(id).subscribe({
       next: (data) => {
         this.ticket = data;
@@ -173,8 +184,15 @@ export class TicketDetailComponent implements OnInit {
         this.scrollToBottom();
       },
       error: (err) => {
-        console.error(err);
-        this.snackBar.open('Erro ao carregar chamado.', 'Fechar', { duration: 3000 });
+        const msg = apiErrorMessage(err, 'Não foi possível carregar o chamado.');
+        if (this.ticket) {
+          // recarga depois de uma ação já confirmada: mantém a conversa na tela e só avisa
+          this.snackBar.open(msg, 'Fechar', { duration: 5000 });
+        } else {
+          // carga inicial: a tela depende do chamado, mostra o motivo e o botão de tentar de novo (antes: tela em branco)
+          this.loadError = msg;
+        }
+        this.cdr.markForCheck();
       }
     });
   }

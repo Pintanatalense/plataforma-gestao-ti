@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { ActivatedRoute, RouterModule } from '@angular/router';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -11,6 +11,8 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 import { StockItem, StockMovement, StockService } from '../../../core/services/stock.service';
 import { OrganizationService } from '../../../core/services/organization.service';
+import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
+import { apiErrorMessage } from '../../../core/http/api-error';
 
 @Component({
   selector: 'app-stock-detail',
@@ -24,19 +26,23 @@ import { OrganizationService } from '../../../core/services/organization.service
     MatInputModule,
     MatFormFieldModule,
     MatSelectModule,
-    MatSnackBarModule
+    MatSnackBarModule,
+    LoadStateComponent
   ],
   templateUrl: './stock-detail.component.html',
   styleUrls: ['./stock-detail.component.scss']
 })
 export class StockDetailComponent implements OnInit {
   private route = inject(ActivatedRoute);
+  private cdr = inject(ChangeDetectorRef);
   private fb = inject(FormBuilder);
   private stockService = inject(StockService);
   private orgService = inject(OrganizationService);
   private snackBar = inject(MatSnackBar);
 
   item: StockItem | null = null;
+  itemId: string | null = null;
+  loadError: string | null = null;
   unitName: string = '';
   movements: StockMovement[] = [];
 
@@ -49,18 +55,38 @@ export class StockDetailComponent implements OnInit {
   ngOnInit(): void {
     const id = this.route.snapshot.paramMap.get('id');
     if (id) {
+      this.itemId = id;
       this.loadItem(id);
       this.loadMovements(id);
+    } else {
+      this.loadError = 'Identificador do item inválido.';
     }
   }
 
+  retryLoad(): void {
+    if (!this.itemId) return;
+    this.loadItem(this.itemId);
+    this.loadMovements(this.itemId);
+  }
+
   loadItem(id: string): void {
+    this.loadError = null;
     this.stockService.getItem(id).subscribe({
       next: (item) => {
         this.item = item;
+        this.cdr.markForCheck();
         this.loadUnitName(item.unit_id);
       },
-      error: (err) => console.error('Erro ao carregar item de estoque:', err)
+      error: (err) => {
+        const msg = apiErrorMessage(err, 'Não foi possível carregar o item de estoque.');
+        if (this.item) {
+          // recarga depois de registrar uma movimentação (já gravada): mantém a tela e só avisa
+          this.snackBar.open(msg, 'Fechar', { duration: 5000 });
+        } else {
+          this.loadError = msg; // carga inicial (antes: tela em branco)
+        }
+        this.cdr.markForCheck();
+      }
     });
   }
 
@@ -69,13 +95,17 @@ export class StockDetailComponent implements OnInit {
       next: (units) => {
         const u = units.find((x) => x.id === unitId);
         this.unitName = u ? u.name : 'N/A';
+        this.cdr.markForCheck();
       }
     });
   }
 
   loadMovements(id: string): void {
     this.stockService.listMovements(id).subscribe({
-      next: (movs) => (this.movements = movs),
+      next: (movs) => {
+        this.movements = movs;
+        this.cdr.markForCheck();
+      },
       error: (err) => console.error('Erro ao carregar movimentações:', err)
     });
   }

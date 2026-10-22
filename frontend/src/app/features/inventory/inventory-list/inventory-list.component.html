@@ -14,7 +14,9 @@
     </div>
   </div>
 
-  <div class="table-container">
+  <app-load-state [loading]="showInitialLoading" [error]="loadError" loadingText="Carregando inventários…" (retry)="loadAudits()"></app-load-state>
+
+  <div class="table-container" *ngIf="!showInitialLoading && !loadError">
     <div class="table-toolbar">
       <mat-form-field appearance="outline" class="search-field" subscriptSizing="dynamic">
         <mat-label>Pesquisar Auditorias</mat-label>

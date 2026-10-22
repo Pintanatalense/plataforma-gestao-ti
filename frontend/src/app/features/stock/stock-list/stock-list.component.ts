@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
@@ -9,6 +9,8 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { StockItem, StockService } from '../../../core/services/stock.service';
+import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
+import { apiErrorMessage } from '../../../core/http/api-error';
 import { OrganizationService, Unit } from '../../../core/services/organization.service';
 
 @Component({
@@ -22,24 +24,30 @@ import { OrganizationService, Unit } from '../../../core/services/organization.s
     MatIconModule,
     MatInputModule,
     MatFormFieldModule,
-    MatTooltipModule
+    MatTooltipModule,
+    LoadStateComponent
   ],
   templateUrl: './stock-list.component.html',
   styleUrls: ['./stock-list.component.scss']
 })
 export class StockListComponent implements OnInit {
   private stockService = inject(StockService);
+  private cdr = inject(ChangeDetectorRef);
   private orgService = inject(OrganizationService);
 
   displayedColumns: string[] = ['name', 'unit', 'quantity', 'status', 'actions'];
   dataSource = new MatTableDataSource<StockItem>([]);
   units: Unit[] = [];
+  loading = true;
+  loadError: string | null = null;
 
   ngOnInit(): void {
     this.loadData();
   }
 
   loadData(): void {
+    this.loading = true;
+    this.loadError = null;
     this.orgService.getUnits().subscribe({
       next: (units) => {
         this.units = units;
@@ -52,6 +60,8 @@ export class StockListComponent implements OnInit {
   loadItems(): void {
     this.stockService.getItems().subscribe({
       next: (items) => {
+        this.loading = false;
+        this.cdr.markForCheck();
         const enriched = items.map((item) => {
           const unit = this.units.find((u) => u.id === item.unit_id);
           return {
@@ -65,7 +75,12 @@ export class StockListComponent implements OnInit {
           return search.includes(filter);
         };
       },
-      error: (err) => console.error('Erro ao carregar estoque:', err)
+      error: (err) => {
+        // falha de comunicação não pode parecer "nenhum item"
+        this.loading = false;
+        this.loadError = apiErrorMessage(err, 'Não foi possível carregar o estoque.');
+        this.cdr.markForCheck();
+      }
     });
   }
 

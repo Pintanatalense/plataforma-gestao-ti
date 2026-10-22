@@ -16,7 +16,9 @@
     </div>
   </div>
 
-  <div class="table-container">
+  <app-load-state [loading]="loading" [error]="loadError" loadingText="Carregando ativos…" (retry)="loadAssets()"></app-load-state>
+
+  <div class="table-container" *ngIf="!loading && !loadError">
     <div class="table-toolbar">
       <mat-form-field appearance="outline" subscriptSizing="dynamic">
         <mat-label>Pesquisar equipamentos</mat-label>

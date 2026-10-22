@@ -14,7 +14,9 @@
     </div>
   </div>
 
-  <div class="table-container">
+  <app-load-state [loading]="loading" [error]="loadError" loadingText="Carregando estoque…" (retry)="loadData()"></app-load-state>
+
+  <div class="table-container" *ngIf="!loading && !loadError">
     <div class="table-toolbar">
       <mat-form-field appearance="outline" class="search-field" subscriptSizing="dynamic">
         <mat-label>Pesquisar Insumos</mat-label>

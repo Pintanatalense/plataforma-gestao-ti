@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatTableDataSource, MatTableModule } from '@angular/material/table';
@@ -11,6 +11,8 @@ import { MatDialog, MatDialogModule } from '@angular/material/dialog';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 import { InventoryAudit, InventoryService } from '../../../core/services/inventory.service';
+import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
+import { apiErrorMessage } from '../../../core/http/api-error';
 import { OrganizationService, Unit } from '../../../core/services/organization.service';
 import { CreateAuditDialogComponent } from './create-audit-dialog.component';
 
@@ -27,13 +29,15 @@ import { CreateAuditDialogComponent } from './create-audit-dialog.component';
     MatFormFieldModule,
     MatTooltipModule,
     MatDialogModule,
-    MatSnackBarModule
+    MatSnackBarModule,
+    LoadStateComponent
   ],
   templateUrl: './inventory-list.component.html',
   styleUrls: ['./inventory-list.component.scss']
 })
 export class InventoryListComponent implements OnInit {
   private inventoryService = inject(InventoryService);
+  private cdr = inject(ChangeDetectorRef);
   private orgService = inject(OrganizationService);
   private dialog = inject(MatDialog);
   private snackBar = inject(MatSnackBar);
@@ -42,6 +46,9 @@ export class InventoryListComponent implements OnInit {
   dataSource = new MatTableDataSource<InventoryAudit>([]);
   units: Unit[] = [];
 
+  loading = true;
+  loadError: string | null = null;
+
   ngOnInit(): void {
     this.loadUnits();
     this.loadAudits();
@@ -49,14 +56,26 @@ export class InventoryListComponent implements OnInit {
 
   loadUnits(): void {
     this.orgService.getUnits().subscribe({
-      next: (units) => (this.units = units),
+      next: (units) => {
+        this.units = units;
+        this.cdr.markForCheck();
+      },
       error: (err) => console.error('Erro ao carregar unidades:', err)
     });
   }
 
+  /** Spinner no lugar da tabela só na carga inicial: numa recarga (ex.: depois de criar auditoria) a tabela e o filtro ficam. */
+  get showInitialLoading(): boolean {
+    return this.loading && this.dataSource.data.length === 0;
+  }
+
   loadAudits(): void {
+    this.loading = true;
+    this.loadError = null;
     this.inventoryService.listAudits().subscribe({
       next: (audits) => {
+        this.loading = false;
+        this.cdr.markForCheck();
         this.dataSource.data = audits;
         this.dataSource.filterPredicate = (data: InventoryAudit, filter: string) => {
           const unit = data.unit_name || this.getUnitName(data.unit_id);
@@ -64,7 +83,17 @@ export class InventoryListComponent implements OnInit {
           return search.includes(filter);
         };
       },
-      error: (err) => console.error('Erro ao listar inventários:', err)
+      error: (err) => {
+        // falha de comunicação não pode parecer "nenhuma auditoria cadastrada"
+        this.loading = false;
+        const msg = apiErrorMessage(err, 'Não foi possível carregar os inventários.');
+        if (this.dataSource.data.length > 0) {
+          this.snackBar.open(msg, 'Fechar', { duration: 5000 }); // recarga: mantém a lista que já está na tela
+        } else {
+          this.loadError = msg;
+        }
+        this.cdr.markForCheck();
+      }
     });
   }
 
