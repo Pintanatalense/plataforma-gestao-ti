@@ -1,5 +1,6 @@
-import { ChangeDetectorRef, Component, inject, OnInit } from '@angular/core';
+import { ChangeDetectorRef, Component, DestroyRef, inject, OnInit } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 
@@ -37,6 +38,7 @@ export class LoginComponent implements OnInit {
   private snackBar = inject(MatSnackBar);
   private orgService = inject(OrganizationService);
   private cdr = inject(ChangeDetectorRef);
+  private destroyRef = inject(DestroyRef);
 
   companyName = 'Gestão de TI';
   companyLogoUrl: string | null = null;
@@ -50,7 +52,7 @@ export class LoginComponent implements OnInit {
   hidePassword = true;
 
   ngOnInit() {
-    this.orgService.branding$.subscribe((branding) => {
+    this.orgService.branding$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((branding) => {
       if (!branding) return;
       this.companyName = branding.name || 'Gestão de TI';
       this.companyLogoUrl = branding.logo_url;

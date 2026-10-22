@@ -1,5 +1,6 @@
-import { ChangeDetectorRef, Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, DestroyRef, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterModule } from '@angular/router';
 import { MatListModule } from '@angular/material/list';
 import { MatIconModule } from '@angular/material/icon';
@@ -182,6 +183,7 @@ export class SidebarComponent implements OnInit {
   private authService = inject(AuthService);
   private orgService = inject(OrganizationService);
   private cdr = inject(ChangeDetectorRef);
+  private destroyRef = inject(DestroyRef);
 
   companyName: string = 'Gestão de TI';
   companyLogoUrl: string | null = null;
@@ -240,7 +242,7 @@ export class SidebarComponent implements OnInit {
   ];
 
   ngOnInit(): void {
-    this.orgService.branding$.subscribe((branding) => {
+    this.orgService.branding$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((branding) => {
       if (!branding) return;
       this.companyName = branding.name || 'Gestão de TI';
       this.companyLogoUrl = branding.logo_url;
