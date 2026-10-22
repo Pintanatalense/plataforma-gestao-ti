@@ -1,7 +1,7 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { Router, provideRouter } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
-import { Subject, of } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { Notification, NotificationsService } from '../../../core/services/notifications.service';
 import { InboxComponent, notificationLink } from './inbox.component';
 
@@ -52,6 +52,19 @@ describe('InboxComponent', () => {
     expect(rows()[0].classList.contains('unread')).toBe(true);
     expect(rows()[1].classList.contains('unread')).toBe(false);
     expect(fixture.nativeElement.textContent).toContain('1 não lida(s)');
+  });
+
+  it('does not claim "no notifications" when the load failed, and a failed "load more" is reported', async () => {
+    await create([]);
+    service.list.mockReturnValue(throwError(() => new Error('x')));
+    component.reload();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Não foi possível carregar as notificações.');
+    expect(fixture.nativeElement.textContent).not.toContain('Nenhuma notificação');
+
+    component.loadMore();
+    fixture.detectChanges();
+    expect(fixture.nativeElement.textContent).toContain('Não foi possível carregar mais notificações.');
   });
 
   it('shows an empty state', async () => {
