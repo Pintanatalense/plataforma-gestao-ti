@@ -9,7 +9,8 @@
   </div>
 
   <div class="form-container">
-    <form [formGroup]="form" (ngSubmit)="onSubmit()" class="premium-form">
+    <app-load-state [error]="dependencyError" (retry)="loadDependencies()"></app-load-state>
+    <form *ngIf="!dependencyError" [formGroup]="form" (ngSubmit)="onSubmit()" class="premium-form">
       
       <h3>
         <mat-icon color="primary">devices</mat-icon>

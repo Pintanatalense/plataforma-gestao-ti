@@ -18,12 +18,14 @@ import { Employee, OrganizationService, Unit } from '../../../core/services/orga
 import { AttachmentsService, Attachment } from '../../../core/services/attachments.service';
 import { AttachmentsComponent } from '../../../shared/components/attachments/attachments.component';
 import { apiErrorMessage } from '../../../core/http/api-error';
+import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
 
 @Component({
   selector: 'app-asset-detail',
   standalone: true,
   imports: [
     CommonModule,
+    LoadStateComponent,
     RouterModule,
     FormsModule,
     ReactiveFormsModule,
@@ -119,13 +121,38 @@ export class AssetDetailComponent implements OnInit {
     });
   }
 
+  /** Partes do detalhe que falharam (movimentações, anexos, chamados): aparecem como aviso, não como lista vazia. */
+  supportErrors: Record<string, string> = {};
+
+  get supportErrorList(): string[] {
+    return Object.values(this.supportErrors);
+  }
+
+  private setSupportError(key: string, err: unknown, what: string): void {
+    this.supportErrors = { ...this.supportErrors, [key]: apiErrorMessage(err, `Não foi possível carregar ${what}.`) };
+    this.cdr.markForCheck();
+  }
+
+  private clearSupportError(key: string): void {
+    const { [key]: _removed, ...rest } = this.supportErrors;
+    this.supportErrors = rest;
+  }
+
+  reloadSupport(): void {
+    if (!this.asset) return;
+    this.loadMovements(this.asset.id);
+    this.loadAttachments(this.asset.id);
+    this.loadTickets(this.asset.id);
+  }
+
   loadMovements(id: string): void {
     this.assetService.getMovementsByAsset(id).subscribe({
       next: (movs) => {
+        this.clearSupportError('movements');
         this.movements = movs || [];
         this.cdr.markForCheck();
       },
-      error: (err) => console.error('Erro ao carregar movimentações:', err)
+      error: (err) => this.setSupportError('movements', err, 'as movimentações do ativo')
     });
   }
 
@@ -134,10 +161,11 @@ export class AssetDetailComponent implements OnInit {
     if (!assetId) return;
     this.attachmentsService.getAttachments('ASSET', assetId).subscribe({
       next: (atts) => {
+        this.clearSupportError('attachments');
         this.attachments = atts || [];
         this.cdr.markForCheck();
       },
-      error: (err) => console.error('Erro ao carregar anexos do ativo:', err)
+      error: (err) => this.setSupportError('attachments', err, 'os anexos do ativo')
     });
   }
 
@@ -147,13 +175,14 @@ export class AssetDetailComponent implements OnInit {
     this.isLoadingTickets = true;
     this.assetService.getAssetTickets(assetId).subscribe({
       next: (tickets) => {
+        this.clearSupportError('tickets');
         this.tickets = tickets || [];
         this.isLoadingTickets = false;
         this.cdr.markForCheck();
       },
       error: (err) => {
         this.isLoadingTickets = false;
-        console.error('Erro ao carregar chamados do ativo:', err);
+        this.setSupportError('tickets', err, 'os chamados do ativo');
       }
     });
   }

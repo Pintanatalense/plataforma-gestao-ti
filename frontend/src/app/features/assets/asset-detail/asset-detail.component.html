@@ -1,4 +1,7 @@
 <div class="page-container" *ngIf="!isLoading && asset">
+  <div data-testid="support-errors" *ngIf="supportErrorList.length">
+    <app-load-state *ngFor="let msg of supportErrorList" [error]="msg" (retry)="reloadSupport()"></app-load-state>
+  </div>
   <!-- HEADER -->
   <div class="page-header">
     <div class="header-content">

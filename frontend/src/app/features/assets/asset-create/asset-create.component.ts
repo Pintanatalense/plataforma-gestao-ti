@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
@@ -12,6 +12,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { AssetCategory, AssetService } from '../../../core/services/asset.service';
 import { Employee, OrganizationService, Unit } from '../../../core/services/organization.service';
 import { apiErrorMessage } from '../../../core/http/api-error';
+import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
 
 interface SpecKey {
   key: string;
@@ -23,6 +24,7 @@ interface SpecKey {
   standalone: true,
   imports: [
     CommonModule,
+    LoadStateComponent,
     ReactiveFormsModule,
     RouterModule,
     MatButtonModule,
@@ -36,6 +38,7 @@ interface SpecKey {
   styleUrls: ['./asset-create.component.scss']
 })
 export class AssetCreateComponent implements OnInit {
+  private cdr = inject(ChangeDetectorRef);
   private fb = inject(FormBuilder);
   private assetService = inject(AssetService);
   private orgService = inject(OrganizationService);
@@ -66,25 +69,41 @@ export class AssetCreateComponent implements OnInit {
     });
   }
 
+  /** Listas de apoio (unidades, categorias...): sem elas o formulário não pode ser preenchido. */
+  dependencyError: string | null = null;
+
+  private failDependency(err: unknown, what: string): void {
+    this.dependencyError = apiErrorMessage(err, `Não foi possível carregar ${what}.`);
+    this.cdr.markForCheck();
+  }
+
   loadDependencies(): void {
+    this.dependencyError = null;
     this.assetService.getCategories().subscribe({
-      next: (cats) => (this.categories = cats),
-      error: (err) => console.error('Erro ao carregar categorias:', err)
+      next: (cats) => {
+        this.categories = cats;
+        this.cdr.markForCheck();
+      },
+      error: (err) => this.failDependency(err, 'as listas de apoio (categorias)')
     });
 
     this.orgService.getUnits().subscribe({
       next: (units) => {
         this.units = units;
+        this.cdr.markForCheck();
         if (units.length > 0 && !this.form.get('unit_id')?.value) {
           this.form.get('unit_id')?.setValue(units[0].id);
         }
       },
-      error: (err) => console.error('Erro ao carregar unidades:', err)
+      error: (err) => this.failDependency(err, 'as listas de apoio (unidades)')
     });
 
     this.orgService.getEmployees().subscribe({
-      next: (emps) => (this.employees = emps),
-      error: (err) => console.error('Erro ao carregar colaboradores:', err)
+      next: (emps) => {
+        this.employees = emps;
+        this.cdr.markForCheck();
+      },
+      error: (err) => this.snackBar.open(apiErrorMessage(err, 'Não foi possível carregar os colaboradores; o responsável é opcional.'), 'Fechar', { duration: 5000 })
     });
   }
 
