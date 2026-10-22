@@ -125,6 +125,8 @@ export class AuditComponent implements OnInit {
   loadError: string | null = null;
   /** Filtros aplicados na última busca (a paginação não deve usar o que foi digitado e ainda não aplicado). */
   private applied: AuditFilters = {};
+  /** Só a resposta da busca mais recente vale (cliques rápidos não deixam uma resposta antiga sobrescrever a nova). */
+  private requestSeq = 0;
 
   ngOnInit(): void {
     this.audit.eventTypes().subscribe({
@@ -170,14 +172,17 @@ export class AuditComponent implements OnInit {
   load(): void {
     this.isLoading = true;
     this.loadError = null;
+    const seq = ++this.requestSeq;
     this.audit.list(this.applied, PAGE_SIZE, this.offset).subscribe({
       next: (page) => {
+        if (seq !== this.requestSeq) return;
         this.entries = page.items;
         this.total = page.total;
         this.isLoading = false;
         this.cdr.markForCheck();
       },
       error: (err) => {
+        if (seq !== this.requestSeq) return;
         this.entries = [];
         this.total = 0;
         this.isLoading = false;

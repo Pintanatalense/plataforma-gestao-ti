@@ -93,4 +93,18 @@ describe('Tela de auditoria', () => {
     req.flush([], { headers: { 'X-Total-Count': '0' } });
     expect(component.filters.user).toBe('');
   });
+
+  it('a late answer to an older search never overwrites the newest one', async () => {
+    backend.expectOne(list).flush([], { headers: { 'X-Total-Count': '0' } });
+    await settle();
+    component.go(1);
+    const older = backend.expectOne(list);
+    component.go(1);
+    const newer = backend.expectOne(list);
+    newer.flush([entry(2)], { headers: { 'X-Total-Count': '200' } });
+    older.flush([entry(1)], { headers: { 'X-Total-Count': '999' } });
+    await settle();
+    expect(component.total).toBe(200);
+    expect(component.entries[0].id).toBe('id-2');
+  });
 });

@@ -57,7 +57,7 @@ class AuditRepository:
             conditions.append(AuditLog.event_type == event_type)
         if entity_type:
             conditions.append(AuditLog.entity_type == entity_type)
-        if user:
+        if user and user.strip():  # só espaços não vira "%%" (casaria todo mundo)
             # só o texto digitado, escapado: % e _ do usuário não viram curinga
             escaped = user.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
             conditions.append(
