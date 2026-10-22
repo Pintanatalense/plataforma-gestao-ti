@@ -22,7 +22,9 @@ class DatabaseBackup(Base, TimestampMixin):
     checksum_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="SUCCESS")  # "SUCCESS", "FAILED"
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
-    created_by_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("user_accounts.id"), nullable=True)
+    created_by_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True
+    )
 
     created_by = relationship("UserAccount", lazy="selectin")
 

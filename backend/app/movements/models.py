@@ -52,7 +52,9 @@ class AssetMovement(Base, TimestampMixin):
     status_to: Mapped[str | None] = mapped_column(String(50), nullable=True)
 
     # Vínculo formal com Chamado do Service Desk (quando aplicável)
-    ticket_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sd_ticket.id", ondelete="SET NULL"), nullable=True)
+    ticket_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sd_ticket.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
     # Details
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)

@@ -29,7 +29,7 @@ class StockItem(Base, TimestampMixin):
     unit_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("units.id"), nullable=False)
     quantity: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     min_quantity: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
     category_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("stk_categories.id"), nullable=True)
     technical_specs: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
