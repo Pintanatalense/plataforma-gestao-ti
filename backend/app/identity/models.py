@@ -49,7 +49,7 @@ class UserAccount(Base, TimestampMixin, SoftDeleteMixin):
     # Flags de acesso
     must_change_password: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     is_admin: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)  # Superadmin
-    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     
     # Versão da sessão: todo token carrega a versão vigente (claim `tv`); incrementar invalida os tokens
     # já emitidos (troca/reset de senha, desativação, mudança de perfil). Ver ADR-016.

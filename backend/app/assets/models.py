@@ -59,7 +59,7 @@ class Asset(Base, TimestampMixin, SoftDeleteMixin):
     purchase_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     warranty_expires: Mapped[date | None] = mapped_column(Date, nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
-    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
     # Localização / Responsável
     unit_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("units.id"), nullable=False)

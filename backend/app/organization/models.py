@@ -31,7 +31,7 @@ class Company(Base, TimestampMixin, SoftDeleteMixin):
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     cnpj: Mapped[str | None] = mapped_column(String(20), unique=True, nullable=True)
     logo_url: Mapped[str | None] = mapped_column(String(255), nullable=True)
-    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
     units: Mapped[list["Unit"]] = relationship("Unit", back_populates="company", cascade="all, delete-orphan")
 
@@ -46,7 +46,7 @@ class Unit(Base, TimestampMixin, SoftDeleteMixin):
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
     type: Mapped[str] = mapped_column(String(20), default="FILIAL", nullable=False)  # "MATRIZ" ou "FILIAL"
     address: Mapped[str | None] = mapped_column(Text, nullable=True)
-    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
     company: Mapped["Company"] = relationship("Company", back_populates="units")
     sectors: Mapped[list["Sector"]] = relationship("Sector", back_populates="unit", cascade="all, delete-orphan")
@@ -62,7 +62,7 @@ class Sector(Base, TimestampMixin, SoftDeleteMixin):
     unit_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("units.id"), nullable=False)
     name: Mapped[str] = mapped_column(String(255), nullable=False)
     code: Mapped[str] = mapped_column(String(50), unique=True, nullable=False)
-    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
     unit: Mapped["Unit"] = relationship("Unit", back_populates="sectors", lazy="selectin")
     employees: Mapped[list["Employee"]] = relationship("Employee", back_populates="sector", foreign_keys="[Employee.sector_id]")
@@ -82,7 +82,7 @@ class Employee(Base, TimestampMixin, SoftDeleteMixin):
     position: Mapped[str | None] = mapped_column(String(255), nullable=True)
     phone: Mapped[str | None] = mapped_column(String(30), nullable=True)
     status: Mapped[str] = mapped_column(String(20), default="ATIVO", nullable=False)  # "ATIVO", "AFASTADO", "DESLIGADO"
-    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
     
     deactivated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
