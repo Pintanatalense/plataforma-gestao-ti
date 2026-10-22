@@ -3,10 +3,11 @@ MOD-02 — Organização (Schemas)
 """
 
 from datetime import datetime
+import re
 import uuid
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, Field, computed_field
+from pydantic import BaseModel, ConfigDict, Field, computed_field, field_validator
 
 
 # ==============================================================================
@@ -23,10 +24,23 @@ class CompanyCreate(CompanyBase):
     pass
 
 
+# A logomarca é sempre um arquivo servido pelo próprio sistema (upload em /company/logo), nunca uma URL externa:
+# uma URL de terceiros no menu de todos os usuários seria um rastreador.
+# o upload só gera .png, .jpg e .webp; fullmatch + [0-9] evitam aceitar "\n" final e dígitos Unicode
+_LOGO_URL = re.compile(r"/static/logo\.(png|jpg|webp)(\?v=[0-9]+)?")
+
+
 class CompanyUpdate(BaseModel):
     name: Optional[str] = Field(None, max_length=255)
     cnpj: Optional[str] = Field(None, max_length=20)
     logo_url: Optional[str] = Field(None, max_length=255)
+
+    @field_validator("logo_url")
+    @classmethod
+    def _logo_must_be_local(cls, value: Optional[str]) -> Optional[str]:
+        if value is not None and not _LOGO_URL.fullmatch(value):
+            raise ValueError("logo_url deve ser o arquivo enviado em /company/logo (/static/logo.<png|jpg|webp>)")
+        return value
 
 
 class CompanyOut(CompanyBase):
