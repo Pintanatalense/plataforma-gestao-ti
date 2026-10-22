@@ -93,7 +93,7 @@ export function notificationLink(n: Pick<Notification, 'entity_type' | 'entity_i
             </div>
           </li>
         } @empty {
-          @if (!loading()) {
+          @if (!loading() && !error()) {
             <li class="empty">
               <mat-icon>notifications_none</mat-icon>
               <p>Nenhuma notificação com esses filtros.</p>
@@ -182,13 +182,17 @@ export class InboxComponent implements OnInit {
 
   loadMore(): void {
     this.loading.set(true);
+    this.error.set('');
     this.service.list(this.filters(this.items().length)).subscribe({
       next: (list) => {
         this.items.update((current) => [...current, ...list]);
         this.hasMore.set(list.length === PAGE_SIZE);
         this.loading.set(false);
       },
-      error: () => this.loading.set(false)
+      error: () => {
+        this.error.set('Não foi possível carregar mais notificações.');
+        this.loading.set(false);
+      }
     });
   }
 

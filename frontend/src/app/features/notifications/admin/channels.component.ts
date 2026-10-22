@@ -74,6 +74,9 @@ export function channelState(c: { enabled: boolean; circuit_open: boolean; dead:
     }
 
     <h3 class="jobs-title">Agenda do worker</h3>
+    @if (jobsFailed()) {
+      <p class="error" role="alert" data-testid="jobs-error">Não foi possível carregar a agenda do worker.</p>
+    }
     <div class="table-wrap">
       <table class="grid" data-testid="jobs-table">
         <thead><tr><th>Ativo</th><th>Tarefa</th><th>Agenda</th><th>Próxima</th><th>Última</th><th></th></tr></thead>
@@ -129,6 +132,7 @@ export class ChannelsComponent implements OnInit {
   health = signal<HealthResponse | null>(null);
   jobs = signal<JobItem[]>([]);
   loadFailed = signal(false);
+  jobsFailed = signal(false);
   testResult = signal<Record<string, { ok: boolean; detail: string }>>({});
 
   ngOnInit(): void {
@@ -148,7 +152,13 @@ export class ChannelsComponent implements OnInit {
       },
       error: () => this.loadFailed.set(true)
     });
-    this.api.listJobs().subscribe({ next: (r) => this.jobs.set(r.items), error: () => {} });
+    this.api.listJobs().subscribe({
+      next: (r) => {
+        this.jobs.set(r.items);
+        this.jobsFailed.set(false);
+      },
+      error: () => this.jobsFailed.set(true)
+    });
   }
 
   name(channel: string): string {

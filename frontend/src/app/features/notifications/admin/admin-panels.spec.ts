@@ -233,6 +233,16 @@ describe('ChannelsComponent', () => {
     expect(fixture.nativeElement.textContent).toContain('Desabilitado.');
   });
 
+  it('reports a failed schedule load instead of an empty table', async () => {
+    const api = {
+      health: vi.fn().mockReturnValue(of(health({ status: 'healthy' }, []))),
+      listJobs: vi.fn().mockReturnValue(throwError(() => new Error('x'))),
+      testChannel: vi.fn()
+    };
+    const fixture = await mount(ChannelsComponent, api, false);
+    expect(fixture.nativeElement.querySelector('[data-testid="jobs-error"]')).toBeTruthy();
+  });
+
   it('runs a job on demand and only when it is enabled', async () => {
     const jobs = [
       { name: 'backup.daily', schedule: 'daily:02:00', enabled: true, next_run_at: '2026-10-18T05:00:00Z', last_run_at: '2026-10-17T05:00:00Z', last_status: 'error', last_error: 'disco cheio' },
