@@ -274,3 +274,115 @@ async def test_execute_requires_assets_write_permission(client: AsyncClient, db_
         headers=headers,
     )
     assert resp.status_code == 403
+
+
+# ---------------------------------------------------------------------------
+# Regressões da revisão: série duplicada, JSON inválido e nomes repetidos
+# ---------------------------------------------------------------------------
+
+
+def _create_decision(filename: str, tag: str, category_id, unit_id) -> dict:
+    return {"filename": filename, "action": "create", "tag": tag, "category_id": str(category_id), "unit_id": str(unit_id)}
+
+
+async def test_serial_number_is_unique_in_the_database(db_session: AsyncSession):
+    from sqlalchemy.exc import IntegrityError
+
+    org = await make_org(db_session)
+    category = await make_asset_category(db_session)
+    first = await make_asset(db_session, org, category)
+    second = await make_asset(db_session, org, category)
+    first.serial_number = "SN-UNIQUE"
+    await db_session.commit()
+    second.serial_number = "SN-UNIQUE"
+    with pytest.raises(IntegrityError):
+        await db_session.commit()
+    await db_session.rollback()
+
+
+async def test_execute_same_serial_twice_in_batch_second_is_row_error(client: AsyncClient, db_session: AsyncSession):
+    org = await make_org(db_session)
+    category = await make_asset_category(db_session)
+    admin = await make_user(db_session, is_admin=True)
+    headers = headers_for(admin, "assets.write")
+
+    decisions = [
+        _create_decision("a.xml", "TAG-A", category.id, org.unit.id),
+        _create_decision("b.xml", "TAG-B", category.id, org.unit.id),
+    ]
+    resp = await client.post(
+        URL_EXECUTE,
+        files=[_xml_file("a.xml", serial="SN-DUP"), _xml_file("b.xml", serial="SN-DUP")],
+        data={"decisions": json.dumps(decisions)},
+        headers=headers,
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert [r["outcome"] for r in body["results"]] == ["created", "error"]
+    assert "SN-DUP" in body["results"][1]["error_message"]
+    assert body["created_count"] == 1 and body["error_count"] == 1
+
+
+async def test_analyze_serial_of_inactive_asset_is_row_error(client: AsyncClient, db_session: AsyncSession):
+    org = await make_org(db_session)
+    category = await make_asset_category(db_session)
+    asset = await make_asset(db_session, org, category)
+    asset.serial_number = "SN-INACTIVE"
+    asset.is_active = False
+    await db_session.commit()
+
+    admin = await make_user(db_session, is_admin=True)
+    resp = await client.post(
+        URL_ANALYZE, files=[_xml_file("a.xml", serial="SN-INACTIVE")], headers=headers_for(admin, "assets.write")
+    )
+    assert resp.status_code == 200
+    row = resp.json()["rows"][0]
+    assert row["status"] == "ERROR"
+    assert asset.tag in row["error_message"]
+
+
+async def test_execute_update_with_serial_owned_by_another_asset_is_row_error(client: AsyncClient, db_session: AsyncSession):
+    org = await make_org(db_session)
+    category = await make_asset_category(db_session)
+    owner = await make_asset(db_session, org, category)
+    owner.serial_number = "SN-OWNER"
+    other = await make_asset(db_session, org, category)
+    await db_session.commit()
+
+    admin = await make_user(db_session, is_admin=True)
+    decisions = [{"filename": "a.xml", "action": "update", "asset_id": str(other.id)}]
+    resp = await client.post(
+        URL_EXECUTE,
+        files=[_xml_file("a.xml", serial="SN-OWNER")],
+        data={"decisions": json.dumps(decisions)},
+        headers=headers_for(admin, "assets.write"),
+    )
+    assert resp.status_code == 200
+    result = resp.json()["results"][0]
+    assert result["outcome"] == "error"
+    assert owner.tag in result["error_message"]
+
+
+@pytest.mark.parametrize("bad", ["{nao-json", "{}", '"texto"', '[{"filename": "a.xml"}]'])
+async def test_execute_invalid_decisions_is_422_not_500(client: AsyncClient, db_session: AsyncSession, bad: str):
+    admin = await make_user(db_session, is_admin=True)
+    resp = await client.post(
+        URL_EXECUTE,
+        files=[_xml_file("a.xml", serial="SN-X")],
+        data={"decisions": bad},
+        headers=headers_for(admin, "assets.write"),
+    )
+    assert resp.status_code == 422
+
+
+async def test_repeated_filenames_are_rejected(client: AsyncClient, db_session: AsyncSession):
+    admin = await make_user(db_session, is_admin=True)
+    headers = headers_for(admin, "assets.write")
+    files = [_xml_file("a.xml", serial="SN-1"), _xml_file("a.xml", serial="SN-2")]
+
+    analyze = await client.post(URL_ANALYZE, files=files, headers=headers)
+    assert analyze.status_code == 422
+    assert "a.xml" in analyze.json()["error"]["message"]
+
+    execute = await client.post(URL_EXECUTE, files=files, data={"decisions": "[]"}, headers=headers)
+    assert execute.status_code == 422

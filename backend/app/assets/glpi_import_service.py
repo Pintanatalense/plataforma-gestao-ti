@@ -42,13 +42,23 @@ class GlpiAssetImportService:
     def _oversized_message(self) -> str:
         return f"Arquivo maior que {MAX_FILE_BYTES // (1024 * 1024)} MB."
 
+    def _validate_batch(self, files: list[UploadFile]) -> None:
+        if len(files) > MAX_FILES_PER_REQUEST:
+            raise ValidationException(f"Envie no máximo {MAX_FILES_PER_REQUEST} arquivos por vez.")
+        # As decisões do /execute são casadas pelo nome do arquivo: nomes repetidos se confundiriam.
+        names = [f.filename or "arquivo.xml" for f in files]
+        duplicated = sorted({n for n in names if names.count(n) > 1})
+        if duplicated:
+            raise ValidationException(
+                f"Há arquivos com o mesmo nome: {', '.join(duplicated)}. Renomeie ou envie um de cada vez."
+            )
+
     # -------------------------------------------------------------------
     # Analyze
     # -------------------------------------------------------------------
 
     async def analyze(self, files: list[UploadFile]) -> GlpiImportAnalyzeResponse:
-        if len(files) > MAX_FILES_PER_REQUEST:
-            raise ValidationException(f"Envie no máximo {MAX_FILES_PER_REQUEST} arquivos por vez.")
+        self._validate_batch(files)
 
         rows = [await self._analyze_one(file) for file in files]
         return GlpiImportAnalyzeResponse(rows=rows)
@@ -66,7 +76,19 @@ class GlpiAssetImportService:
             return GlpiImportRow(filename=filename, status="ERROR", error_message=str(exc))
 
         serial_number = parsed["serial_number"]
-        matched = await self.repo.get_asset_by_serial_number(serial_number) if serial_number else None
+        matched = await self.repo.get_asset_by_serial_number(serial_number, include_inactive=True) if serial_number else None
+
+        if matched and not matched.is_active:
+            return GlpiImportRow(
+                filename=filename,
+                status="ERROR",
+                parsed=parsed["glpi_inventory"],
+                serial_number=serial_number,
+                error_message=(
+                    f"A série {serial_number} pertence a um ativo inativo (patrimônio {matched.tag}); "
+                    "reative ou resolva o cadastro antes de importar."
+                ),
+            )
 
         if matched:
             return GlpiImportRow(
@@ -98,8 +120,7 @@ class GlpiAssetImportService:
         decisions: list[GlpiImportExecuteRowRequest],
         author_id: uuid.UUID,
     ) -> GlpiImportExecuteResponse:
-        if len(files) > MAX_FILES_PER_REQUEST:
-            raise ValidationException(f"Envie no máximo {MAX_FILES_PER_REQUEST} arquivos por vez.")
+        self._validate_batch(files)
 
         decisions_by_filename = {d.filename: d for d in decisions}
         results: list[GlpiImportExecuteResult] = []
@@ -164,6 +185,10 @@ class GlpiAssetImportService:
             raise ValidationException("asset_id é obrigatório para atualizar um ativo existente.")
 
         asset = await self.asset_service.get_asset(decision.asset_id)
+        if serial_number:
+            owner = await self.repo.get_asset_by_serial_number(serial_number, include_inactive=True)
+            if owner and owner.id != asset.id:
+                raise ValidationException(f"A série {serial_number} já pertence ao ativo {owner.tag}.")
         # Sobrescreve só as chaves que o GLPI de fato informa (cpu/ram/storage/os/...),
         # preservando qualquer outro campo que o admin tenha preenchido manualmente.
         merged_specs = {**(asset.technical_specs or {}), **build_display_specs(glpi_inventory)}
@@ -194,6 +219,11 @@ class GlpiAssetImportService:
     ) -> GlpiImportExecuteResult:
         if not decision.tag or not decision.category_id or not decision.unit_id:
             raise ValidationException("Patrimônio, Categoria e Unidade são obrigatórios para criar um novo ativo.")
+
+        if serial_number:
+            owner = await self.repo.get_asset_by_serial_number(serial_number, include_inactive=True)
+            if owner:
+                raise ValidationException(f"A série {serial_number} já pertence ao ativo {owner.tag}.")
 
         create = AssetCreate(
             tag=decision.tag,

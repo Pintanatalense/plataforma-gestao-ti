@@ -103,9 +103,25 @@ export class AssetGlpiImportComponent {
 
   onFilesSelected(event: Event): void {
     const input = event.target as HTMLInputElement;
-    const files = input.files ? Array.from(input.files) : [];
-    this.selectedFiles = [...this.selectedFiles, ...files];
+    const incoming = input.files ? Array.from(input.files) : [];
     input.value = '';
+
+    // O servidor casa as decisões pelo nome do arquivo: dois arquivos com o mesmo nome se confundiriam.
+    const names = new Set(this.selectedFiles.map((f) => f.name));
+    const accepted: File[] = [];
+    const ignored: string[] = [];
+    for (const file of incoming) {
+      if (names.has(file.name)) {
+        ignored.push(file.name);
+      } else {
+        names.add(file.name);
+        accepted.push(file);
+      }
+    }
+    this.selectedFiles = [...this.selectedFiles, ...accepted];
+    if (ignored.length > 0) {
+      this.snackBar.open(`Ignorado(s) por já existir arquivo com o mesmo nome: ${ignored.join(', ')}`, 'Fechar', { duration: 6000 });
+    }
   }
 
   removeFile(file: File): void {

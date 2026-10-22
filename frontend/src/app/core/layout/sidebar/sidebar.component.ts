@@ -215,6 +215,7 @@ export class SidebarComponent implements OnInit {
         { icon: 'upload_file', label: 'Importar Inventário (GLPI)', route: '/assets/import-glpi', permission: 'assets.write' },
         { icon: 'category', label: 'Categorias de Ativos', route: '/assets/categories', permission: 'assets.read' },
         { icon: 'inventory_2', label: 'Estoque & Insumos', route: '/stock', permission: 'stock.read' },
+        { icon: 'category', label: 'Categorias de Estoque', route: '/stock/categories', permission: 'stock.read' },
         { icon: 'fact_check', label: 'Inventário Periódico', route: '/inventory', permission: 'inventory.read' }
       ]
     },

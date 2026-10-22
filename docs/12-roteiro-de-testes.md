@@ -53,6 +53,17 @@ Com a base limpa, crie 2 usuários pela tela de Usuários: um com perfil **Solic
 6. Como administrador, abra Notificações → Entregas e regras: as entregas aparecem como `SENT`; em Regras, use o **simulador** com um evento de chamado.
 7. Em "Saúde dos canais", confira que o worker aparece ativo e que os jobs `backup.daily`, `retention.cleanup`, `stock.low_check` e `assets.warranty_check` estão listados.
 
+## Etapa 4b — Importar inventário do GLPI Agent (XML)
+
+Menu **Importar Inventário (GLPI)** (exige `assets.write`). Use XMLs gerados pelo GLPI Agent (`glpi-agent --tasks inventory --local <pasta>`).
+
+1. Envie 2 ou 3 arquivos `.xml` e clique em analisar. **Esperado:** cada máquina aparece como **Novo** (série ainda não cadastrada) ou **Já cadastrado** (série igual à de um ativo).
+2. Tente adicionar de novo um arquivo com o **mesmo nome**. **Esperado:** é ignorado, com aviso.
+3. Nos **Novos**, preencha Patrimônio, Categoria e Unidade e confirme. **Esperado:** ativos criados em "Em estoque", com CPU, memória, disco, SO e MAC na ficha técnica.
+4. Importe de novo o mesmo XML. **Esperado:** aparece como **Já cadastrado**; atualizar só refaz as especificações técnicas, sem gerar movimentação.
+5. Dois XMLs com a **mesma série** no mesmo lote: o segundo falha com mensagem clara (a série já pertence a outro ativo), sem derrubar o lote.
+6. XML com série de um ativo **inativo**: a análise avisa e não deixa importar.
+
 ## Etapa 5 — Alertas automáticos (estoque e garantia)
 
 Faça na instalação com o **modelo de exemplo** (Etapa 2) ou cadastre itens na base limpa (item com quantidade ≤ mínimo; ativo com garantia em até 30 dias).
