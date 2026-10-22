@@ -122,7 +122,7 @@
       </div>
 
       <div class="table-wrap">
-        <table mat-table [dataSource]="recentTickets" class="dashboard-table">
+        <table mat-table [dataSource]="state.tickets === 'ok' ? recentTickets : []" class="dashboard-table">
           
           <ng-container matColumnDef="title">
             <th mat-header-cell *matHeaderCellDef> Assunto </th>
@@ -192,7 +192,7 @@
           <h3>Insumos Críticos</h3>
         </div>
         
-        <div class="low-stock-list" *ngIf="lowStockList.length > 0; else stockOk">
+        <div class="low-stock-list" *ngIf="state.stock === 'ok' && lowStockList.length > 0; else stockOk">
           <div *ngFor="let item of lowStockList.slice(0, 4)" class="stock-alert-item" [routerLink]="['/stock', item.id]">
             <div class="item-info">
               <span class="item-name">{{ item.name }}</span>

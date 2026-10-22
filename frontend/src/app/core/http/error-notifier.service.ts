@@ -19,7 +19,8 @@ export class ErrorNotifier {
   sessionEnded(): void {
     this.auth.rememberReturnUrl(this.router.url);
     this.auth.logout();
-    this.show('Sua sessão expirou ou foi encerrada. Entre novamente.');
+    // sem dedupe: o usuário caiu no login e precisa saber por quê, mesmo que um aviso de rede tenha saído há pouco
+    this.show('Sua sessão expirou ou foi encerrada. Entre novamente.', true);
   }
 
   /** Servidor fora do ar (status 0) ou com erro interno (5xx). */
@@ -31,9 +32,9 @@ export class ErrorNotifier {
     );
   }
 
-  private show(message: string): void {
+  private show(message: string, force = false): void {
     const now = Date.now();
-    if (now - this.lastNotice < NOTICE_WINDOW_MS) return;
+    if (!force && now - this.lastNotice < NOTICE_WINDOW_MS) return;
     this.lastNotice = now;
     this.snackBar.open(message, 'Fechar', { duration: 6000, panelClass: ['error-snackbar'] });
   }

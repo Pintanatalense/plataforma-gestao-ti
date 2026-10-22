@@ -83,7 +83,7 @@ export class AuthService {
 
   /** Guarda a página em que a sessão caiu para voltar a ela depois do login (só caminhos internos). */
   rememberReturnUrl(url: string): void {
-    if (!this.isSafeReturnUrl(url) || url.startsWith('/login') || url.startsWith('/setup')) return;
+    if (!this.isSafeReturnUrl(url) || ['/login', '/setup', '/change-password'].some((p) => url.startsWith(p))) return;
     try {
       sessionStorage.setItem(this.RETURN_URL_KEY, url);
     } catch {}
@@ -102,7 +102,7 @@ export class AuthService {
 
   // Evita redirecionamento aberto: só caminho interno ("/x"), nunca "//host" nem esquema ("http:", "javascript:").
   private isSafeReturnUrl(url: string): boolean {
-    return /^\/(?!\/)[^\s]*$/.test(url) && !url.includes('://') && !url.includes('\\');
+    return url.length <= 2048 && /^\/(?!\/)[^\s]*$/.test(url) && !url.includes('://') && !url.includes('\\');
   }
 
   logout() {

@@ -61,9 +61,15 @@ describe('AuthService', () => {
       }
     );
 
-    it('does not remember the login or setup pages', () => {
+    it('does not remember the login, setup or change-password pages', () => {
       service.rememberReturnUrl('/login');
       service.rememberReturnUrl('/setup');
+      service.rememberReturnUrl('/change-password');
+      expect(service.takeReturnUrl()).toBeNull();
+    });
+
+    it('refuses absurdly long URLs', () => {
+      service.rememberReturnUrl('/' + 'a'.repeat(3000));
       expect(service.takeReturnUrl()).toBeNull();
     });
 

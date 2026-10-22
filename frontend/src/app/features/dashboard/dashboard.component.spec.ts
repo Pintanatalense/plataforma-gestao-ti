@@ -3,7 +3,7 @@ import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
-import { of, throwError } from 'rxjs';
+import { Subject, of, throwError } from 'rxjs';
 import { AuthService } from '../../core/auth/auth.service';
 import { AssetService } from '../../core/services/asset.service';
 import { InventoryService } from '../../core/services/inventory.service';
@@ -33,6 +33,28 @@ describe('Dashboard', () => {
         { provide: AssetService, useValue: { getAssets: () => of([{ status: 'IN_USE' }, { status: 'IN_STOCK' }]) } },
         { provide: StockService, useValue: { getItems: () => stockResult } },
         { provide: InventoryService, useValue: { listAudits: () => of([{ status: 'OPENED' }]) } }
+      ]
+    }).compileComponents();
+    fixture = TestBed.createComponent(Dashboard);
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+  }
+
+  /** Monta o painel com serviços falsos; só os métodos informados mudam (o resto responde com dados simples). */
+  async function mountWith(overrides: { getItems?: ReturnType<typeof vi.fn>; listTickets?: ReturnType<typeof vi.fn> }) {
+    await TestBed.configureTestingModule({
+      imports: [Dashboard],
+      providers: [
+        provideHttpClient(),
+        provideHttpClientTesting(),
+        provideRouter([]),
+        provideAnimationsAsync(),
+        { provide: AuthService, useValue: { hasPermission: () => true } },
+        { provide: TicketService, useValue: { listTickets: overrides.listTickets ?? vi.fn().mockReturnValue(of([])) } },
+        { provide: AssetService, useValue: { getAssets: () => of([]) } },
+        { provide: StockService, useValue: { getItems: overrides.getItems ?? vi.fn().mockReturnValue(of([])) } },
+        { provide: InventoryService, useValue: { listAudits: () => of([]) } }
       ]
     }).compileComponents();
     fixture = TestBed.createComponent(Dashboard);
@@ -86,5 +108,44 @@ describe('Dashboard', () => {
     expect(listTickets).toHaveBeenCalledTimes(2);
     expect(text('kpi-tickets')).toBe('1');
     expect(text('dashboard-error')).toBeNull();
+  });
+
+  it('does not keep showing the previous stock list when a reload fails', async () => {
+    const low = { id: 's1', name: 'Toner', quantity: 0, min_quantity: 5 };
+    const getItems = vi
+      .fn()
+      .mockReturnValueOnce(of([low]))
+      .mockReturnValue(throwError(() => ({ status: 500, error: {} })));
+    TestBed.resetTestingModule();
+    await mountWith({ getItems });
+    expect(fixture.nativeElement.textContent).toContain('Toner');
+
+    fixture.componentInstance.loadMetrics();
+    fixture.detectChanges();
+    await fixture.whenStable();
+    fixture.detectChanges();
+
+    expect(text('kpi-stock')).toBe('—');
+    expect(fixture.nativeElement.textContent).not.toContain('Toner');
+  });
+
+  it('ignores a slow answer from an earlier load that arrives after a newer one', async () => {
+    const first = new Subject<unknown[]>();
+    const listTickets = vi
+      .fn()
+      .mockReturnValueOnce(first) // carga 1: fica pendente
+      .mockReturnValue(of([ticket('OPENED')])); // carga 2: responde na hora
+    TestBed.resetTestingModule();
+    await mountWith({ listTickets });
+
+    fixture.componentInstance.loadMetrics(); // carga 2
+    fixture.detectChanges();
+    await fixture.whenStable();
+    expect(text('kpi-tickets')).toBe('1');
+
+    first.next([ticket('OPENED'), ticket('OPENED'), ticket('OPENED')]); // resposta atrasada da carga 1
+    first.complete();
+    fixture.detectChanges();
+    expect(text('kpi-tickets')).toBe('1'); // não foi sobrescrito
   });
 });

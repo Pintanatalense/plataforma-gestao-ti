@@ -5,6 +5,7 @@ import { provideRouter } from '@angular/router';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { Router } from '@angular/router';
 import { of, throwError } from 'rxjs';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { AuthService } from '../../../core/auth/auth.service';
 import { LoginComponent } from './login.component';
 
@@ -64,5 +65,19 @@ describe('LoginComponent', () => {
       expect(component.isLoading).toBe(false);
       expect(router.navigateByUrl).not.toHaveBeenCalled();
     });
+  });
+
+  it('shows the real reason when the account is locked (429), not a generic text', () => {
+    const auth = TestBed.inject(AuthService);
+    // o componente importa MatSnackBarModule: usa a instância dele, não a da raiz
+    const snack = (component as unknown as { snackBar: MatSnackBar }).snackBar;
+    const open = vi.spyOn(snack, 'open').mockReturnValue(undefined as never);
+    vi.spyOn(auth, 'getSetupStatus').mockReturnValue(of({ setup_required: false }));
+    vi.spyOn(auth, 'login').mockReturnValue(
+      throwError(() => ({ status: 429, error: { error: { message: 'Muitas tentativas inválidas. Tente novamente em alguns minutos.' } } }))
+    );
+    component.loginForm.setValue({ email: 'a@b.com', password: 'x' });
+    component.onSubmit();
+    expect(open.mock.calls[0][0]).toBe('Muitas tentativas inválidas. Tente novamente em alguns minutos.');
   });
 });

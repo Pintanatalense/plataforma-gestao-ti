@@ -89,4 +89,13 @@ describe('jwtInterceptor', () => {
     backend.expectOne('/api/v1/a').flush({}, { status: 500, statusText: 'x' });
     expect(status).toBe(500);
   });
+
+  it('still tells the user the session ended when a network notice came just before (no 5 s suppression)', () => {
+    localStorage.setItem('access_token', 'tok');
+    fail('/api/v1/a', 0); // aviso de rede
+    fail('/api/v1/b', 401); // sessão caiu logo em seguida
+    expect(logout).toHaveBeenCalledTimes(1);
+    expect(snack.open).toHaveBeenCalledTimes(2);
+    expect(snack.open.mock.calls[1][0]).toMatch(/sessão/i);
+  });
 });

@@ -56,6 +56,8 @@ export class Dashboard implements OnInit {
     audits: 'inventário'
   };
   loadError = '';
+  /** Número da carga em andamento: respostas de uma carga anterior (mais lentas) são descartadas. */
+  private loadSeq = 0;
 
   // Metrics
   totalTickets = 0;
@@ -77,6 +79,8 @@ export class Dashboard implements OnInit {
   }
 
   loadMetrics(): void {
+    const seq = ++this.loadSeq;
+    const live = () => seq === this.loadSeq;
     this.loadError = '';
     this.state = {
       tickets: 'loading',
@@ -88,25 +92,27 @@ export class Dashboard implements OnInit {
     // Tickets
     this.ticketService.listTickets().subscribe({
       next: (tickets) => {
+        if (!live()) return;
         this.totalTickets = tickets.length;
         this.openedTickets = tickets.filter((t) => t.status === 'OPENED').length;
         this.inProgressTickets = tickets.filter((t) => t.status === 'IN_PROGRESS').length;
         this.recentTickets = [...tickets.slice(0, 5)];
         this.finish('tickets', 'ok');
       },
-      error: (err) => this.fail('tickets', err)
+      error: (err) => live() && this.fail('tickets', err)
     });
 
     // Assets
     if (this.authService.hasPermission('assets.read')) {
       this.assetService.getAssets().subscribe({
         next: (assets) => {
+          if (!live()) return;
           this.totalAssets = assets.length;
           this.assetsInUse = assets.filter((a) => a.status === 'IN_USE').length;
           this.assetsInStock = assets.filter((a) => a.status === 'IN_STOCK').length;
           this.finish('assets', 'ok');
         },
-        error: (err) => this.fail('assets', err)
+        error: (err) => live() && this.fail('assets', err)
       });
     }
 
@@ -114,12 +120,13 @@ export class Dashboard implements OnInit {
     if (this.authService.hasPermission('stock.read')) {
       this.stockService.getItems().subscribe({
         next: (items) => {
+          if (!live()) return;
           this.totalStockItems = items.length;
           this.lowStockList = items.filter((i) => i.quantity <= i.min_quantity);
           this.lowStockItemsCount = this.lowStockList.length;
           this.finish('stock', 'ok');
         },
-        error: (err) => this.fail('stock', err)
+        error: (err) => live() && this.fail('stock', err)
       });
     }
 
@@ -127,12 +134,13 @@ export class Dashboard implements OnInit {
     if (this.authService.hasPermission('inventory.read')) {
       this.inventoryService.listAudits().subscribe({
         next: (audits) => {
+          if (!live()) return;
           this.activeAuditsCount = audits.filter(
             (a) => a.status === 'OPENED' || a.status === 'IN_PROGRESS'
           ).length;
           this.finish('audits', 'ok');
         },
-        error: (err) => this.fail('audits', err)
+        error: (err) => live() && this.fail('audits', err)
       });
     }
   }
