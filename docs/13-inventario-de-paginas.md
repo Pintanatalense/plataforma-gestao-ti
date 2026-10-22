@@ -34,7 +34,7 @@ Gerado em 2026-10-22 a partir de `frontend/src/app/app.routes.ts` e dos componen
 | `/admin` | `identity.roles.read` | [`features/admin/admin.component.ts`](../frontend/src/app/features/admin/admin.component.ts) | ✔ componente de estados | `features/admin/admin-reset-all.spec.ts`<br>`features/admin/admin-states.spec.ts`<br>`features/admin/admin.component.spec.ts` |
 | `/notifications` | qualquer usuário logado | [`features/notifications/inbox/inbox.component.ts`](../frontend/src/app/features/notifications/inbox/inbox.component.ts) | ✔ tratamento próprio | `features/notifications/inbox/inbox.component.spec.ts` |
 | `/notifications/preferences` | qualquer usuário logado | [`features/notifications/preferences/preferences.component.ts`](../frontend/src/app/features/notifications/preferences/preferences.component.ts) | ✔ tratamento próprio | `features/notifications/preferences/preferences.component.spec.ts` |
-| `/notifications/admin` | `notifications.manage` | [`features/notifications/admin/notifications-admin.component.ts`](../frontend/src/app/features/notifications/admin/notifications-admin.component.ts) | contêiner de abas (cada painel tem teste em admin-panels.spec.ts) | `features/notifications/admin/admin-panels.spec.ts` |
+| `/notifications/admin` | `notifications.manage` | [`features/notifications/admin/notifications-admin.component.ts`](../frontend/src/app/features/notifications/admin/notifications-admin.component.ts) | contêiner de abas (cada painel tem teste em admin-panels.spec.ts) | `features/notifications/admin/admin-panels.spec.ts` (só os painéis Entregas, Regras e Canais) |
 | `/service-desk` | qualquer usuário logado | [`features/service-desk/ticket-list/ticket-list.component.ts`](../frontend/src/app/features/service-desk/ticket-list/ticket-list.component.ts) | ✔ componente de estados | `features/list-screens.spec.ts`<br>`features/service-desk/ticket-list/ticket-list.component.spec.ts` |
 | `/service-desk/categories` | `service_desk.tickets.manage` | [`features/service-desk/category-list/category-list.component.ts`](../frontend/src/app/features/service-desk/category-list/category-list.component.ts) | ✔ componente de estados | `features/category-lists-states.spec.ts` |
 | `/service-desk/new` | qualquer usuário logado | [`features/service-desk/ticket-create/ticket-create.component.ts`](../frontend/src/app/features/service-desk/ticket-create/ticket-create.component.ts) | ✔ formulário (erro no envio exibido) | `features/service-desk/ticket-create/ticket-create-attachments.spec.ts`<br>`features/service-desk/ticket-create/ticket-create.component.spec.ts` |
@@ -54,12 +54,14 @@ Gerado em 2026-10-22 a partir de `frontend/src/app/app.routes.ts` e dos componen
 ## Resumo
 
 - 32 rotas; as 21 que exigem permissão específica estão na coluna Acesso, as demais exigem apenas login (ou são públicas, como o fluxo de senha).
-- Nenhuma rota sem tratamento visível de falha (conferido por leitura: ver critérios).
-- Nenhuma rota sem ao menos um spec que a referencie.
+- Toda rota tem tratamento visível de falha na carga principal; as falhas de chamadas auxiliares estão listadas abaixo.
+- Toda rota tem ao menos um spec que a referencie, exceto `/notifications/admin` (contêiner de abas; ver abaixo).
 
 ## O que este inventário não prova
 
 - Não foi aberto navegador para cada tela: a evidência é de código e de testes automatizados (jsdom), não de uso real. A validação em uso real é o `docs/12-roteiro-de-testes.md`.
 - Acessibilidade: o ESLint registra avisos (clique sem teclado, rótulo sem controle) ainda não corrigidos; ver `frontend/eslint.config.js`.
 - Dívida de estilo: centenas de `*ngIf/*ngFor` aguardam migração para `@if/@for`; dezenas de usos de `any`.
-- Pendências conhecidas (`error: () => {}` que ainda engole falha de chamada auxiliar): `features/assets/asset-detail/asset-detail.component.ts:257,265` (unidades e colaboradores), `features/service-desk/category-list/category-list.component.ts:999`, `features/service-desk/ticket-create/ticket-create.component.ts:94,104` e a contagem de não lidas da caixa de entrada (`features/notifications/inbox/inbox.component.ts:200`, só o contador do menu).
+- Pendências conhecidas (falha de chamada auxiliar que não aparece para o usuário): `features/assets/asset-detail/asset-detail.component.ts:257,265` (unidades e colaboradores), `features/service-desk/category-list/category-list.component.ts:999`, `features/service-desk/ticket-create/ticket-create.component.ts:94,104`, `features/service-desk/ticket-detail/ticket-detail.component.ts:161,206,305,423` (categorias, anexos, itens de estoque, colaboradores), `features/assets/asset-glpi-import/asset-glpi-import.component.ts:93,100` (categorias e unidades só vão para o console) e a contagem de não lidas da caixa de entrada (`features/notifications/inbox/inbox.component.ts:200`, só o contador do menu). Duas são intencionais e comentadas no código: `features/audit/audit.component.ts:137` e `features/auth/login/login.component.ts:70`.
+- `/assets/import-glpi` tem "tratamento próprio" para a análise e a importação (erros mostrados), mas não para as listas de apoio acima.
+- `/notifications/admin` é só um contêiner de abas: nenhum spec referencia o componente em si; os painéis Entregas, Regras e Canais têm teste em `admin-panels.spec.ts`, e os painéis Telegram, WhatsApp e Slack não têm spec.
