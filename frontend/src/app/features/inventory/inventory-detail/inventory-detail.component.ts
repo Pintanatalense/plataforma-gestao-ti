@@ -186,7 +186,7 @@ export class InventoryDetailComponent implements OnInit {
       },
       error: (err) => {
         console.error('Erro ao adicionar item:', err);
-        const msg = err?.error?.detail || 'Erro ao registrar item.';
+        const msg = apiErrorMessage(err, 'Erro ao registrar item.');
         this.snackBar.open(msg, 'Fechar', { duration: 5000 });
       }
     });

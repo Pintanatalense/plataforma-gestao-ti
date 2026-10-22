@@ -11,6 +11,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 import { StockCategory, StockService } from '../../../core/services/stock.service';
 import { OrganizationService, Unit } from '../../../core/services/organization.service';
+import { apiErrorMessage } from '../../../core/http/api-error';
 
 interface SpecKey {
   key: string;
@@ -133,7 +134,7 @@ export class StockCreateComponent implements OnInit {
       },
       error: (err) => {
         console.error('Erro ao cadastrar insumo:', err);
-        const errorMsg = err?.error?.detail || 'Erro ao cadastrar insumo.';
+        const errorMsg = apiErrorMessage(err, 'Erro ao cadastrar insumo.');
         this.snackBar.open(errorMsg, 'Fechar', { duration: 5000 });
       }
     });

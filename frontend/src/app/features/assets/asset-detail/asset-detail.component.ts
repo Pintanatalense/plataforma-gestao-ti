@@ -17,6 +17,7 @@ import { Asset, AssetMovement, AssetService } from '../../../core/services/asset
 import { Employee, OrganizationService, Unit } from '../../../core/services/organization.service';
 import { AttachmentsService, Attachment } from '../../../core/services/attachments.service';
 import { AttachmentsComponent } from '../../../shared/components/attachments/attachments.component';
+import { apiErrorMessage } from '../../../core/http/api-error';
 
 @Component({
   selector: 'app-asset-detail',
@@ -206,7 +207,7 @@ export class AssetDetailComponent implements OnInit {
       },
       error: (err) => {
         this.isUploadingStatement = false;
-        this.snackBar.open(err.error?.detail || err.error?.error?.message || 'Erro ao anexar termo assinado', 'Fechar', { duration: 4000 });
+        this.snackBar.open(apiErrorMessage(err, 'Erro ao anexar termo assinado'), 'Fechar', { duration: 4000 });
         this.cdr.detectChanges();
       }
     });
@@ -518,7 +519,7 @@ export class AssetDetailComponent implements OnInit {
   }
 
   private showError(err: any): void {
-    const msg = err.error?.error?.message || err.error?.detail || 'Erro ao realizar operação.';
+    const msg = apiErrorMessage(err, 'Erro ao realizar operação.');
     this.snackBar.open(msg, 'Fechar', { duration: 4500 });
   }
 

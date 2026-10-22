@@ -11,6 +11,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 import { AssetCategory, AssetService } from '../../../core/services/asset.service';
 import { Employee, OrganizationService, Unit } from '../../../core/services/organization.service';
+import { apiErrorMessage } from '../../../core/http/api-error';
 
 interface SpecKey {
   key: string;
@@ -125,7 +126,7 @@ export class AssetCreateComponent implements OnInit {
       },
       error: (err) => {
         console.error('Erro ao cadastrar ativo:', err);
-        const errorMsg = err?.error?.detail || 'Erro ao cadastrar ativo.';
+        const errorMsg = apiErrorMessage(err, 'Erro ao cadastrar ativo.');
         this.snackBar.open(errorMsg, 'Fechar', { duration: 5000 });
       }
     });

@@ -13,6 +13,7 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 import { StockCategory, StockService } from '../../../core/services/stock.service';
+import { apiErrorMessage } from '../../../core/http/api-error';
 
 interface SpecFieldItem {
   name: string;
@@ -816,7 +817,7 @@ export class StockCategoryListComponent implements OnInit {
         },
         error: (err) => {
           console.error('Erro ao atualizar categoria:', err);
-          const msg = err?.error?.detail || 'Erro ao atualizar categoria.';
+          const msg = apiErrorMessage(err, 'Erro ao atualizar categoria.');
           this.snackBar.open(msg, 'Fechar', { duration: 4000 });
         }
       });
@@ -829,7 +830,7 @@ export class StockCategoryListComponent implements OnInit {
         },
         error: (err) => {
           console.error('Erro ao criar categoria:', err);
-          const msg = err?.error?.detail || 'Erro ao criar categoria.';
+          const msg = apiErrorMessage(err, 'Erro ao criar categoria.');
           this.snackBar.open(msg, 'Fechar', { duration: 4000 });
         }
       });
@@ -851,7 +852,7 @@ export class StockCategoryListComponent implements OnInit {
       },
       error: (err) => {
         console.error('Erro ao remover categoria:', err);
-        const msg = err?.error?.detail || 'Erro ao remover categoria.';
+        const msg = apiErrorMessage(err, 'Erro ao remover categoria.');
         this.snackBar.open(msg, 'Fechar', { duration: 4000 });
       }
     });
