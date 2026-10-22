@@ -24,8 +24,10 @@ from app.config import get_settings
 from app.core.exceptions import BusinessRuleException
 from app.core.security import hash_password
 from app.core.settings_model import SystemSetting
+from app.inventory_audit.models import InventoryAudit, InventoryAuditItem
 from app.identity.models import Role, UserAccount, user_role_association
 from app.movements.models import AssetMovement
+from app.notifications.models import AutomationMark, Delivery, DeliveryAttempt, DomainEvent, Notification
 from app.organization.models import Company, Employee, Sector, Unit
 from app.service_desk.models import (
     Ticket,
@@ -40,6 +42,7 @@ logger = logging.getLogger(__name__)
 settings = get_settings()
 
 REQUIRED_CONFIRMATION_PHRASE = "LIMPAR DADOS DE DEMONSTRACAO"
+RESET_CONFIRMATION_PHRASE = "ZERAR TODA A BASE"
 
 
 class DemoManagementService:
@@ -93,6 +96,7 @@ class DemoManagementService:
                 "filename": recent_backup.filename,
                 "created_at": recent_backup.created_at.isoformat() if recent_backup.created_at else None,
                 "size_bytes": recent_backup.size_bytes,
+                "is_usable": has_backup,
             } if recent_backup else None,
         }
 
@@ -267,6 +271,116 @@ class DemoManagementService:
             "message": "Dados de demonstração removidos com sucesso. O sistema está agora em Modo Empresarial Limpo.",
             "system_mode": "PRODUCTION",
             "summary": clean_summary,
+            "executed_at": datetime.now(timezone.utc).isoformat(),
+        }
+
+    async def reset_all_data(self, admin_user_id: uuid.UUID, confirmation_phrase: str, ip_address: str = "127.0.0.1") -> dict:
+        """Apaga todos os dados de trabalho (importados, cadastrados ou de demonstração).
+
+        Mantém o que faz o sistema funcionar: contas de usuário, perfis e permissões, categorias,
+        configurações (SMTP, canais), empresa, a unidade e o setor de TI do catálogo inicial, a
+        trilha de auditoria e os backups.
+        """
+        if (confirmation_phrase or "").strip().upper() != RESET_CONFIRMATION_PHRASE:
+            raise BusinessRuleException(
+                f"Confirmação inválida. Digite exatamente '{RESET_CONFIRMATION_PHRASE}' para prosseguir."
+            )
+
+        # Operação destrutiva: sempre um backup novo (um de 24 h atrás não cobriria o trabalho de hoje).
+        safety_backup = await self.backup_service.create_backup(user_id=admin_user_id)
+
+        from app.core.starter_catalog import TI_SECTOR_CODE, seed_starter_catalog
+
+        ti_sector = (
+            await self.session.execute(select(Sector).where(Sector.code == TI_SECTOR_CODE))
+        ).scalars().first()
+        keep_sector_id = ti_sector.id if ti_sector else None
+        keep_unit_id = ti_sector.unit_id if ti_sector else None
+
+        async def count(model) -> int:
+            return (await self.session.execute(select(func.count()).select_from(model))).scalar() or 0
+
+        summary = {
+            "tickets_removed": await count(Ticket),
+            "assets_removed": await count(Asset),
+            "stock_items_removed": await count(StockItem),
+            "employees_removed": await count(Employee),
+            "attachments_removed": await count(Attachment),
+            "safety_backup_used": safety_backup.filename if safety_backup else None,
+            "ip_address": ip_address,
+        }
+
+        attachment_paths = [a.file_path for a in (await self.session.execute(select(Attachment))).scalars().all()]
+
+        # Ordem das dependências: filhos antes dos pais.
+        await self.session.execute(delete(Notification))
+        await self.session.execute(delete(DeliveryAttempt))
+        await self.session.execute(delete(Delivery))
+        await self.session.execute(delete(DomainEvent))
+        await self.session.execute(delete(AutomationMark))
+        await self.session.execute(delete(InventoryAuditItem))
+        await self.session.execute(delete(InventoryAudit))
+        await self.session.execute(delete(ticket_assets))
+        await self.session.execute(delete(TicketMaterial))
+        await self.session.execute(delete(TicketInteraction))
+        await self.session.execute(delete(Ticket))
+        await self.session.execute(delete(AssetMovement))
+        await self.session.execute(delete(Asset))
+        await self.session.execute(delete(StockMovement))
+        await self.session.execute(delete(StockItem))
+        await self.session.execute(delete(Attachment))
+
+        await self.session.execute(update(UserAccount).values(employee_id=None))
+        await self.session.execute(update(Employee).values(manager_id=None))
+        await self.session.execute(delete(Employee))
+        await self.session.execute(update(TicketCategory).values(default_sector_id=keep_sector_id))
+        sector_stmt = delete(Sector)
+        unit_stmt = delete(Unit)
+        if keep_sector_id:
+            sector_stmt = sector_stmt.where(Sector.id != keep_sector_id)
+            unit_stmt = unit_stmt.where(Unit.id != keep_unit_id)
+        await self.session.execute(sector_stmt)
+        await self.session.execute(unit_stmt)
+        await self.session.flush()
+
+        # Sem o setor de TI inicial o sistema ficaria sem estrutura: recria o catálogo inicial e religa as categorias.
+        await seed_starter_catalog(self.session)
+        ti_id = (await self.session.execute(select(Sector.id).where(Sector.code == TI_SECTOR_CODE))).scalar_one()
+        await self.session.execute(update(TicketCategory).where(TicketCategory.default_sector_id.is_(None)).values(default_sector_id=ti_id))
+        # O que sobra é a estrutura real da instalação, não exemplo.
+        for model in (Company, Unit, Sector):
+            await self.session.execute(update(model).values(is_demo=False))
+
+        await self.set_system_mode("PRODUCTION")
+        self.session.add(
+            AuditLog(
+                event_type="system.data.reset",
+                entity_type="SYSTEM",
+                entity_id=uuid.uuid4(),
+                data=summary,
+                user_id=admin_user_id,
+            )
+        )
+        await self.session.commit()
+
+        # Arquivos só saem do disco depois que o banco confirmou; antes, um erro deixaria anexos sem arquivo.
+        files_removed = 0
+        for rel in attachment_paths:
+            physical_file = settings.attachment_storage_dir / rel
+            if physical_file.exists():
+                try:
+                    physical_file.unlink()
+                    files_removed += 1
+                except OSError as err:
+                    logger.warning("Falha ao remover arquivo de anexo %s: %s", physical_file, err)
+        summary["physical_files_unlinked"] = files_removed
+        logger.warning("Base zerada pelo usuário %s: %s", admin_user_id, summary)
+
+        return {
+            "success": True,
+            "message": "Base zerada. Usuários, perfis, categorias, configurações e auditoria foram mantidos.",
+            "system_mode": "PRODUCTION",
+            "summary": summary,
             "executed_at": datetime.now(timezone.utc).isoformat(),
         }
 

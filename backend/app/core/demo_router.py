@@ -71,6 +71,31 @@ async def clean_demo_data(
     )
 
 
+class ResetAllRequest(BaseModel):
+    confirmation_phrase: str = Field(..., description="Frase de segurança exigida: 'ZERAR TODA A BASE'")
+
+
+@router.post(
+    "/reset-all",
+    summary="Zera toda a base de trabalho (só administrador), mantendo usuários, perfis e configurações",
+    dependencies=[Depends(require_permission("system.backup.manage"))]
+)
+async def reset_all_data(
+    body: ResetAllRequest,
+    payload: Annotated[dict, Depends(get_token_payload)],
+    ip_address: Annotated[str, Depends(get_current_user_ip)],
+    session: Annotated[AsyncSession, Depends(get_db)]
+):
+    if not payload.get("is_admin"):
+        raise ForbiddenException("Somente um administrador pode zerar a base.")
+    service = DemoManagementService(session)
+    return await service.reset_all_data(
+        admin_user_id=uuid.UUID(payload["sub"]),
+        confirmation_phrase=body.confirmation_phrase,
+        ip_address=ip_address,
+    )
+
+
 @router.post(
     "/seed",
     status_code=status.HTTP_201_CREATED,

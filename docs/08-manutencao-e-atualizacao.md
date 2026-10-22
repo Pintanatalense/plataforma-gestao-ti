@@ -96,3 +96,25 @@ scripts/restore-backup.sh /caminho/backup_gestao_ti_PRE_ATUALIZACAO.sql.gz
   ```bash
   docker image prune -f
   ```
+
+## 5. Ambientes: desenvolvimento × piloto
+
+Cada ambiente é um projeto Docker Compose com nome, arquivo de variáveis, portas e volumes próprios. Nunca compartilham banco, `SECRET_KEY` nem `APP_ENCRYPTION_KEY`.
+
+| Ambiente | Onde | Projeto Compose | Arquivo | Portas (HTTP/HTTPS) | Uso |
+|---|---|---|---|---|---|
+| Desenvolvimento | máquina de desenvolvimento | `gti-dev` | `.env.dev` | 8090 / 8453 | validar PRs com PostgreSQL real; dados descartáveis |
+| Piloto | máquina da empresa | `gti-piloto` | `.env` | 80 / 443 | uso real; só recebe versões marcadas e aprovadas |
+
+```bash
+# desenvolvimento
+docker compose --env-file .env.dev -p gti-dev up -d --build
+# piloto (na máquina da empresa, após clonar a versão aprovada)
+powershell -ExecutionPolicy Bypass -File scripts\install.ps1
+```
+
+Regras:
+
+* O `.env`, `.env.dev` e qualquer `.env.*` ficam fora do Git (ver `.gitignore`); gere segredos novos para cada ambiente.
+* Antes de atualizar o piloto: `make backup`, atualizar o código (seção 1) e conferir `docs/12-roteiro-de-testes.md`.
+* "Zerar toda a base" (Admin > Ambientes) apaga os dados de trabalho e mantém usuários e configurações; use ao passar do teste para o uso real. Ele gera um backup antes.
