@@ -330,14 +330,19 @@ async def _seed_demo_impl(session: AsyncSession) -> None:
     hashed_pwd = hash_password(DEMO_PASSWORD)
 
     # 1. Empresa
-    company = Company(
-        name="TechCorp Soluções Empresariais Ltda.",
-        cnpj="12.345.678/0001-90",
-        logo_url=None,
-    )
-    session.add(company)
-    await session.flush()
-    print(f"Empresa '{company.name}' cadastrada.")
+    # o sistema tem uma única empresa: sobre uma base já inicializada (make seed-demo sem reset) reaproveita a existente
+    company = (await session.execute(select(Company).order_by(Company.created_at, Company.id).limit(1))).scalars().first()
+    if company is None:
+        company = Company(
+            name="TechCorp Soluções Empresariais Ltda.",
+            cnpj="12.345.678/0001-90",
+            logo_url=None,
+        )
+        session.add(company)
+        await session.flush()
+        print(f"Empresa '{company.name}' cadastrada.")
+    else:
+        print(f"Empresa '{company.name}' já existe: reaproveitada.")
 
     # 2. Unidades (Matriz e Filial)
     matriz = Unit(

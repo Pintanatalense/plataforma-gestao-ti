@@ -24,7 +24,9 @@ class OrganizationRepository:
 
     async def get_company(self) -> Company | None:
         """Retorna a única empresa cadastrada."""
-        stmt = select(Company).where(Company.is_active.is_(True)).limit(1)
+        # ORDER BY: com mais de uma linha (ex.: seed de demonstração sobre base já inicializada) o LIMIT 1 solto
+        # devolvia linhas diferentes entre chamadas e a leitura/edição da empresa "pulava" de registro
+        stmt = select(Company).where(Company.is_active.is_(True)).order_by(Company.created_at, Company.id).limit(1)
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 

@@ -1,5 +1,6 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { ChangeDetectorRef, Component, DestroyRef, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { RouterModule } from '@angular/router';
 import { MatListModule } from '@angular/material/list';
 import { MatIconModule } from '@angular/material/icon';
@@ -53,7 +54,7 @@ interface NavSection {
           <div class="section-title">{{ section.title }}</div>
           <mat-nav-list dense>
             <ng-container *ngFor="let item of section.items">
-              <a mat-list-item *ngIf="canAccess(item)" [routerLink]="item.route" routerLinkActive="active-link" [routerLinkActiveOptions]="{exact: item.route === '/dashboard'}">
+              <a mat-list-item *ngIf="canAccess(item)" [routerLink]="item.route" routerLinkActive="active-link" [routerLinkActiveOptions]="{exact: item.route === '/dashboard' || item.route === '/organization'}">
                 <mat-icon matListItemIcon>{{ item.icon }}</mat-icon>
                 <span matListItemTitle>{{ item.label }}</span>
               </a>
@@ -181,6 +182,8 @@ interface NavSection {
 export class SidebarComponent implements OnInit {
   private authService = inject(AuthService);
   private orgService = inject(OrganizationService);
+  private cdr = inject(ChangeDetectorRef);
+  private destroyRef = inject(DestroyRef);
 
   companyName: string = 'Gestão de TI';
   companyLogoUrl: string | null = null;
@@ -222,6 +225,7 @@ export class SidebarComponent implements OnInit {
     {
       title: 'Organização',
       items: [
+        { icon: 'domain', label: 'Empresa', route: '/organization/company', permission: 'organization.company.read' },
         { icon: 'business', label: 'Unidades', route: '/organization', permission: 'organization.units.read' },
         { icon: 'account_tree', label: 'Setores', route: '/organization/sectors', permission: 'organization.sectors.read' },
         { icon: 'badge', label: 'Colaboradores', route: '/organization/employees', permission: 'organization.employees.read' }
@@ -238,13 +242,13 @@ export class SidebarComponent implements OnInit {
   ];
 
   ngOnInit(): void {
-    this.orgService.getCompanyPublic().subscribe({
-      next: (comp) => {
-        if (comp.name) this.companyName = comp.name;
-        if (comp.logo_url) this.companyLogoUrl = comp.logo_url;
-      },
-      error: () => {}
+    this.orgService.branding$.pipe(takeUntilDestroyed(this.destroyRef)).subscribe((branding) => {
+      if (!branding) return;
+      this.companyName = branding.name || 'Gestão de TI';
+      this.companyLogoUrl = branding.logo_url;
+      this.cdr.markForCheck();
     });
+    this.orgService.loadBranding();
   }
 
   onLogoError(): void {

@@ -40,6 +40,11 @@ export const routes: Routes = [
         loadComponent: () => import('./features/organization/unit-list/unit-list.component').then(m => m.UnitList)
       },
       {
+        path: 'organization/company',
+        canActivate: [permissionGuard('organization.company.read')],
+        loadComponent: () => import('./features/organization/company/company.component').then(m => m.CompanyComponent)
+      },
+      {
         path: 'organization/sectors',
         canActivate: [permissionGuard('organization.sectors.read')],
         loadComponent: () => import('./features/organization/sector-list/sector-list.component').then(m => m.SectorList)
