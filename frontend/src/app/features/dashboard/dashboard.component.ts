@@ -9,10 +9,14 @@ import { MatTableModule } from '@angular/material/table';
 import { MatTooltipModule } from '@angular/material/tooltip';
 
 import { AuthService, UserAccount } from '../../core/auth/auth.service';
+import { apiErrorMessage } from '../../core/http/api-error';
 import { Ticket, TicketService } from '../service-desk/ticket.service';
 import { Asset, AssetService } from '../../core/services/asset.service';
 import { StockItem, StockService } from '../../core/services/stock.service';
 import { InventoryAudit, InventoryService } from '../../core/services/inventory.service';
+
+type DashboardSource = 'tickets' | 'assets' | 'stock' | 'audits';
+type SourceState = 'loading' | 'ok' | 'error';
 
 @Component({
   selector: 'app-dashboard',
@@ -40,6 +44,21 @@ export class Dashboard implements OnInit {
 
   today = new Date();
 
+  /**
+   * Estado de cada fonte de dados. Uma fonte que falhou NÃO vira zero: o cartão mostra "—" e o painel avisa
+   * (antes, `error: () => {}` fazia uma falha aparecer como "0 chamados" e "Estoque Regular").
+   */
+  state: Record<DashboardSource, SourceState> = { tickets: 'loading', assets: 'ok', stock: 'ok', audits: 'ok' };
+  readonly sourceLabels: Record<DashboardSource, string> = {
+    tickets: 'chamados',
+    assets: 'ativos',
+    stock: 'estoque',
+    audits: 'inventário'
+  };
+  loadError = '';
+  /** Número da carga em andamento: respostas de uma carga anterior (mais lentas) são descartadas. */
+  private loadSeq = 0;
+
   // Metrics
   totalTickets = 0;
   openedTickets = 0;
@@ -60,28 +79,40 @@ export class Dashboard implements OnInit {
   }
 
   loadMetrics(): void {
+    const seq = ++this.loadSeq;
+    const live = () => seq === this.loadSeq;
+    this.loadError = '';
+    this.state = {
+      tickets: 'loading',
+      assets: this.authService.hasPermission('assets.read') ? 'loading' : 'ok',
+      stock: this.authService.hasPermission('stock.read') ? 'loading' : 'ok',
+      audits: this.authService.hasPermission('inventory.read') ? 'loading' : 'ok'
+    };
+
     // Tickets
     this.ticketService.listTickets().subscribe({
       next: (tickets) => {
+        if (!live()) return;
         this.totalTickets = tickets.length;
         this.openedTickets = tickets.filter((t) => t.status === 'OPENED').length;
         this.inProgressTickets = tickets.filter((t) => t.status === 'IN_PROGRESS').length;
         this.recentTickets = [...tickets.slice(0, 5)];
-        this.cdr.markForCheck();
+        this.finish('tickets', 'ok');
       },
-      error: () => {}
+      error: (err) => live() && this.fail('tickets', err)
     });
 
     // Assets
     if (this.authService.hasPermission('assets.read')) {
       this.assetService.getAssets().subscribe({
         next: (assets) => {
+          if (!live()) return;
           this.totalAssets = assets.length;
           this.assetsInUse = assets.filter((a) => a.status === 'IN_USE').length;
           this.assetsInStock = assets.filter((a) => a.status === 'IN_STOCK').length;
-          this.cdr.markForCheck();
+          this.finish('assets', 'ok');
         },
-        error: () => {}
+        error: (err) => live() && this.fail('assets', err)
       });
     }
 
@@ -89,12 +120,13 @@ export class Dashboard implements OnInit {
     if (this.authService.hasPermission('stock.read')) {
       this.stockService.getItems().subscribe({
         next: (items) => {
+          if (!live()) return;
           this.totalStockItems = items.length;
           this.lowStockList = items.filter((i) => i.quantity <= i.min_quantity);
           this.lowStockItemsCount = this.lowStockList.length;
-          this.cdr.markForCheck();
+          this.finish('stock', 'ok');
         },
-        error: () => {}
+        error: (err) => live() && this.fail('stock', err)
       });
     }
 
@@ -102,14 +134,39 @@ export class Dashboard implements OnInit {
     if (this.authService.hasPermission('inventory.read')) {
       this.inventoryService.listAudits().subscribe({
         next: (audits) => {
+          if (!live()) return;
           this.activeAuditsCount = audits.filter(
             (a) => a.status === 'OPENED' || a.status === 'IN_PROGRESS'
           ).length;
-          this.cdr.markForCheck();
+          this.finish('audits', 'ok');
         },
-        error: () => {}
+        error: (err) => live() && this.fail('audits', err)
       });
     }
+  }
+
+  private finish(source: DashboardSource, result: SourceState): void {
+    this.state = { ...this.state, [source]: result };
+    this.cdr.markForCheck();
+  }
+
+  private fail(source: DashboardSource, err: unknown): void {
+    this.loadError = apiErrorMessage(err, 'Não foi possível carregar os dados.');
+    this.finish(source, 'error');
+  }
+
+  /** Fontes que falharam (para o aviso do topo). */
+  get failedSources(): DashboardSource[] {
+    return (Object.keys(this.state) as DashboardSource[]).filter((s) => this.state[s] === 'error');
+  }
+
+  get failedLabels(): string {
+    return this.failedSources.map((s) => this.sourceLabels[s]).join(', ');
+  }
+
+  /** Valor para exibir: o número só quando a fonte carregou; "…" enquanto carrega; "—" se falhou. */
+  show(source: DashboardSource, value: number): string | number {
+    return this.state[source] === 'ok' ? value : this.state[source] === 'loading' ? '…' : '—';
   }
 
   getTicketStatusClass(status: string): string {

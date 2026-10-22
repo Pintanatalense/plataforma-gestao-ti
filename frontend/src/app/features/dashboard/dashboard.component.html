@@ -18,6 +18,15 @@
     </div>
   </div>
 
+  <!-- Falha de carregamento: nunca disfarçada de zero -->
+  <div class="load-error-banner" role="alert" data-testid="dashboard-error" *ngIf="failedSources.length > 0">
+    <mat-icon aria-hidden="true">error_outline</mat-icon>
+    <span>Não foi possível carregar: <strong>{{ failedLabels }}</strong>. {{ loadError }}</span>
+    <button mat-stroked-button type="button" data-testid="dashboard-retry" (click)="loadMetrics()">
+      <mat-icon>refresh</mat-icon> Tentar novamente
+    </button>
+  </div>
+
   <!-- KPI Cards Grid -->
   <div class="kpi-grid">
     
@@ -30,11 +39,12 @@
         </div>
       </div>
       <div class="kpi-main">
-        <span class="kpi-value">{{ openedTickets + inProgressTickets }}</span>
-        <span class="kpi-badge warning" *ngIf="openedTickets > 0">{{ openedTickets }} abertos</span>
+        <span class="kpi-value" data-testid="kpi-tickets">{{ show('tickets', openedTickets + inProgressTickets) }}</span>
+        <span class="kpi-badge warning" *ngIf="state.tickets === 'ok' && openedTickets > 0">{{ openedTickets }} abertos</span>
       </div>
       <div class="kpi-footer">
-        <span>{{ inProgressTickets }} em atendimento &bull; Total: {{ totalTickets }}</span>
+        <span *ngIf="state.tickets === 'ok'">{{ inProgressTickets }} em atendimento &bull; Total: {{ totalTickets }}</span>
+        <span *ngIf="state.tickets !== 'ok'">{{ state.tickets === 'loading' ? 'Carregando…' : 'Dados indisponíveis' }}</span>
       </div>
     </div>
 
@@ -47,11 +57,12 @@
         </div>
       </div>
       <div class="kpi-main">
-        <span class="kpi-value">{{ totalAssets }}</span>
-        <span class="kpi-badge info">{{ assetsInUse }} em uso</span>
+        <span class="kpi-value" data-testid="kpi-assets">{{ show('assets', totalAssets) }}</span>
+        <span class="kpi-badge info" *ngIf="state.assets === 'ok'">{{ assetsInUse }} em uso</span>
       </div>
       <div class="kpi-footer">
-        <span>{{ assetsInStock }} em estoque disponível</span>
+        <span *ngIf="state.assets === 'ok'">{{ assetsInStock }} em estoque disponível</span>
+        <span *ngIf="state.assets !== 'ok'">{{ state.assets === 'loading' ? 'Carregando…' : 'Dados indisponíveis' }}</span>
       </div>
     </div>
 
@@ -64,14 +75,15 @@
         </div>
       </div>
       <div class="kpi-main">
-        <span class="kpi-value">{{ totalStockItems }}</span>
-        <span class="kpi-badge" [ngClass]="lowStockItemsCount > 0 ? 'danger' : 'success'">
+        <span class="kpi-value" data-testid="kpi-stock">{{ show('stock', totalStockItems) }}</span>
+        <span class="kpi-badge" *ngIf="state.stock === 'ok'" [ngClass]="lowStockItemsCount > 0 ? 'danger' : 'success'">
           {{ lowStockItemsCount > 0 ? lowStockItemsCount + ' em alerta' : 'Estoque Regular' }}
         </span>
       </div>
       <div class="kpi-footer">
-        <span *ngIf="lowStockItemsCount > 0" class="text-danger">Exige reposição imediata</span>
-        <span *ngIf="lowStockItemsCount === 0">Nenhum item com cota crítica</span>
+        <span *ngIf="state.stock === 'ok' && lowStockItemsCount > 0" class="text-danger">Exige reposição imediata</span>
+        <span *ngIf="state.stock === 'ok' && lowStockItemsCount === 0">Nenhum item com cota crítica</span>
+        <span *ngIf="state.stock !== 'ok'">{{ state.stock === 'loading' ? 'Carregando…' : 'Dados indisponíveis' }}</span>
       </div>
     </div>
 
@@ -84,8 +96,8 @@
         </div>
       </div>
       <div class="kpi-main">
-        <span class="kpi-value">{{ activeAuditsCount }}</span>
-        <span class="kpi-badge info">{{ activeAuditsCount > 0 ? 'Em andamento' : 'Concluídas' }}</span>
+        <span class="kpi-value" data-testid="kpi-audits">{{ show('audits', activeAuditsCount) }}</span>
+        <span class="kpi-badge info" *ngIf="state.audits === 'ok'">{{ activeAuditsCount > 0 ? 'Em andamento' : 'Concluídas' }}</span>
       </div>
       <div class="kpi-footer">
         <span>Conferência periódica de bens</span>
@@ -110,7 +122,7 @@
       </div>
 
       <div class="table-wrap">
-        <table mat-table [dataSource]="recentTickets" class="dashboard-table">
+        <table mat-table [dataSource]="state.tickets === 'ok' ? recentTickets : []" class="dashboard-table">
           
           <ng-container matColumnDef="title">
             <th mat-header-cell *matHeaderCellDef> Assunto </th>
@@ -159,8 +171,10 @@
           <tr class="mat-row" *matNoDataRow>
             <td class="mat-cell" colspan="5">
               <div class="empty-state">
-                <mat-icon>inbox</mat-icon>
-                <p>Nenhum chamado registrado no momento.</p>
+                <mat-icon>{{ state.tickets === 'error' ? 'error_outline' : 'inbox' }}</mat-icon>
+                <p *ngIf="state.tickets === 'ok'">Nenhum chamado registrado no momento.</p>
+                <p *ngIf="state.tickets === 'loading'">Carregando chamados…</p>
+                <p *ngIf="state.tickets === 'error'">Não foi possível carregar os chamados.</p>
               </div>
             </td>
           </tr>
@@ -178,7 +192,7 @@
           <h3>Insumos Críticos</h3>
         </div>
         
-        <div class="low-stock-list" *ngIf="lowStockList.length > 0; else stockOk">
+        <div class="low-stock-list" *ngIf="state.stock === 'ok' && lowStockList.length > 0; else stockOk">
           <div *ngFor="let item of lowStockList.slice(0, 4)" class="stock-alert-item" [routerLink]="['/stock', item.id]">
             <div class="item-info">
               <span class="item-name">{{ item.name }}</span>
@@ -195,8 +209,10 @@
 
         <ng-template #stockOk>
           <div class="empty-stock-ok">
-            <mat-icon>verified</mat-icon>
-            <p>Todos os insumos estão acima da cota mínima estipulada.</p>
+            <mat-icon>{{ state.stock === 'ok' ? 'verified' : 'error_outline' }}</mat-icon>
+            <p *ngIf="state.stock === 'ok'">Todos os insumos estão acima da cota mínima estipulada.</p>
+            <p *ngIf="state.stock === 'loading'">Carregando estoque…</p>
+            <p *ngIf="state.stock === 'error'">Não foi possível verificar o estoque.</p>
           </div>
         </ng-template>
       </div>

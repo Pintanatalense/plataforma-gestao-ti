@@ -11,6 +11,7 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 import { AuthService } from '../../../core/auth/auth.service';
+import { apiErrorMessage } from '../../../core/http/api-error';
 
 @Component({
   selector: 'app-login',
@@ -59,11 +60,14 @@ export class LoginComponent {
     this.authService.login(email!, password!).subscribe({
       next: () => {
         this.isLoading = false;
-        this.router.navigate(['/']); // Redirect to dashboard
+        // volta à página em que a sessão caiu (se houver); senão, ao painel
+        this.router.navigateByUrl(this.authService.takeReturnUrl() ?? '/');
       },
       error: (err: any) => {
         this.isLoading = false;
-        this.snackBar.open('Credenciais inválidas ou erro no servidor', 'Fechar', {
+        // sem conexão / erro do servidor: o interceptor já avisou (evita dois avisos iguais empilhados)
+        if (err?.status === 0 || err?.status >= 500) return;
+        this.snackBar.open(apiErrorMessage(err, 'Não foi possível entrar. Tente novamente.'), 'Fechar', {
           duration: 5000,
           panelClass: ['error-snackbar']
         });

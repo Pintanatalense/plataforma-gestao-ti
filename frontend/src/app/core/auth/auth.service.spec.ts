@@ -43,4 +43,39 @@ describe('AuthService', () => {
     expect(result).toEqual({ id: 'u1', email: 'a@b.com', must_change_password: false });
     expect(localStorage.getItem('current_user')).not.toContain('new-token');
   });
+
+  describe('return URL after a session ends', () => {
+    beforeEach(() => sessionStorage.clear());
+
+    it('remembers an internal page once and forgets it after reading', () => {
+      service.rememberReturnUrl('/assets/123?tab=history');
+      expect(service.takeReturnUrl()).toBe('/assets/123?tab=history');
+      expect(service.takeReturnUrl()).toBeNull();
+    });
+
+    it.each(['//evil.example/x', 'https://evil.example', 'javascript:alert(1)', '/a b', '/x\\y', 'relativo', ''])(
+      'refuses to remember %j (open redirect)',
+      (url) => {
+        service.rememberReturnUrl(url);
+        expect(service.takeReturnUrl()).toBeNull();
+      }
+    );
+
+    it('does not remember the login, setup or change-password pages', () => {
+      service.rememberReturnUrl('/login');
+      service.rememberReturnUrl('/setup');
+      service.rememberReturnUrl('/change-password');
+      expect(service.takeReturnUrl()).toBeNull();
+    });
+
+    it('refuses absurdly long URLs', () => {
+      service.rememberReturnUrl('/' + 'a'.repeat(3000));
+      expect(service.takeReturnUrl()).toBeNull();
+    });
+
+    it('ignores a tampered value in storage', () => {
+      sessionStorage.setItem('return_url', '//evil.example');
+      expect(service.takeReturnUrl()).toBeNull();
+    });
+  });
 });

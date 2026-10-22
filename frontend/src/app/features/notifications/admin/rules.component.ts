@@ -1,3 +1,4 @@
+import { apiErrorMessage } from '../../../core/http/api-error';
 import { Component, OnInit, inject, signal } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { FormsModule } from '@angular/forms';
@@ -22,15 +23,7 @@ export function parseList(text: string): string[] {
   return [...new Set(text.split(/[\n,]/).map((s) => s.trim()).filter(Boolean))];
 }
 
-/** Extrai a mensagem de erro da API (VALIDATION_ERROR ou regra de negócio). */
-export function apiErrorMessage(err: any, fallback: string): string {
-  const e = err?.error?.error;
-  if (!e) return fallback;
-  if (Array.isArray(e.details) && e.details.length) {
-    return e.details.map((d: any) => (typeof d.msg === 'string' ? d.msg.replace(/^Value error, /, '') : '')).filter(Boolean).join(' ');
-  }
-  return e.message ?? fallback;
-}
+export { apiErrorMessage };
 
 interface RuleForm {
   id: string | null;
