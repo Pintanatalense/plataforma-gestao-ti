@@ -132,6 +132,15 @@ jobs:
     - name: Build nginx image (compila o frontend Angular)
       run: docker build -f nginx/Dockerfile -t gti-nginx:ci .
 
+  # Scripts de operação (instalação, backup, restauração) são código que mexe em dados: precisam passar no shellcheck.
+  shellcheck:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+    - name: shellcheck
+      run: shellcheck scripts/*.sh
+
   # Informativo: não reprova o PR, mas deixa o relatório de vulnerabilidades conhecidas no log.
   dependency-audit:
     runs-on: ubuntu-latest

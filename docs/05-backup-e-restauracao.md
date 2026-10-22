@@ -43,7 +43,7 @@ Gera em `./backups` (ou `BACKUP_DIR`):
 * `backup_gestao_ti_AAAAMMDD_HHMMSS.sql.gz` — banco, no mesmo formato dos backups da tela;
 * `arquivos_AAAAMMDD_HHMMSS.tar.gz` — **anexos e logomarca** (volumes `attachments_data` e `static_data`).
 
-Cada arquivo é verificado ao final (gzip íntegro; dump com a marca `dump complete`; tar legível) e, se algo falhar, nada fica pela metade. Requer os serviços `postgres` e `backend` no ar. No Windows, use o Git Bash.
+Cada arquivo é verificado ao final (gzip íntegro; dump com a marca `dump complete`; tar legível) e, se algo falhar, nada fica pela metade. Requer os serviços `postgres` e `backend` no ar. No Windows, use o Git Bash. **Mudança:** `make backup` antes gravava `backups/backup_*.sql` (sem gzip, só banco); agora grava `backup_gestao_ti_*.sql.gz` e `arquivos_*.tar.gz` — ajuste rotinas que dependiam do formato antigo.
 
 Só o banco, sem os scripts:
 ```bash
@@ -74,13 +74,15 @@ scripts/restore-backup.sh backups/backup_gestao_ti_AAAAMMDD_HHMMSS.sql.gz backup
 ```
 O segundo arquivo (anexos e logomarca) é opcional; sem ele só o banco é restaurado e o script avisa.
 
-O que o script faz, em ordem:
-1. valida os arquivos (`gzip -t` / `tar -t`);
-2. grava um dump de segurança `pre-restore-<data>.sql.gz` **no diretório atual** e confere que ele está completo (se não estiver, **para antes de mexer em qualquer coisa**);
+O que o script faz, em ordem (**nada é alterado antes do passo 3**):
+1. valida os arquivos (`gzip -t` / `tar -t`) e recusa um tar com caminhos fora de `data/attachments` e `app/static` (ou com `..`);
+2. grava cópias de segurança **no diretório atual** e confere que estão completas: `pre-restore-<data>.sql.gz` (banco) e, se for restaurar arquivos, `pre-restore-arquivos-<data>.tar.gz` (anexos e logo **atuais**). Se alguma falhar, **para antes de mexer em qualquer coisa**;
 3. para o `backend` **e o `worker`**;
 4. restaura o banco em transação única (`ON_ERROR_STOP`): se falhar, nada é aplicado e os serviços voltam;
-5. sobe o `backend`; se houver o segundo arquivo, **substitui** o conteúdo de anexos/logomarca pelo do backup;
+5. sobe o `backend` e, se houver o segundo arquivo, extrai numa pasta temporária e **só então** troca o conteúdo de anexos/logomarca (inclusive arquivos ocultos); se a extração falhar, os arquivos atuais continuam intactos;
 6. sobe o `worker`.
+
+**Se falhar depois do passo 4** (banco já restaurado, arquivos não): o script para com o `worker` desligado, informa onde estão as cópias `pre-restore-*` e o que fazer. Corrija a causa e repita o comando; só depois `docker compose start worker`. As cópias de segurança **não são apagadas** — remova-as quando confirmar que o sistema está correto.
 
 Em servidor recriado do zero: instale (`scripts/install.sh`), garanta o **mesmo `APP_ENCRYPTION_KEY`** do ambiente original (seção 6), suba apenas o banco (`docker compose up -d postgres`) e rode o script.
 
@@ -91,7 +93,7 @@ Em servidor recriado do zero: instale (`scripts/install.sh`), garanta o **mesmo 
 ```bash
 make verify-backup FILE=backups/backup_gestao_ti_AAAAMMDD_HHMMSS.sql.gz   # ou: scripts/verify-backup.sh ...
 ```
-Cria um banco temporário, aplica o backup nele, confere tabelas, usuários e a revisão de migration e **remove o banco temporário** (o banco em uso não é tocado). Saída esperada: `OK: 43 tabelas, N usuários, migration <rev>`. Agende periodicamente: o SHA-256 só prova que o arquivo não mudou, não que ele restaura.
+Cria um banco temporário, aplica o backup nele, confere tabelas, usuários e a revisão de migration e **remove o banco temporário** (o banco em uso não é tocado). Saída esperada: `OK: N tabelas, N usuários, migration <rev>` (o número de tabelas muda com o esquema). Agende periodicamente: o SHA-256 só prova que o arquivo não mudou, não que ele restaura.
 
 ---
 
