@@ -17,7 +17,7 @@ O projeto foi construído com apoio de IA e acumulou documentação divergente d
 | API | FastAPI, Starlette, pydantic v2, pydantic-settings | 0.142 / 1.7 / 2.13 / 2.15 | |
 | Dados | SQLAlchemy 2 async, asyncpg, Alembic | 2.1 / 0.31 / 1.20 | migrations versionadas; cabeça única |
 | Banco | PostgreSQL **16** | `postgres:16-alpine` | SQLite apenas em testes unitários |
-| Autenticação | JWT HS256 (`python-jose`) + bcrypt | 3.5 / 5.0 | evolução em ADR-016 (versão de sessão); troca por `PyJWT` a avaliar |
+| Autenticação | JWT HS256 (`PyJWT`) + bcrypt | 2.15 / 5.0 | sessão e revogação em ADR-016; `python-jose` foi removido em 2026-10-22 |
 | Segredos | Fernet (`cryptography`) via `APP_ENCRYPTION_KEY` | 50.0 | credenciais de integrações cifradas no banco |
 | Tarefas assíncronas | outbox `domain_events` + worker próprio (`python -m app.worker`) | — | **sem** Celery/Redis; ver ADR-013 |
 | Frontend | Angular 22 (standalone) + Angular Material, RxJS 7, TypeScript 6 | 22.2.1 | `strictTemplates` e ESLint adotados de forma gradual |
@@ -34,7 +34,7 @@ O projeto foi construído com apoio de IA e acumulou documentação divergente d
 
 ### Dependências transitórias ou a substituir
 
-- `python-jose` (pouco mantido; arrasta `ecdsa`): avaliar `PyJWT` — baixo risco, só HS256 é usado.
+- ~~`python-jose`~~ **substituído por `PyJWT` (2026-10-22)**: o `pip-audit` apontava vulnerabilidades em `python-jose` e `ecdsa` sem versão corrigida; a troca removeu também `ecdsa`, `rsa`, `pyasn1` e `six`. Tokens já emitidos continuam válidos (mesmo HS256).
 - Google Fonts / Material Symbols por CDN: servir localmente (ambientes sem internet).
 - Dependências de desenvolvimento duplicadas em `pyproject.toml` (`optional-dependencies` e `dependency-groups`): consolidar em uma só.
 
