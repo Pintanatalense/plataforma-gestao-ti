@@ -7,27 +7,29 @@ bem-sucedido para o mesmo host/porta/usuário). O token nunca é guardado nem re
 
 import asyncio
 import hashlib
+import hmac
 import logging
 import secrets
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, text, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.repository import AuditRepository
-from app.core.exceptions import BusinessRuleException, NotFoundException, ValidationException
+from app.core.exceptions import BusinessRuleException, ForbiddenException, NotFoundException, ValidationException
 from app.core.security import hash_password
+from app.config import get_settings
 from app.core.settings_model import SystemSetting
 from app.database import AsyncSessionLocal
-from app.identity.models import PasswordResetRequest
+from app.identity.models import PasswordResetRequest, UserAccount
 from app.identity.repository import IdentityRepository
 from app.identity.services import IdentityService
-from app.notifications.email_service import EmailService, SmtpConfigSchema, send_smtp_raw
+from app.notifications.email_service import PASSWORD_RESET_KEY, EmailService, SmtpConfigSchema, send_smtp_raw
 
 logger = logging.getLogger(__name__)
 
-SETTING_KEY = "password_reset"
+SETTING_KEY = PASSWORD_RESET_KEY
 TOKEN_TTL = timedelta(minutes=30)
 WINDOW = timedelta(hours=1)
 LIMIT_PER_EMAIL = 3
@@ -41,6 +43,11 @@ _CONFIG_ENTITY = uuid.uuid5(uuid.NAMESPACE_OID, "password-reset:config")
 
 def hash_secret(value: str) -> str:
     return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def hash_email(email: str) -> str:
+    """HMAC (com a chave da aplicação): um vazamento do banco não permite adivinhar e-mails por dicionário."""
+    return hmac.new(get_settings().SECRET_KEY.encode("utf-8"), email.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def _aware(value: datetime) -> datetime:
@@ -77,7 +84,10 @@ class PasswordResetService:
         _, ready = await self.smtp_state()
         return {"enabled": await self._flag(), "smtp_ready": ready}
 
-    async def set_enabled(self, enabled: bool, user_id: uuid.UUID | None) -> dict:
+    async def set_enabled(self, enabled: bool, user_id: uuid.UUID | None, is_admin: bool = False) -> dict:
+        if enabled and not is_admin:
+            # quem só gerencia o SMTP não pode abrir um caminho de troca de senha sem login
+            raise ForbiddenException("Apenas administradores podem ativar a recuperação de senha.")
         if enabled:
             _, ready = await self.smtp_state()
             if not ready:
@@ -112,8 +122,19 @@ class PasswordResetService:
         config = await self._require_enabled()
         now = datetime.now(timezone.utc)
         email_norm = email.strip().lower()
-        email_hash = hash_secret(email_norm)
+        email_hash = hash_email(email_norm)
         since = now - WINDOW
+        # "unknown" (sem cabeçalho) e valores gigantes não viram um balde global nem estouram a coluna
+        if ip in (None, "", "unknown"):
+            ip = None
+        else:
+            ip = ip[:50]
+
+        # Serializa pedidos concorrentes do mesmo e-mail/IP: sem isso, pedidos em paralelo leem "contagem 0" e
+        # todos passam pelo limite (e geram vários tokens válidos). No SQLite dos testes não há lock.
+        if self.session.get_bind().dialect.name == "postgresql":
+            for key in sorted({f"pwreset:e:{email_hash}", f"pwreset:i:{ip}"}):
+                await self.session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:k))"), {"k": key})
 
         by_email = await self.session.scalar(
             select(func.count()).select_from(PasswordResetRequest).where(
@@ -130,7 +151,11 @@ class PasswordResetService:
         if (by_email or 0) >= LIMIT_PER_EMAIL or (by_ip or 0) >= LIMIT_PER_IP:
             return None  # a resposta ao cliente continua igual; só não cria token nem envia
 
-        user = await self.repo.get_user_by_email(email_norm)
+        user = (
+            await self.session.execute(
+                select(UserAccount).where(func.lower(UserAccount.email) == email_norm, UserAccount.is_active.is_(True))
+            )
+        ).scalars().first()
         token: str | None = None
         record = PasswordResetRequest(email_hash=email_hash, requested_ip=ip, user_id=user.id if user else None)
         if user:
@@ -178,11 +203,24 @@ class PasswordResetService:
         if user is None:
             raise ValidationException(INVALID_LINK)
 
+        # Uso único ATÔMICO: só um dos confirms simultâneos do mesmo token consegue marcar `used_at`.
+        claimed = await self.session.execute(
+            update(PasswordResetRequest)
+            .where(
+                PasswordResetRequest.id == record.id,
+                PasswordResetRequest.used_at.is_(None),
+                PasswordResetRequest.expires_at > now,
+            )
+            .values(used_at=now)
+            .execution_options(synchronize_session=False)  # a avaliação em Python compararia datas naive x aware
+        )
+        if claimed.rowcount != 1:
+            raise ValidationException(INVALID_LINK)
+
         user.hashed_password = hash_password(new_password)
         user.must_change_password = False
         IdentityService._clear_lockout(user)
         IdentityService._revoke_sessions(user)  # derruba qualquer sessão aberta com a senha antiga
-        record.used_at = now
         await self.session.execute(
             update(PasswordResetRequest)
             .where(

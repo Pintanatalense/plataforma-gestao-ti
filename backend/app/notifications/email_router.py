@@ -11,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
 from app.audit.repository import AuditRepository
-from app.core.dependencies import get_current_user_id, require_any_permission
+from app.core.dependencies import get_current_user_id, get_token_payload, require_any_permission
 from app.identity.password_reset import PasswordResetService
 from app.identity.schemas import PasswordResetConfigIn, PasswordResetConfigOut
 from app.notifications.email_service import EmailService, SmtpConfigSchema, SmtpTestEmailRequest
@@ -103,12 +103,13 @@ async def get_password_reset_config(session: Annotated[AsyncSession, Depends(get
 @router.put(
     "/password-reset",
     response_model=PasswordResetConfigOut,
-    summary="Liga ou desliga a recuperação de senha (exige SMTP habilitado, com TLS e homologado)",
+    summary="Liga (só administrador; exige SMTP habilitado, com TLS e homologado) ou desliga a recuperação de senha",
     dependencies=[Depends(require_any_permission("notifications.manage", "system.backup.manage"))]
 )
 async def set_password_reset_config(
     body: PasswordResetConfigIn,
     session: Annotated[AsyncSession, Depends(get_db)],
     user_id: Annotated[uuid.UUID, Depends(get_current_user_id)],
+    payload: Annotated[dict, Depends(get_token_payload)],
 ):
-    return await PasswordResetService(session).set_enabled(body.enabled, user_id)
+    return await PasswordResetService(session).set_enabled(body.enabled, user_id, bool(payload.get("is_admin")))

@@ -16,7 +16,8 @@ from app.audit.models import AuditLog
 from app.core.security import hash_password
 from app.identity import password_reset as pr
 from app.identity.models import PasswordResetRequest, UserAccount
-from app.notifications.email_service import EmailService, SmtpConfigSchema
+from app.notifications import email_service as email_module
+from app.notifications.email_service import EmailService, SmtpConfigSchema, SmtpTestEmailRequest
 from tests.factories import headers_for, make_user
 
 pytestmark = pytest.mark.asyncio
@@ -52,7 +53,7 @@ async def _smtp(db: AsyncSession, *, enabled=True, security="STARTTLS", homologa
 
 
 async def _enable(db: AsyncSession) -> None:
-    await pr.PasswordResetService(db).set_enabled(True, None)
+    await pr.PasswordResetService(db).set_enabled(True, None, is_admin=True)
 
 
 async def _user(db: AsyncSession, email: str = "maria@test.com") -> UserAccount:
@@ -73,7 +74,7 @@ async def _ready(db: AsyncSession) -> None:
     await _enable(db)
 
 
-async def test_disabled_by_default_everything_is_404(client: AsyncClient, db_session: AsyncSession, sent):
+async def test_disabled_by_default_request_and_confirm_are_404_and_status_is_false(client: AsyncClient, db_session: AsyncSession, sent):
     assert (await client.get(f"{BASE}/password-reset/status")).json() == {"enabled": False}
     assert (await client.post(f"{BASE}/password-reset/request", json={"email": "a@b.com"})).status_code == 404
     assert (
@@ -269,3 +270,85 @@ async def test_admin_config_requires_permission(client: AsyncClient, db_session:
         "/api/v1/notifications/email/password-reset", json={"enabled": True}, headers=headers_for(user)
     )
     assert resp.status_code == 403
+
+
+async def test_smtp_manager_who_is_not_admin_cannot_enable_it(client: AsyncClient, db_session: AsyncSession):
+    await _smtp(db_session)
+    manager = await make_user(db_session)  # só tem a permissão do SMTP, não é administrador
+    resp = await client.put(
+        "/api/v1/notifications/email/password-reset", json={"enabled": True}, headers=headers_for(manager, *ADMIN_PERMS)
+    )
+    assert resp.status_code == 403
+    assert (await client.get(f"{BASE}/password-reset/status")).json() == {"enabled": False}
+
+
+async def test_any_change_of_where_mail_goes_drops_homologation_and_switches_it_off(
+    client: AsyncClient, db_session: AsyncSession
+):
+    await _ready(db_session)
+    service = EmailService(db_session)
+    cfg = await service.get_config()
+    cfg.app_base_url = "https://atacante.test"  # o link do e-mail passaria a apontar para outro domínio
+    await service.update_config(cfg)
+    assert await service.is_homologated(await service.get_config()) is False
+    assert (await client.get("/api/v1/identity/password-reset/status")).json() == {"enabled": False}
+    admin_config = await pr.PasswordResetService(db_session).get_config()
+    assert admin_config == {"enabled": False, "smtp_ready": False}
+
+
+async def test_pointing_smtp_to_another_host_does_not_carry_the_saved_password(db_session: AsyncSession):
+    await _smtp(db_session)
+    service = EmailService(db_session)
+    moved = SmtpConfigSchema(
+        is_enabled=True, host="smtp.atacante.test", port=587, security="STARTTLS", username="u", password="********",
+    )
+    await service.update_config(moved)
+    assert (await service.get_config()).password == ""
+
+
+async def test_smtp_test_with_overridden_security_or_sender_does_not_homologate(
+    db_session: AsyncSession, monkeypatch
+):
+    await _smtp(db_session, homologated=False)
+    monkeypatch.setattr(email_module, "send_smtp_raw", lambda *a, **k: ("ok", "ok"))
+    service = EmailService(db_session)
+    ok, _ = await service.test_smtp(SmtpTestEmailRequest(target_email="x@test.com", security="SSL_TLS"))
+    assert ok and await service.is_homologated(await service.get_config()) is False
+    ok, _ = await service.test_smtp(SmtpTestEmailRequest(target_email="x@test.com"))  # exatamente o salvo
+    assert ok and await service.is_homologated(await service.get_config()) is True
+
+
+async def test_mixed_case_registered_email_still_gets_the_link(client: AsyncClient, db_session: AsyncSession, sent):
+    await _ready(db_session)
+    await _user(db_session, "Maria.Silva@Test.com")
+    assert (await client.post(f"{BASE}/password-reset/request", json={"email": "maria.silva@test.com"})).status_code == 202
+    assert len(sent) == 1 and sent[0]["to"] == "Maria.Silva@Test.com"
+
+
+async def test_requests_without_ip_header_do_not_share_one_global_bucket(
+    client: AsyncClient, db_session: AsyncSession, sent
+):
+    await _ready(db_session)
+    await _user(db_session)
+    for i in range(pr.LIMIT_PER_IP + 2):  # sem X-Forwarded-For: o IP vira "unknown"
+        await client.post(f"{BASE}/password-reset/request", json={"email": f"nobody{i}@test.com"})
+    await client.post(f"{BASE}/password-reset/request", json={"email": "maria@test.com"})
+    assert len(sent) == 1  # a conta real ainda recebe: "unknown" não conta como um IP único
+
+
+async def test_email_is_stored_only_as_keyed_hash(client: AsyncClient, db_session: AsyncSession, sent):
+    await _ready(db_session)
+    await _user(db_session)
+    await client.post(f"{BASE}/password-reset/request", json={"email": "maria@test.com"})
+    stored = (await db_session.execute(select(PasswordResetRequest.email_hash))).scalar_one()
+    assert stored == pr.hash_email("maria@test.com") and stored != pr.hash_secret("maria@test.com")
+
+
+async def test_oversized_forwarded_ip_does_not_break_the_request(client: AsyncClient, db_session: AsyncSession, sent):
+    await _ready(db_session)
+    await _user(db_session)
+    resp = await client.post(
+        f"{BASE}/password-reset/request", json={"email": "maria@test.com"}, headers={"X-Forwarded-For": "9" * 300}
+    )
+    assert resp.status_code == 202
+    assert len((await db_session.execute(select(PasswordResetRequest.requested_ip))).scalar_one()) == 50
