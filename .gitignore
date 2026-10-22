@@ -64,3 +64,14 @@ htmlcov/
 # --- Uploads / Anexos ---
 uploads/
 **/uploads/
+
+# --- Inventários GLPI reais (contêm chave do Windows, IPs/MACs e usuários) ---
+docs/INVENTARIO_MODELO.xml
+
+# --- Dumps e backups de banco (podem conter dados reais) ---
+*.sql.gz
+*.dump
+pre-restore-*
+
+# --- Chaves e certificados fora de certs/ ---
+*.pem
