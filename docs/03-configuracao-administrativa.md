@@ -52,11 +52,19 @@ No sistema, existe uma distinção intencional entre:
 * **Colaborador (`Employee`):** A pessoa física que trabalha na empresa (com matrícula, cargo, telefone e setor).
 * **Conta de Acesso (`UserAccount`):** A credencial de autenticação digital (e-mail e senha) vinculada a um colaborador.
 
+### 2.0. Dados da empresa e logomarca
+
+Em **Organização > Empresa** (permissão de leitura/edição da empresa) altere o nome e o CNPJ e envie a logomarca (PNG, JPEG ou WebP, até 2 MB). O nome e a logo aparecem no menu lateral e na tela de login.
+
 ### 2.1. Como Criar um Novo Usuário do Sistema
 1. Acesse **Organização > Colaboradores** e crie a ficha cadastral da pessoa física.
 2. Acesse **Identidade > Usuários** e clique em **Novo Usuário**.
-3. Selecione o colaborador correspondente, digite o e-mail corporativo e defina a senha provisória.
+3. Selecione o colaborador correspondente, digite o e-mail corporativo e use a senha provisória **aleatória já sugerida** (ou digite outra); informe-a ao usuário por canal seguro. O sistema o obriga a trocá-la no primeiro acesso.
 4. Selecione o perfil de acesso adequado (ex: `Técnico N2` ou `Gestor de TI`).
+
+**Redefinir a senha de alguém:** em **Identidade > Usuários**, use o botão *Resetar Senha*: o sistema gera uma senha temporária aleatória, mostrada **uma única vez** para você copiar; a sessão aberta do usuário é encerrada e ele precisa trocar a senha ao entrar. **Recuperação por e-mail:** o próprio usuário pode pedir um link em "Esqueci minha senha" quando o administrador ativa o recurso (Painel Administrativo, aba de e-mail; exige SMTP com TLS testado). Veja [ADR-018](decisions/ADR-018-recuperacao-de-senha.md).
+
+Quem tem apenas permissão de editar usuários **não** pode conceder o papel de administrador, dar permissões que não possui nem alterar a conta de um administrador; o último administrador ativo não pode ser inativado ou rebaixado.
 
 ---
 
@@ -75,9 +83,8 @@ O sistema opera sob o princípio do menor privilégio. Estão pré-configurados 
 
 ## 4. Auditoria e Rastreabilidade
 
-Todas as ações críticas executadas por administradores e técnicos são gravadas de forma imutável na tabela de auditoria (`audit_logs`):
-* Registro de alteração de senhas e logins.
-* Exclusão e limpeza de registros.
-* Geração e restauração de backups.
-* Histórico completo de eventos de cada chamado do Service Desk.
-* Para consultar: acesse **Administração > Auditoria de Eventos**.
+Ações críticas são gravadas na tabela `audit_logs` e consultadas em **Administração > Auditoria** (permissão `audit.read`), com filtros por evento, usuário (trecho do e-mail) e período, e paginação:
+* Logins (sucesso, falha, conta bloqueada), criação/alteração/inativação de usuários, perfis, redefinição e troca de senha, recuperação de senha, dados da empresa e configuração de SMTP.
+* Histórico dos eventos de cada chamado do Service Desk e eventos de ativos, estoque e backup concluído/falho.
+* Senhas, tokens e o texto digitado no campo de e-mail do login **nunca** são registrados.
+* Não são auditados: logout, restauração de backup feita por script, importação/exportação e leituras. Detalhes e limites em [09](09-seguranca-e-auditoria.md).

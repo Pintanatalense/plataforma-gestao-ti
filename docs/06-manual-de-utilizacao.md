@@ -4,6 +4,11 @@ Este manual descreve o fluxo de trabalho operacional para solicitantes, técnico
 
 ---
 
+## 0. Acesso e senha
+
+* **Esqueci minha senha:** quando o administrador ativa o recurso, a tela de login mostra o link **Esqueci minha senha**. Informe seu e-mail; se ele estiver cadastrado, você recebe um link que vale **30 minutos** e só pode ser usado **uma vez**. Abra o link, defina a nova senha (mínimo de 8 caracteres) e entre. Se o link expirar, peça outro (só o mais recente vale). Sem o link na tela, procure o suporte de TI.
+* Ao redefinir ou trocar a senha, as suas outras sessões abertas são encerradas.
+
 ## 1. Ciclo de Vida do Chamado
 
 Os chamados transitam por uma máquina de estados controlada:
