@@ -36,7 +36,7 @@ O projeto foi construído com apoio de IA e acumulou documentação divergente d
 
 - ~~`python-jose`~~ **substituído por `PyJWT` (2026-10-22)**: o `pip-audit` apontava vulnerabilidades em `python-jose` e `ecdsa` sem versão corrigida; a troca removeu também `ecdsa`, `rsa`, `pyasn1` e `six`. Tokens já emitidos continuam válidos (mesmo HS256).
 - Google Fonts / Material Symbols por CDN: servir localmente (ambientes sem internet).
-- Dependências de desenvolvimento duplicadas em `pyproject.toml` (`optional-dependencies` e `dependency-groups`): consolidar em uma só.
+- ~~Dependências de desenvolvimento duplicadas em `pyproject.toml`~~ **consolidadas em `[dependency-groups]` (2026-10-22)**; scripts de fumaça da raiz (`tests/`) movidos para `scripts/smoke/`.
 
 ## Exceção ao padrão global do autor
 
