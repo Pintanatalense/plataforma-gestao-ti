@@ -184,8 +184,14 @@ export class TicketDetailComponent implements OnInit {
         this.scrollToBottom();
       },
       error: (err) => {
-        // a tela inteira depende do chamado: mostra o motivo e o botão de tentar de novo (antes: tela em branco)
-        this.loadError = apiErrorMessage(err, 'Não foi possível carregar o chamado.');
+        const msg = apiErrorMessage(err, 'Não foi possível carregar o chamado.');
+        if (this.ticket) {
+          // recarga depois de uma ação já confirmada: mantém a conversa na tela e só avisa
+          this.snackBar.open(msg, 'Fechar', { duration: 5000 });
+        } else {
+          // carga inicial: a tela depende do chamado, mostra o motivo e o botão de tentar de novo (antes: tela em branco)
+          this.loadError = msg;
+        }
         this.cdr.markForCheck();
       }
     });

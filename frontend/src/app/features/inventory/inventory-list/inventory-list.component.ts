@@ -56,9 +56,17 @@ export class InventoryListComponent implements OnInit {
 
   loadUnits(): void {
     this.orgService.getUnits().subscribe({
-      next: (units) => (this.units = units),
+      next: (units) => {
+        this.units = units;
+        this.cdr.markForCheck();
+      },
       error: (err) => console.error('Erro ao carregar unidades:', err)
     });
+  }
+
+  /** Spinner no lugar da tabela só na carga inicial: numa recarga (ex.: depois de criar auditoria) a tabela e o filtro ficam. */
+  get showInitialLoading(): boolean {
+    return this.loading && this.dataSource.data.length === 0;
   }
 
   loadAudits(): void {
@@ -78,7 +86,12 @@ export class InventoryListComponent implements OnInit {
       error: (err) => {
         // falha de comunicação não pode parecer "nenhuma auditoria cadastrada"
         this.loading = false;
-        this.loadError = apiErrorMessage(err, 'Não foi possível carregar os inventários.');
+        const msg = apiErrorMessage(err, 'Não foi possível carregar os inventários.');
+        if (this.dataSource.data.length > 0) {
+          this.snackBar.open(msg, 'Fechar', { duration: 5000 }); // recarga: mantém a lista que já está na tela
+        } else {
+          this.loadError = msg;
+        }
         this.cdr.markForCheck();
       }
     });

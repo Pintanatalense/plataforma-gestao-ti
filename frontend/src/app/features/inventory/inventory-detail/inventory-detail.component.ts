@@ -74,6 +74,8 @@ export class InventoryDetailComponent implements OnInit {
     if (id) {
       this.auditId = id;
       this.loadAudit(id);
+    } else {
+      this.loadError = 'Identificador da auditoria inválido.';
     }
   }
 
@@ -94,8 +96,13 @@ export class InventoryDetailComponent implements OnInit {
         this.loadAvailableItems(audit.unit_id);
       },
       error: (err) => {
-        // sem isso a tela ficava em branco
-        this.loadError = apiErrorMessage(err, 'Não foi possível carregar a auditoria.');
+        const msg = apiErrorMessage(err, 'Não foi possível carregar a auditoria.');
+        if (this.audit) {
+          // recarga depois de uma ação (iniciar, encerrar, adicionar item): mantém a tela e só avisa
+          this.snackBar.open(msg, 'Fechar', { duration: 5000 });
+        } else {
+          this.loadError = msg; // carga inicial (antes: tela em branco)
+        }
         this.cdr.markForCheck();
       }
     });
@@ -107,6 +114,7 @@ export class InventoryDetailComponent implements OnInit {
         next: (units) => {
           const u = units.find((x) => x.id === unitId);
           if (u) this.unitName = u.name;
+          this.cdr.markForCheck();
         }
       });
     }
@@ -116,6 +124,7 @@ export class InventoryDetailComponent implements OnInit {
         next: (emps) => {
           const e = emps.find((x) => x.id === auditorId);
           if (e) this.auditorName = `${e.name} (${e.registration_number || e.registration || ''})`;
+          this.cdr.markForCheck();
         }
       });
     }
@@ -123,11 +132,17 @@ export class InventoryDetailComponent implements OnInit {
 
   loadAvailableItems(unitId: string): void {
     this.assetService.getAssets(unitId).subscribe({
-      next: (assets) => (this.availableAssets = assets)
+      next: (assets) => {
+        this.availableAssets = assets;
+        this.cdr.markForCheck();
+      }
     });
 
     this.stockService.getItems(unitId).subscribe({
-      next: (stock) => (this.availableStockItems = stock)
+      next: (stock) => {
+        this.availableStockItems = stock;
+        this.cdr.markForCheck();
+      }
     });
   }
 
@@ -218,6 +233,7 @@ export class InventoryDetailComponent implements OnInit {
       next: (updatedAudit) => {
         this.populatingItems = false;
         this.audit = updatedAudit;
+        this.cdr.markForCheck();
         this.itemsDataSource.data = updatedAudit.items || [];
         if (updatedAudit.unit_name) this.unitName = updatedAudit.unit_name;
         if (updatedAudit.auditor_name) this.auditorName = updatedAudit.auditor_name;
@@ -226,8 +242,8 @@ export class InventoryDetailComponent implements OnInit {
       },
       error: (err) => {
         this.populatingItems = false;
-        const msg = err?.error?.detail || 'Erro ao sincronizar itens da unidade.';
-        this.snackBar.open(msg, 'Fechar', { duration: 5000 });
+        this.cdr.markForCheck();
+        this.snackBar.open(apiErrorMessage(err, 'Erro ao sincronizar itens da unidade.'), 'Fechar', { duration: 5000 });
       }
     });
   }

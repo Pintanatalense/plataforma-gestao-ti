@@ -58,6 +58,8 @@ export class StockDetailComponent implements OnInit {
       this.itemId = id;
       this.loadItem(id);
       this.loadMovements(id);
+    } else {
+      this.loadError = 'Identificador do item inválido.';
     }
   }
 
@@ -76,8 +78,13 @@ export class StockDetailComponent implements OnInit {
         this.loadUnitName(item.unit_id);
       },
       error: (err) => {
-        // sem isso a tela ficava em branco
-        this.loadError = apiErrorMessage(err, 'Não foi possível carregar o item de estoque.');
+        const msg = apiErrorMessage(err, 'Não foi possível carregar o item de estoque.');
+        if (this.item) {
+          // recarga depois de registrar uma movimentação (já gravada): mantém a tela e só avisa
+          this.snackBar.open(msg, 'Fechar', { duration: 5000 });
+        } else {
+          this.loadError = msg; // carga inicial (antes: tela em branco)
+        }
         this.cdr.markForCheck();
       }
     });
