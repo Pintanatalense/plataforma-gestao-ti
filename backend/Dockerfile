@@ -16,7 +16,8 @@ FROM base AS deps
 
 # Dependências exatas do uv.lock (build reproduzível: sem o lock, o pip pegava a versão mais nova de cada
 # pacote e uma release sem wheel quebrava o build).
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /bin/uv
+# versão fixa do uv (build reproduzível); atualizar de propósito, junto com o uv.lock
+COPY --from=ghcr.io/astral-sh/uv:0.11.29 /uv /bin/uv
 COPY pyproject.toml uv.lock ./
 RUN uv export --frozen --no-dev --no-emit-project --no-hashes -o requirements.lock \
     && uv pip install --system --no-cache -r requirements.lock
