@@ -34,6 +34,9 @@ Recuperação por link de uso único enviado por e-mail, **desligada por padrão
 
 - **Negação de serviço direcionada:** qualquer pessoa pode esgotar os 3 pedidos/hora de um e-mail, e um novo pedido invalida o link anterior. É o custo de não usar CAPTCHA; o limite impede só o abuso em volume. Reavaliar se virar problema.
 - Tentativas de confirmar com token inválido não são auditadas (o token tem 256 bits; o risco prático é desprezível).
+- **Quem liga confere a configuração:** a homologação prova que um envio funcionou, não que o destino é de confiança. Um gestor do SMTP sem poder de admin pode gravar host/`app_base_url` próprios (isso só desliga a recuperação); o administrador, ao ligar, precisa conferir host, remetente e `app_base_url` — a tela de ativação (PR seguinte) mostra esses valores e pede a confirmação.
+- Corrida estreita entre o admin ligar e o gestor alterar o SMTP no mesmo instante (o commit do admin pode sobrescrever o desligamento). Janela de milissegundos, exige dois usuários privilegiados; sem lock dedicado por ora.
+- O teste de SMTP (`/notifications/email/test`) aceita host/porta arbitrários (varredura de porta) e `security=NONE`; é anterior a este ADR e restrito a quem tem a permissão do SMTP.
 - Atrás de um balanceador/CDN, `$remote_addr` é o do balanceador e o limite por IP passa a ser compartilhado.
 
 ## Consequências
