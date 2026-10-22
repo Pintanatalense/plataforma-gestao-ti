@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormsModule } from '@angular/forms';
 import { RouterModule } from '@angular/router';
@@ -14,6 +14,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 import { StockCategory, StockService } from '../../../core/services/stock.service';
 import { apiErrorMessage } from '../../../core/http/api-error';
+import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
 
 interface SpecFieldItem {
   name: string;
@@ -25,6 +26,7 @@ interface SpecFieldItem {
   standalone: true,
   imports: [
     CommonModule,
+    LoadStateComponent,
     FormsModule,
     ReactiveFormsModule,
     RouterModule,
@@ -170,10 +172,14 @@ interface SpecFieldItem {
         <div class="table-card">
           <div class="table-header">
             <h3>Categorias de Estoque Cadastradas</h3>
-            <span class="badge-total">{{ categories.length }} categorias</span>
+            <span class="badge-total" *ngIf="!categoriesLoading && !categoriesError">{{ categories.length }} categorias</span>
           </div>
 
-          <table mat-table [dataSource]="categories" class="modern-table">
+          <app-load-state [loading]="categoriesLoading" [error]="categoriesError" [empty]="categories.length === 0"
+                          emptyText="Nenhuma categoria cadastrada." loadingText="Carregando categorias…" (retry)="loadData()"></app-load-state>
+
+          <table mat-table [dataSource]="categories" class="modern-table"
+                 *ngIf="!categoriesLoading && !categoriesError && categories.length > 0">
             <ng-container matColumnDef="name">
               <th mat-header-cell *matHeaderCellDef> Categoria </th>
               <td mat-cell *matCellDef="let element">
@@ -693,9 +699,14 @@ export class StockCategoryListComponent implements OnInit {
   private fb = inject(FormBuilder);
   private stockService = inject(StockService);
   private snackBar = inject(MatSnackBar);
+  private cdr = inject(ChangeDetectorRef);
 
   displayedColumns: string[] = ['name', 'specs', 'actions'];
   categories: StockCategory[] = [];
+  /** Primeira carga / falha da lista (uma recarga que falha depois de carregar mantém a tabela e só avisa). */
+  categoriesLoading = true;
+  categoriesError: string | null = null;
+  private categoriesLoaded = false;
   editingCategory: StockCategory | null = null;
   specFields: SpecFieldItem[] = [];
 
@@ -709,11 +720,27 @@ export class StockCategoryListComponent implements OnInit {
   }
 
   loadData(): void {
+    if (!this.categoriesLoaded) {
+      this.categoriesLoading = true;
+      this.categoriesError = null;
+    }
     this.stockService.getCategories().subscribe({
-      next: (cats) => (this.categories = cats),
+      next: (c) => {
+        this.categories = c;
+        this.categoriesLoaded = true;
+        this.categoriesLoading = false;
+        this.categoriesError = null;
+        this.cdr.markForCheck();
+      },
       error: (err) => {
-        console.error('Erro ao carregar categorias de estoque:', err);
-        this.snackBar.open('Erro ao carregar categorias de estoque.', 'Fechar', { duration: 4000 });
+        const msg = apiErrorMessage(err, 'Não foi possível carregar as categorias de estoque.');
+        if (this.categoriesLoaded) {
+          this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+        } else {
+          this.categoriesLoading = false;
+          this.categoriesError = msg;
+        }
+        this.cdr.markForCheck();
       }
     });
   }

@@ -1,4 +1,4 @@
-import { Component, OnInit, inject } from '@angular/core';
+import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
 import { CommonModule } from '@angular/common';
 import { FormBuilder, FormGroup, FormsModule, ReactiveFormsModule, Validators } from '@angular/forms';
 import { MatButtonModule } from '@angular/material/button';
@@ -15,6 +15,7 @@ import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { TicketService, TicketCategory, CategoryFormField } from '../ticket.service';
 import { OrganizationService, Sector } from '../../../core/services/organization.service';
 import { apiErrorMessage } from '../../../core/http/api-error';
+import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
 
 interface FormFieldBuilder {
   id: string;
@@ -31,6 +32,7 @@ interface FormFieldBuilder {
   standalone: true,
   imports: [
     CommonModule,
+    LoadStateComponent,
     FormsModule,
     ReactiveFormsModule,
     MatButtonModule,
@@ -243,10 +245,14 @@ interface FormFieldBuilder {
         <div class="table-card">
           <div class="table-header-box">
             <h3>Categorias Cadastradas</h3>
-            <span class="counter-badge">{{ categories.length }} categorias</span>
+            <span class="counter-badge" *ngIf="!categoriesLoading && !categoriesError">{{ categories.length }} categorias</span>
           </div>
 
-          <table mat-table [dataSource]="categories" class="modern-table">
+          <app-load-state [loading]="categoriesLoading" [error]="categoriesError" [empty]="categories.length === 0"
+                          emptyText="Nenhuma categoria cadastrada." loadingText="Carregando categorias…" (retry)="loadData()"></app-load-state>
+
+          <table mat-table [dataSource]="categories" class="modern-table"
+                 *ngIf="!categoriesLoading && !categoriesError && categories.length > 0">
             <!-- Categoria -->
             <ng-container matColumnDef="name">
               <th mat-header-cell *matHeaderCellDef> Categoria </th>
@@ -964,8 +970,13 @@ export class CategoryListComponent implements OnInit {
   private orgService = inject(OrganizationService);
   private fb = inject(FormBuilder);
   private snackBar = inject(MatSnackBar);
+  private cdr = inject(ChangeDetectorRef);
 
   categories: TicketCategory[] = [];
+  /** Primeira carga / falha da lista (uma recarga que falha depois de carregar mantém a tabela e só avisa). */
+  categoriesLoading = true;
+  categoriesError: string | null = null;
+  private categoriesLoaded = false;
   sectors: Sector[] = [];
   displayedColumns: string[] = ['name', 'sector', 'prerequisites', 'actions'];
   
@@ -990,10 +1001,27 @@ export class CategoryListComponent implements OnInit {
   }
 
   loadData() {
+    if (!this.categoriesLoaded) {
+      this.categoriesLoading = true;
+      this.categoriesError = null;
+    }
     this.ticketService.getCategories().subscribe({
-      next: (c) => (this.categories = c),
+      next: (c) => {
+        this.categories = c;
+        this.categoriesLoaded = true;
+        this.categoriesLoading = false;
+        this.categoriesError = null;
+        this.cdr.markForCheck();
+      },
       error: (err) => {
-        this.snackBar.open('Erro ao carregar categorias', 'Fechar', { duration: 3000 });
+        const msg = apiErrorMessage(err, 'Não foi possível carregar as categorias.');
+        if (this.categoriesLoaded) {
+          this.snackBar.open(msg, 'Fechar', { duration: 4000 });
+        } else {
+          this.categoriesLoading = false;
+          this.categoriesError = msg;
+        }
+        this.cdr.markForCheck();
       }
     });
   }
