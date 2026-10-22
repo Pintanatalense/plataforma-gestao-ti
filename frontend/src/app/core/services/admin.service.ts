@@ -188,6 +188,12 @@ export class AdminService {
     });
   }
 
+  resetAllData(confirmationPhrase: string): Observable<ResetAllResult> {
+    return this.http.post<ResetAllResult>('/api/v1/system/demo/reset-all', {
+      confirmation_phrase: confirmationPhrase
+    });
+  }
+
   seedDemoData(): Observable<{ status: string; message: string }> {
     return this.http.post<{ status: string; message: string }>('/api/v1/system/demo/seed', {});
   }
@@ -222,31 +228,28 @@ export interface DemoStatus {
   system_mode: 'DEMO' | 'PRODUCTION';
   is_demo_mode: boolean;
   total_demo_records: number;
-  entities: Record<string, number>;
+  demo_records_count: Record<string, number>;
+  has_recent_valid_backup: boolean;
   latest_backup: {
     filename: string;
     created_at: string;
+    size_bytes: number;
     is_usable: boolean;
   } | null;
 }
 
 export interface DemoCleanPreview {
-  records_to_delete: Record<string, number>;
-  total_to_delete: number;
-  preserved_items: {
-    system_settings: string;
-    admin_users: number;
-    audit_logs: number;
-    backups: number;
-  };
-  backup_status: {
-    has_recent_backup: boolean;
-    backup_file: string | null;
-    created_at: string | null;
-    is_usable: boolean;
-  };
-  can_proceed: boolean;
-  blocking_reasons: string[];
+  demo_records: Record<string, number>;
+  total_to_remove: number;
+  has_valid_backup: boolean;
+  required_confirmation_phrase: string;
+  preserved_elements: string[];
+}
+
+export interface ResetAllResult {
+  success: boolean;
+  message: string;
+  summary: Record<string, number | string | null>;
 }
 
 export interface PasswordResetConfig {

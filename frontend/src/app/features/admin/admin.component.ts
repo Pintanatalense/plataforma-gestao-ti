@@ -120,6 +120,9 @@ export class AdminComponent implements OnInit {
   showCleanConfirmModal = false;
   cleanConfirmationPhrase = '';
   cleaningDemo = false;
+  showResetAllModal = false;
+  resetAllPhrase = '';
+  resettingAll = false;
   seedingDemo = false;
   seedingTest = false;
 
@@ -549,6 +552,38 @@ export class AdminComponent implements OnInit {
         this.cleaningDemo = false;
         const msg = apiErrorMessage(err, 'Falha ao executar limpeza de demonstração.');
         this.snackBar.open(msg, 'Fechar', { duration: 6000 });
+      }
+    });
+  }
+
+  openResetAll(): void {
+    this.resetAllPhrase = '';
+    this.showResetAllModal = true;
+  }
+
+  closeResetAll(): void {
+    this.showResetAllModal = false;
+    this.resetAllPhrase = '';
+  }
+
+  executeResetAll(): void {
+    if (this.resetAllPhrase.trim().toUpperCase() !== 'ZERAR TODA A BASE') {
+      return;
+    }
+    this.resettingAll = true;
+    this.adminService.resetAllData(this.resetAllPhrase.trim()).subscribe({
+      next: (res) => {
+        this.resettingAll = false;
+        this.showResetAllModal = false;
+        this.resetAllPhrase = '';
+        this.snackBar.open(res.message, 'OK', { duration: 6000 });
+        this.loadDemoStatus();
+        this.cdr.markForCheck();
+      },
+      error: (err) => {
+        this.resettingAll = false;
+        this.snackBar.open(apiErrorMessage(err, 'Não foi possível zerar a base.'), 'Fechar', { duration: 6000 });
+        this.cdr.markForCheck();
       }
     });
   }

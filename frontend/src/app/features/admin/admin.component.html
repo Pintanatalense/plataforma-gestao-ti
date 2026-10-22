@@ -662,7 +662,7 @@ scripts/restore-backup.sh banco.sql.gz arquivos_AAAAMMDD_HHMMSS.tar.gz</code></p
                   <span class="label" style="display: block; font-size: 11px; color: #64748b; font-weight: 600;">Total de Registros Demo</span>
                   <span class="value" style="font-size: 20px; font-weight: 700; color: #1e293b;">{{ demoStatus.total_demo_records }}</span>
                 </div>
-                <div class="metric-box" *ngFor="let item of demoStatus.entities | keyvalue" style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
+                <div class="metric-box" *ngFor="let item of demoStatus.demo_records_count | keyvalue" style="background: #f8fafc; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0;">
                   <span class="label" style="display: block; font-size: 11px; color: #64748b; font-weight: 600;">{{ item.key }}</span>
                   <span class="value" style="font-size: 16px; font-weight: 700; color: #3b82f6;">{{ item.value }}</span>
                 </div>
@@ -713,6 +713,20 @@ scripts/restore-backup.sh banco.sql.gz arquivos_AAAAMMDD_HHMMSS.tar.gz</code></p
                 <span *ngIf="demoStatus && demoStatus.total_demo_records > 0 && !demoStatus.latest_backup" style="display: block; font-size: 11px; color: #b45309; margin-top: 6px;">
                   ℹ️ Um snapshot de segurança do banco será gerado automaticamente antes da limpeza.
                 </span>
+              </div>
+
+              <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;">
+
+              <div class="action-block" data-testid="reset-all-block">
+                <h4 style="margin: 0 0 8px 0; color: #1e293b;">Zerar toda a base (dados reais, importados e de demonstração)</h4>
+                <p style="font-size: 13px; color: #475569; margin-bottom: 12px;">
+                  Apaga chamados, ativos, estoque, colaboradores, setores, unidades, anexos, notificações e inventários.
+                  Mantém usuários, perfis, categorias, configurações (SMTP e canais), a empresa com a unidade e o setor de TI
+                  iniciais, a auditoria e os backups. Gera um backup de segurança antes. Só administradores.
+                </p>
+                <button mat-flat-button color="warn" data-testid="reset-all-open" (click)="openResetAll()">
+                  <mat-icon>delete_forever</mat-icon> Zerar toda a base
+                </button>
               </div>
 
               <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 24px 0;">
@@ -903,22 +917,19 @@ scripts/restore-backup.sh banco.sql.gz arquivos_AAAAMMDD_HHMMSS.tar.gz</code></p
       <div *ngIf="cleanPreview" style="background: #fef2f2; border: 1px solid #fecaca; border-radius: 6px; padding: 14px; margin-bottom: 16px;">
         <strong style="color: #991b1b; display: block; margin-bottom: 6px;">Resumo dos dados que serão removidos:</strong>
         <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; font-size: 13px; color: #7f1d1d;">
-          <div *ngFor="let item of cleanPreview.records_to_delete | keyvalue">
+          <div *ngFor="let item of cleanPreview.demo_records | keyvalue">
             • {{ item.key }}: <strong>{{ item.value }}</strong>
           </div>
         </div>
         <div style="margin-top: 10px; font-size: 12px; color: #991b1b; font-weight: bold;">
-          Total de itens fictícios a remover: {{ cleanPreview.total_to_delete }}
+          Total de itens fictícios a remover: {{ cleanPreview.total_to_remove }}
         </div>
       </div>
 
       <div style="background: #f0fdf4; border: 1px solid #bbf7d0; border-radius: 6px; padding: 12px; margin-bottom: 16px; font-size: 12px; color: #166534;">
         <strong>Registros e configurações estritamente preservados:</strong>
         <div style="margin-top: 4px;">
-          • Usuários administradores ({{ cleanPreview?.preserved_items?.admin_users }})<br>
-          • Configurações do sistema e integrações<br>
-          • Registros de auditoria ({{ cleanPreview?.preserved_items?.audit_logs }})<br>
-          • Arquivos e backups salvos ({{ cleanPreview?.preserved_items?.backups }})
+          <div *ngFor="let kept of cleanPreview?.preserved_elements">• {{ kept }}</div>
         </div>
       </div>
 
@@ -936,6 +947,28 @@ scripts/restore-backup.sh banco.sql.gz arquivos_AAAAMMDD_HHMMSS.tar.gz</code></p
         <button mat-button (click)="closeCleanModal()">Cancelar</button>
         <button mat-flat-button color="warn" [disabled]="cleaningDemo || cleanConfirmationPhrase.trim() !== 'LIMPAR DADOS DE DEMONSTRACAO'" (click)="executeCleanDemo()">
           <mat-icon>delete_forever</mat-icon> {{ cleaningDemo ? 'Limpando...' : 'Confirmar e Limpar Base' }}
+        </button>
+      </div>
+    </div>
+  </div>
+  <!-- MODAL: ZERAR TODA A BASE -->
+  <div class="modal-backdrop" *ngIf="showResetAllModal" (click)="closeResetAll()">
+    <div class="modal-box danger-modal" data-testid="reset-all-modal" (click)="$event.stopPropagation()" style="background: white; border-radius: 8px; max-width: 600px; width: 90%; padding: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.2);">
+      <h2 style="margin: 0 0 12px 0; font-size: 18px; color: #111827;">Zerar toda a base</h2>
+      <p style="font-size: 13px; color: #374151;">
+        Esta ação apaga <strong>todos</strong> os chamados, ativos, estoque, colaboradores, setores e unidades (exceto a TI inicial),
+        anexos e notificações. Não pode ser desfeita pelo sistema; um backup de segurança é gerado antes.
+        Para confirmar, digite exatamente: <strong style="color: #dc2626; user-select: all;">ZERAR TODA A BASE</strong>
+      </p>
+      <mat-form-field appearance="outline" class="full-width">
+        <mat-label>Frase de Confirmação</mat-label>
+        <input matInput data-testid="reset-all-phrase" [(ngModel)]="resetAllPhrase" placeholder="ZERAR TODA A BASE">
+      </mat-form-field>
+      <div style="display: flex; justify-content: flex-end; gap: 12px;">
+        <button mat-button (click)="closeResetAll()">Cancelar</button>
+        <button mat-flat-button color="warn" data-testid="reset-all-confirm"
+                [disabled]="resettingAll || resetAllPhrase.trim().toUpperCase() !== 'ZERAR TODA A BASE'" (click)="executeResetAll()">
+          <mat-icon>delete_forever</mat-icon> {{ resettingAll ? 'Zerando...' : 'Confirmar e zerar a base' }}
         </button>
       </div>
     </div>
