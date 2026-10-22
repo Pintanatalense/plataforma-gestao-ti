@@ -90,6 +90,7 @@ def decode_access_token(token: str) -> dict[str, Any] | None:
     try:
         payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.JWT_ALGORITHM])
         return payload
-    except jwt.InvalidTokenError:
-        # inclui expirado, assinatura inválida, claim mal formado e token malformado
+    except jwt.PyJWTError:
+        # base de todos os erros do PyJWT: expirado, assinatura inválida, algoritmo não permitido, claim mal
+        # formado, token malformado e chave inválida
         return None

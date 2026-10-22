@@ -20,12 +20,16 @@ def _b64(data: bytes) -> str:
     return base64.urlsafe_b64encode(data).rstrip(b"=").decode()
 
 
-def _hs256(payload: dict, key: str = SECRET) -> str:
-    """Token HS256 montado à mão: é o que qualquer biblioteca (inclusive a anterior) emite."""
-    head = _b64(json.dumps({"alg": "HS256", "typ": "JWT"}, separators=(",", ":")).encode())
+def _signed(payload: dict, key: str = SECRET, alg: str = "HS256", digest=hashlib.sha256) -> str:
+    """Token montado à mão (HMAC): é o que qualquer biblioteca, inclusive a anterior, emite."""
+    head = _b64(json.dumps({"alg": alg, "typ": "JWT"}, separators=(",", ":")).encode())
     body = _b64(json.dumps(payload, separators=(",", ":")).encode())
-    sig = _b64(hmac.new(key.encode(), f"{head}.{body}".encode(), hashlib.sha256).digest())
+    sig = _b64(hmac.new(key.encode(), f"{head}.{body}".encode(), digest).digest())
     return f"{head}.{body}.{sig}"
+
+
+def _hs256(payload: dict, key: str = SECRET) -> str:
+    return _signed(payload, key)
 
 
 def test_roundtrip_keeps_claims_and_adds_exp_and_iat():
@@ -65,3 +69,17 @@ def test_token_emitted_by_another_hs256_library_is_still_valid():
     """Quem já está logado (token emitido antes da troca de biblioteca) continua logado."""
     token = _hs256({"sub": "u1", "permissions": [], "exp": 4102444800, "iat": 1700000000})
     assert decode_access_token(token)["sub"] == "u1"
+
+
+def test_only_the_configured_algorithm_is_accepted():
+    """HS512 assinado com a MESMA chave é recusado: a lista de algoritmos é imposta."""
+    token = _signed({"sub": "u1", "exp": 4102444800}, alg="HS512", digest=hashlib.sha512)
+    assert decode_access_token(token) is None
+
+
+def test_token_issued_in_the_future_is_rejected():
+    assert decode_access_token(_hs256({"sub": "u1", "iat": 4102444800, "exp": 4102448400})) is None
+
+
+def test_non_string_subject_is_rejected():
+    assert decode_access_token(_hs256({"sub": 123, "exp": 4102444800})) is None
