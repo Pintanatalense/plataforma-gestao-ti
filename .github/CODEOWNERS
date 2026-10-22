@@ -1,0 +1,12 @@
+# Quem revisa o quê. Com "Require review from Code Owners" ativado na proteção da main,
+# nenhum PR entra sem a aprovação do responsável.
+*                       @Pintanatalense
+
+# Áreas de maior risco: dados, segurança e infraestrutura
+/backend/alembic/       @Pintanatalense
+/backend/app/identity/  @Pintanatalense
+/backend/app/core/      @Pintanatalense
+/scripts/               @Pintanatalense
+/nginx/                 @Pintanatalense
+/.github/               @Pintanatalense
+/docker-compose*.yml    @Pintanatalense

@@ -1,0 +1,84 @@
+# Atualizações automáticas de dependências. Limites iniciais baixos (o primeiro ciclo costuma abrir muitos PRs).
+# Mudança de VERSÃO MAIOR de runtime (Python, Node, PostgreSQL, Nginx, uv) é decisão humana com ADR/teste real:
+# o Dependabot não a propõe nos ecossistemas docker. Majors do npm (Angular/Material) vêm em PR individual.
+# Fora do alcance do Dependabot: `COPY --from=ghcr.io/astral-sh/uv:<versão>` do backend/Dockerfile (manual).
+# Todo PR do Dependabot passa pelo mesmo CI e pela mesma revisão de qualquer outro (ver CONTRIBUTING.md).
+version: 2
+updates:
+  # Backend: pyproject.toml + uv.lock
+  - package-ecosystem: "uv"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "America/Fortaleza"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      python-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Frontend: package.json + package-lock.json
+  - package-ecosystem: "npm"
+    directory: "/frontend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "America/Fortaleza"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "chore(deps)"
+    groups:
+      npm-minor-patch:
+        update-types: ["minor", "patch"]
+
+  # Imagens base dos Dockerfiles (backend, frontend/nginx)
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "America/Fortaleza"
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "chore(docker)"
+  - package-ecosystem: "docker"
+    directory: "/nginx"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "America/Fortaleza"
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "chore(docker)"
+
+  # Imagens dos docker-compose*.yml (postgres, etc.)
+  - package-ecosystem: "docker-compose"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "America/Fortaleza"
+    open-pull-requests-limit: 2
+    ignore:
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    commit-message:
+      prefix: "chore(docker)"
+
+  # Actions do CI (fixadas por SHA; o Dependabot atualiza o SHA e o comentário da versão)
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      timezone: "America/Fortaleza"
+    commit-message:
+      prefix: "chore(ci)"
