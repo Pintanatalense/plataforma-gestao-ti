@@ -80,4 +80,16 @@ describe('LoginComponent', () => {
     component.onSubmit();
     expect(open.mock.calls[0][0]).toBe('Muitas tentativas inválidas. Tente novamente em alguns minutos.');
   });
+
+  it('does not repeat the global notice: on a server error the login shows no second snackbar', () => {
+    const auth = TestBed.inject(AuthService);
+    const snack = (component as unknown as { snackBar: MatSnackBar }).snackBar;
+    const open = vi.spyOn(snack, 'open').mockReturnValue(undefined as never);
+    vi.spyOn(auth, 'getSetupStatus').mockReturnValue(of({ setup_required: false }));
+    vi.spyOn(auth, 'login').mockReturnValue(throwError(() => ({ status: 500, error: {} })));
+    component.loginForm.setValue({ email: 'a@b.com', password: 'x' });
+    component.onSubmit();
+    expect(open).not.toHaveBeenCalled();
+    expect(component.isLoading).toBe(false);
+  });
 });

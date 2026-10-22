@@ -2,6 +2,7 @@ import { TestBed } from '@angular/core/testing';
 import { HttpClient, provideHttpClient, withInterceptors } from '@angular/common/http';
 import { HttpTestingController, provideHttpClientTesting } from '@angular/common/http/testing';
 import { provideRouter } from '@angular/router';
+import { Location } from '@angular/common';
 import { MatSnackBar } from '@angular/material/snack-bar';
 import { AuthService } from '../auth/auth.service';
 import { ErrorNotifier } from '../http/error-notifier.service';
@@ -97,5 +98,13 @@ describe('jwtInterceptor', () => {
     expect(logout).toHaveBeenCalledTimes(1);
     expect(snack.open).toHaveBeenCalledTimes(2);
     expect(snack.open.mock.calls[1][0]).toMatch(/sessão/i);
+  });
+
+  it('remembers the real browser address (a deep link opened with an expired token has router.url "/")', () => {
+    localStorage.setItem('access_token', 'tok');
+    vi.spyOn(TestBed.inject(Location), 'path').mockReturnValue('/assets/9?tab=x');
+    const remember = vi.spyOn(auth, 'rememberReturnUrl');
+    fail('/api/v1/assets/9', 401);
+    expect(remember).toHaveBeenCalledWith('/assets/9?tab=x');
   });
 });
