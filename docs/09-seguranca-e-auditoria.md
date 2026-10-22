@@ -9,7 +9,7 @@ Este documento consolida os controles de segurança técnica, mecanismos de prot
 * **Hashing de Credenciais:** As senhas dos usuários nunca são armazenadas em texto plano. É utilizado o algoritmo criptográfico **bcrypt** com salting automático e fator de custo adaptativo.
 * **Tokens de Acesso (JWT):** A sessão utiliza JSON Web Tokens assinados com algoritmo HMAC-SHA256 utilizando o `SECRET_KEY` configurado nas variáveis de ambiente.
 * **Proteção de Segredos e Chaves de Integração:**
-  * As credenciais do servidor SMTP e a chave de API da Evolution API ficam salvas no banco de dados com a senha mascarada (`********`).
+  * As credenciais das integrações (SMTP, Telegram, WhatsApp/Meta, Slack, chaves VAPID) ficam cifradas com Fernet (`APP_ENCRYPTION_KEY`) na tabela `channel_configs`; a interface mostra a senha mascarada (`********`) e nunca devolve o segredo. **Guarde `APP_ENCRYPTION_KEY` fora do servidor: sem ela, um backup restaurado não consegue decifrar essas credenciais.**
   * Nenhuma senha ou token de serviço é registrado em logs de aplicação ou exposto em respostas de erro da API.
 
 ---
@@ -35,21 +35,16 @@ Este documento consolida os controles de segurança técnica, mecanismos de prot
 
 A plataforma possui um sistema de auditoria centralizado através da tabela `audit_logs`:
 
-* **Eventos Auditados:**
-  * Autenticação e bloqueios de acesso (`user.login`, `user.logout`, `user.password_changed`);
-  * Mudanças de permissões e perfis de usuários;
-  * Ciclo de vida completo dos chamados (`ticket.created`, `ticket.status_changed`, `ticket.interaction_added`, `ticket.closed`);
-  * Movimentações de patrimônio e consumo de estoque;
-  * Geração e restauração de backups (`backup.created`, `backup.restored`);
-  * Execução de limpeza do ambiente demonstrativo (`system.demo.cleaned`).
-* **Estrutura dos Registros de Auditoria:**
-  * `id`: UUID único do evento;
-  * `event_type`: Identificador padronizado da ação;
-  * `entity_type` e `entity_id`: Recurso impactado;
-  * `user_id`, `user_name` e `user_email`: Responsável pela ação;
-  * `ip_address`: Endereço IP de origem da requisição;
-  * `data`: Snapshot em JSON com dados antes e depois da modificação;
-  * `created_at`: Carimbo de data/hora em UTC.
+* **Como funciona:** o barramento interno de eventos grava na tabela `audit_logs` todo evento publicado pelos módulos (`backend/app/audit/listener.py`).
+* **Eventos que existem hoje:**
+  * Chamados: `ticket.created`, `ticket.status_changed`, `ticket.interaction_added`, `ticket.assigned`, `ticket.priority_changed`, `ticket.closed`, `ticket.material_added` e os eventos de vínculo, reserva, entrega, devolução e inspeção de ativos (`ticket.asset_*`);
+  * Colaborador criado (`employee.created`);
+  * Backups: `backup.completed` e `backup.failed`;
+  * Canais de notificação: `notifications.channel_unlinked` e degradação de canal;
+  * Ambiente demonstrativo: `system.demo.seeded` e `system.demo.cleaned`.
+* **O que NÃO é auditado hoje (limitações conhecidas):** login, logout e falhas de login; troca ou reset de senha; criação e alteração de usuários, perfis e permissões; alteração de empresa/logo; configuração de SMTP; restauração de backup (feita por script, fora da API); importação e exportação de dados. Previsto no plano diretor (`docs/plans/plano-diretor.md`, item P3-6).
+* **Estrutura dos registros (`audit_logs`):** `id`, `event_type`, `entity_type`, `entity_id`, `data` (JSON do evento), `user_id` (nome e e-mail são derivados do usuário na consulta) e `created_at` (UTC). **Não há** campo de endereço IP nem snapshot antes/depois.
+* **Consulta:** `GET /api/v1/audit` e `GET /api/v1/audit/{entity_type}/{entity_id}` (permissão `audit.read`). Ainda não existe tela.
 
 ---
 

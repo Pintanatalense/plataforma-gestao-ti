@@ -1,5 +1,7 @@
 # Status e Pendências - Plataforma de Gestão de TI
 
+> **ARQUIVADO (2026-10-21) — não é fonte de verdade.** Este documento foi gerado antes das fases A–G e contém afirmações desatualizadas ou incorretas (por exemplo versões do Angular, Evolution API e status de "produção/homologado"). Vale o código. Estado atual: `README.md`, `docs/decisions/` e `docs/plans/plano-diretor.md`.
+
 Este documento sumariza o status atual do projeto, as funcionalidades recém-entregues, e mapeia as pendências técnicas e tarefas pendentes que necessitam de intervenção ou desenvolvimento futuro.
 
 ---

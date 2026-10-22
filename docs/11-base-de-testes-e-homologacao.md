@@ -15,13 +15,13 @@ O sistema adota uma separação tripartite estrita para garantir que dados de te
 | **Testes & QA (Descartável)** | `localhost:55432` | `gti_test` | Homologação de releases, testes E2E e execução de testes no PostgreSQL real. |
 
 > [!IMPORTANT]
-> A guarda de segurança [backend/tests/_guard.py](file:///c:/Projetos/plataforma-gestao-ti/backend/tests/_guard.py) impede sumariamente que qualquer rotina de teste conecte a bancos de dados cujo nome não termine com o sufixo `_test` ou cujo host não seja local (`localhost`, `127.0.0.1`).
+> A guarda de segurança [backend/tests/_guard.py](../backend/tests/_guard.py) impede sumariamente que qualquer rotina de teste conecte a bancos de dados cujo nome não termine com o sufixo `_test` ou cujo host não seja local (`localhost`, `127.0.0.1`).
 
 ---
 
 ## 2. Infraestrutura Docker de Testes (`docker-compose.test.yml`)
 
-O repositório dispõe de uma infraestrutura leve e otimizada exclusivamente para testes automatizados e homologação em [docker-compose.test.yml](file:///c:/Projetos/plataforma-gestao-ti/docker-compose.test.yml).
+O repositório dispõe de uma infraestrutura leve e otimizada exclusivamente para testes automatizados e homologação em [docker-compose.test.yml](../docker-compose.test.yml).
 
 ### 2.1. Otimizações de Desempenho
 Para acelerar a criação de tabelas, inserção de fixtures e execução de testes de integração, o container de banco de testes opera com sincronização síncrona desativada:

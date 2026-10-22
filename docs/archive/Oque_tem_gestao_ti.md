@@ -1,5 +1,7 @@
 # Mapeamento Completo de Telas e Funcionalidades — Plataforma de Gestão de TI
 
+> **ARQUIVADO (2026-10-21) — não é fonte de verdade.** Este documento foi gerado antes das fases A–G e contém afirmações desatualizadas ou incorretas (por exemplo versões do Angular, Evolution API e status de "produção/homologado"). Vale o código. Estado atual: `README.md`, `docs/decisions/` e `docs/plans/plano-diretor.md`.
+
 > **Documento de Referência Oficial do Sistema**  
 > **Arquivo:** `Oque_tem_gestao_ti.md`  
 > **Data de Levantamento:** Outubro de 2026  

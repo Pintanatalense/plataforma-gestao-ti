@@ -7,20 +7,20 @@ Este guia prático fornece instruções passo a passo para identificar, diagnost
 ## 1. Problemas com Banco de Dados e Conectividade
 
 ### Sintoma: API retornando `HTTP 500` com erro de conexão ao PostgreSQL
-* **Causa Provável:** O container `gestao-ti-db` não inicializou a tempo, está reiniciando ou as credenciais do `.env` divergiram do banco já inicializado.
+* **Causa Provável:** O serviço `postgres` não inicializou a tempo, está reiniciando ou as credenciais do `.env` divergiram do banco já inicializado.
 * **Comandos de Diagnóstico:**
   ```bash
   docker compose ps
-  docker logs gestao-ti-db --tail 50
+  docker compose logs postgres --tail 50
   ```
 * **Solução:**
   1. Verifique se o container do banco está em estado `healthy`:
      ```bash
-     docker inspect --format='{{.State.Health.Status}}' gestao-ti-db
+     docker compose ps postgres   # a coluna STATUS deve indicar (healthy)
      ```
   2. Teste a conexão manual pelo cliente psql:
      ```bash
-     docker exec -it gestao-ti-db psql -U postgres -d gestao_ti -c "SELECT 1;"
+     docker compose exec postgres psql -U postgres -d gestao_ti -c "SELECT 1;"
      ```
   3. Caso o PostgreSQL recuse a autenticação após alteração de senha no `.env`, lembre-se de que a alteração de senha em container já inicializado exige comando `ALTER USER` dentro do banco.
 
@@ -52,14 +52,15 @@ Este guia prático fornece instruções passo a passo para identificar, diagnost
 
 ---
 
-## 3. Problemas na Integração com WhatsApp (Evolution API)
+## 3. Problemas na Integração com WhatsApp (Meta Cloud API)
 
-### Sintoma: Status exibindo `FAILED` ou `DISCONNECTED`
-* **Causa 1 (Container não iniciado):** A Evolution API não foi iniciada com o perfil correspondente.
-  * **Solução:** Execute `docker compose --profile evolution up -d`.
-* **Causa 2 (URL incorreta):** A API do sistema roda na mesma rede interna Docker que a Evolution API. A URL recomendada no painel é `http://gestao-ti-evolution:8084` (ou `http://host.docker.internal:8084`).
-* **Causa 3 (Instância desconectada):** O smartphone foi desconectado ou a sessão foi revogada.
-  * **Solução:** Na aba **WhatsApp & Anti-Ban > Conexão & Gateway**, clique em **Conectar WhatsApp (QR Code)** e escaneie o novo código gerado.
+O canal usa somente a API oficial da Meta (veja `docs/04-configuracao-de-integracoes.md`, seção 2). Diagnóstico em Notificações > **Entregas e regras** > **Saúde dos canais**.
+
+### Sintoma: canal WhatsApp degradado, entregas `FAILED`
+* **Causa 1 (token inválido ou expirado):** use o token permanente de usuário do sistema; ao salvar, o sistema o valida na Graph API e mostra o erro da Meta.
+* **Causa 2 (janela de 24 h fechada sem template):** a entrega falha de forma definitiva com a explicação no painel. Configure o template aprovado (seção 2.3 do doc 04).
+* **Causa 3 (webhook não chega):** exige HTTPS público com certificado válido. Confira a URL `https://SEU_DOMINIO/api/v1/integrations/whatsapp/webhook`, o token de verificação do card e se o campo `messages` está assinado.
+* **Causa 4 (assinatura rejeitada):** o App Secret salvo difere do app da Meta; o webhook é descartado por `X-Hub-Signature-256` inválida.
 
 ---
 
@@ -89,5 +90,5 @@ Este guia prático fornece instruções passo a passo para identificar, diagnost
 | Nível de Severidade | Critério de Ocorrência | Ação Imediata |
 | :--- | :--- | :--- |
 | **Severidade 1 (Crítica)** | Queda total do banco de dados ou indisponibilidade completa do portal web. | Acionar DevOps/DBA; verificar recursos de disco e aplicar procedimento de restauração de desastres (DR). |
-| **Severidade 2 (Alta)** | Falha nos envios de e-mails de chamados ou instabilidade da Evolution API. | Validar credenciais no painel administrativo; reiniciar container de integração sem paralisar o Service Desk. |
+| **Severidade 2 (Alta)** | Falha nos envios de e-mail ou de um canal de notificação (Telegram, WhatsApp, Slack). | Validar credenciais no painel administrativo e a saúde do canal em Entregas e regras; o Service Desk continua operando. |
 | **Severidade 3 (Baixa)** | Dúvidas em parametrização de templates ou configuração de setores. | Consultar manual de utilização (Doc 06) ou documentação administrativa (Doc 03). |
