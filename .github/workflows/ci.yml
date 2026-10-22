@@ -15,7 +15,8 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
-# As actions estão fixadas pelo SHA do commit (o comentário indica a versão); o Dependabot as atualiza.
+# As actions estão fixadas pelo SHA do commit (o comentário indica a versão). Atualizar é manual até o
+# Dependabot ser configurado (plano diretor, P1-3): sem isso os SHAs ficam velhos.
 env:
   CI_SECRET_KEY: ci-only-secret-key-0123456789abcdef0123456789
   CI_ENCRYPTION_KEY: j7aZmoHBs-fLFKl4myK4N7BqySPuIpD8OjzqKQmxKtA=
@@ -140,12 +141,25 @@ jobs:
     - name: Install uv
       uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
 
+    # Erro de infraestrutura (rede, ferramenta, lock quebrado) reprova o job. O pip-audit devolve 1 tanto para
+    # "achou vulnerabilidades" quanto para erro; por isso o código 1 só é aceito se o relatório JSON foi gerado
+    # e é válido (aí é achado, e o job é apenas informativo).
     - name: Python dependencies (pip-audit)
       working-directory: ./backend
-      continue-on-error: true
       run: |
         uv export --frozen --no-dev --no-emit-project -o "$RUNNER_TEMP/requirements.txt"
-        uvx pip-audit -r "$RUNNER_TEMP/requirements.txt" --no-deps --disable-pip
+        rc=0
+        uvx pip-audit -r "$RUNNER_TEMP/requirements.txt" --no-deps --disable-pip           -f json -o "$RUNNER_TEMP/pip-audit.json" || rc=$?
+        if [ "$rc" -ne 0 ]; then
+          python3 -c "import json,sys; json.load(open(sys.argv[1]))" "$RUNNER_TEMP/pip-audit.json" 2>/dev/null             || { echo "::error::pip-audit falhou sem gerar relatório (código $rc)"; exit "$rc"; }
+          echo "::warning::pip-audit encontrou vulnerabilidades conhecidas (informativo)"
+        fi
+        python3 - "$RUNNER_TEMP/pip-audit.json" <<'PY'
+        import json, sys
+        for dep in json.load(open(sys.argv[1]))["dependencies"]:
+            for vuln in dep.get("vulns", []):
+                print(f"{dep['name']} {dep['version']}: {vuln['id']} (correção: {', '.join(vuln.get('fix_versions') or ['sem versão corrigida'])})")
+        PY
 
     - name: Use Node.js
       uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
