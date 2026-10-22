@@ -103,7 +103,7 @@ export class AssetCreateComponent implements OnInit {
         this.employees = emps;
         this.cdr.markForCheck();
       },
-      error: (err) => this.failDependency(err, 'as listas de apoio (colaboradores)')
+      error: (err) => this.snackBar.open(apiErrorMessage(err, 'Não foi possível carregar os colaboradores; o responsável é opcional.'), 'Fechar', { duration: 5000 })
     });
   }
 
