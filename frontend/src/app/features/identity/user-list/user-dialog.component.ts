@@ -9,6 +9,7 @@ import { MatButtonModule } from '@angular/material/button';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { IdentityService, Role, User } from '../../../core/services/identity.service';
 import { OrganizationService, Employee } from '../../../core/services/organization.service';
+import { generateTemporaryPassword } from '../../../core/auth/temporary-password';
 
 @Component({
   selector: 'app-user-dialog',
@@ -88,7 +89,7 @@ export class UserDialogComponent implements OnInit {
     this.form = this.fb.group({
       employee_id: [this.data?.employee_id || '', Validators.required],
       email: [this.data?.email || '', [Validators.required, Validators.email]],
-      password: [this.data ? '' : 'temporaria-123', this.data ? [] : Validators.required],
+      password: [this.data ? '' : generateTemporaryPassword(), this.data ? [] : Validators.required],
       role_ids: [this.data?.roles?.map((r: any) => r.id) || []],
       is_admin: [this.data?.is_admin || false]
     });

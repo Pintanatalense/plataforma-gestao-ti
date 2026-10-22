@@ -9,7 +9,10 @@
     </button>
   </div>
 
-  <div class="table-container">
+  <app-load-state [loading]="isLoading" [error]="loadError" [empty]="dataSource.length === 0"
+                  emptyText="Nenhum setor cadastrado." (retry)="loadData()"></app-load-state>
+
+  <div class="table-container" *ngIf="!isLoading && !loadError && dataSource.length > 0">
     <table mat-table [dataSource]="dataSource" class="modern-table">
       
       <ng-container matColumnDef="unit">
