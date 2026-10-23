@@ -29,7 +29,7 @@ async def test_a_safe_client_id_is_kept(client: AsyncClient):
     assert resp.headers["x-request-id"] == "abc-12345678"
 
 
-@pytest.mark.parametrize("bad", ["curto", "tem espaco e <script>", "x" * 65, "a\tb-12345678"])
+@pytest.mark.parametrize("bad", ["curto", "tem espaco e <script>", "x" * 65, "a\tb-12345678", "abcdefgh\n"])
 async def test_an_unsafe_client_id_is_replaced(client: AsyncClient, bad: str):
     resp = await client.get(HEALTH, headers={"X-Request-ID": bad})
     assert resp.headers["x-request-id"] != bad
