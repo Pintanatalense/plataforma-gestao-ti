@@ -10,7 +10,7 @@ Primeira versão marcada. Reúne a estabilização, a qualidade funcional e as c
 
 - Sessões passam a ser revogadas ao trocar ou redefinir a senha e ao desativar a conta (versão de sessão no token, ADR-016); `python-jose` trocado por `PyJWT`.
 - Anti-escalada de privilégio: só administrador concede `is_admin`; ninguém concede permissão que não tem; o último administrador é protegido.
-- A carga de QA (`/system/demo/seed-test`, cria administrador com senha conhecida) vem **desligada** (`ENABLE_QA_SEED=false`); `/docs` e OpenAPI também (`ENABLE_API_DOCS=false`).
+- A carga de QA (`/system/demo/seed-test`, cria administrador com senha conhecida) vem **desligada** (`ENABLE_QA_SEED=false`). A documentação interativa da API (`/api/v1/docs`) continua **ligada por padrão**; para um servidor exposto, defina `ENABLE_API_DOCS=false` no `.env`.
 - Teste de SMTP não reaproveita a senha salva para outro servidor; alterar o SMTP gera auditoria.
 - Limite de tentativas de login no Nginx; o IP do cliente deixou de poder ser forjado por `X-Forwarded-For`.
 - Recuperação de senha por e-mail (ADR-018), **desligada por padrão**: só administrador liga, exige SMTP homologado com TLS, link de uso único com validade de 30 minutos, limites por e-mail e por IP.

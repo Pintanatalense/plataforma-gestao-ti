@@ -13,7 +13,7 @@ from contextvars import ContextVar
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
 REQUEST_ID_HEADER = "x-request-id"
-_SAFE_ID = re.compile(r"^[A-Za-z0-9._-]{8,64}$")
+_SAFE_ID = re.compile(r"[A-Za-z0-9._-]{8,64}")
 _request_id: ContextVar[str] = ContextVar("request_id", default="-")
 
 LOG_FORMAT = "%(asctime)s %(levelname)s [%(request_id)s] %(name)s: %(message)s"
@@ -58,7 +58,7 @@ class RequestIdMiddleware:
             return
 
         incoming = dict(scope.get("headers") or []).get(REQUEST_ID_HEADER.encode(), b"").decode("latin-1")
-        request_id = incoming if _SAFE_ID.match(incoming) else uuid.uuid4().hex
+        request_id = incoming if _SAFE_ID.fullmatch(incoming) else uuid.uuid4().hex
         token = _request_id.set(request_id)
 
         async def send_with_id(message: Message) -> None:
