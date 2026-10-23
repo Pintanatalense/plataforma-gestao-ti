@@ -58,3 +58,14 @@ Nada de senha, token, chave ou dump em código, testes, logs, issues ou PRs. `.e
 
 O revisor confere o diff **e** a evidência: roda ou lê os testes, confirma as afirmações da descrição contra o código
 e procura mudança de comportamento escondida em PRs "mecânicos". Achado sério volta para o autor antes do merge.
+
+## Minutos do GitHub Actions
+
+O plano gratuito dá 2.000 minutos por mês (e o aviso chega aos 90%). Uma execução completa do CI custa cerca de 20 minutos, por isso:
+
+- **Rode tudo localmente antes de subir** (`uv run ruff check`, `uv run pytest`, `npm run lint`, `npm test`, `shellcheck`). O CI confirma; não é para descobrir erro.
+- **Um PR, poucos commits.** Cada `push` num PR reexecuta o que mudou. Junte as correções de revisão em um único commit em vez de um commit por achado.
+- **O CI só roda o que o PR tocou** (job `changes`): só documentação não roda nada pesado; só frontend não roda o backend. Mudar `.github/workflows/` roda tudo.
+- **Não há execução em `push` na `main`** (o PR já rodou o mesmo código). A suíte completa, inclusive SQLite e auditoria de dependências, roda toda segunda-feira e sob demanda (aba *Actions* → *CI* → *Run workflow*).
+- **Dependabot é mensal e sem rebase automático**: cada rebase reexecuta o CI. Revise os PRs dele em lote, um por vez.
+- Consulte o gasto em *Settings → Billing → Usage*. Para nunca cobrar além do incluído, defina um orçamento de US$ 0 para Actions (isso bloqueia as execuções ao chegar no limite).

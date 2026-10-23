@@ -1,10 +1,15 @@
 name: CI
 
+# Minutos do GitHub Actions são limitados (2.000/mês no plano gratuito). Por isso:
+#  - não há execução em "push" na main: o PR já rodou o mesmo código antes de ser mesclado;
+#  - cada PR só roda os jobs das áreas que mudou (job `changes`); PR só de documentação roda só o `changes`;
+#  - a suíte completa (inclusive SQLite e auditoria de dependências) roda toda segunda-feira e sob demanda.
 on:
-  push:
-    branches: [ "main" ]
   pull_request:
     branches: [ "**" ]  # inclui PRs empilhados (base != main)
+  schedule:
+    - cron: "0 6 * * 1"  # segunda-feira, 06:00 UTC: tudo, na main
+  workflow_dispatch:
 
 # Princípio do menor privilégio: nenhum job precisa escrever no repositório.
 permissions:
@@ -22,8 +27,49 @@ env:
   CI_ENCRYPTION_KEY: j7aZmoHBs-fLFKl4myK4N7BqySPuIpD8OjzqKQmxKtA=
 
 jobs:
+  # Decide o que rodar. Em PR compara o commit de merge com a base (HEAD^1); fora de PR (agenda, execução manual)
+  # roda tudo. Mudar o próprio workflow também roda tudo.
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      backend: ${{ steps.f.outputs.backend }}
+      frontend: ${{ steps.f.outputs.frontend }}
+      docker: ${{ steps.f.outputs.docker }}
+      scripts: ${{ steps.f.outputs.scripts }}
+      audit: ${{ steps.f.outputs.audit }}
+    steps:
+    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      with:
+        fetch-depth: 2
+
+    - id: f
+      env:
+        EVENT: ${{ github.event_name }}
+      run: |
+        everything=false
+        files=""
+        if [ "$EVENT" != "pull_request" ]; then
+          everything=true
+        else
+          files="$(git diff --name-only HEAD^1 HEAD)"
+          printf '%s\n' "$files" | grep -q '^\.github/workflows/' && everything=true
+        fi
+        check() { # check REGEX: true se tudo roda ou algum arquivo alterado casa
+          if [ "$everything" = true ] || printf '%s\n' "$files" | grep -Eq "$1"; then echo true; else echo false; fi
+        }
+        {
+          echo "backend=$(check '^backend/')"
+          echo "frontend=$(check '^frontend/')"
+          echo "docker=$(check '^(backend|nginx|frontend)/|^docker-compose')"
+          echo "scripts=$(check '^scripts/')"
+          echo "audit=$(check '(uv\.lock|package-lock\.json)$')"
+        } >> "$GITHUB_OUTPUT"
+        echo "Arquivos alterados:"; printf '%s\n' "$files"; cat "$GITHUB_OUTPUT"
+
   # Testes rápidos (SQLite em memória) + migrations em banco vazio. O nome do job é mantido.
   backend-tests:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -65,13 +111,18 @@ jobs:
         APP_ENCRYPTION_KEY: ${{ env.CI_ENCRYPTION_KEY }}
       run: uv run alembic upgrade head
 
-    - name: Run pytest
+    # A suíte em PostgreSQL (job abaixo) inclui estes mesmos testes e mais os de `pg`/`migrations`; rodar as duas
+    # em todo PR dobrava os minutos. A versão em SQLite fica na execução semanal e sob demanda.
+    - name: Run pytest (SQLite; só na execução semanal/manual)
+      if: github.event_name != 'pull_request'
       working-directory: ./backend
       run: uv run pytest
 
   # Mesma suíte contra PostgreSQL 16 de verdade (inclui os testes marcados `pg` e `migrations`)
   # e verificação de que os models batem com as migrations.
   backend-postgres:
+    needs: changes
+    if: needs.changes.outputs.backend == 'true'
     runs-on: ubuntu-latest
     services:
       postgres:
@@ -126,6 +177,8 @@ jobs:
 
   # As imagens que vão para produção precisam construir (sem publicar).
   docker-build:
+    needs: changes
+    if: needs.changes.outputs.docker == 'true'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -138,6 +191,8 @@ jobs:
 
   # Scripts de operação (instalação, backup, restauração) são código que mexe em dados: precisam passar no shellcheck.
   shellcheck:
+    needs: changes
+    if: needs.changes.outputs.scripts == 'true'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -147,6 +202,8 @@ jobs:
 
   # Informativo: não reprova o PR, mas deixa o relatório de vulnerabilidades conhecidas no log.
   dependency-audit:
+    needs: changes
+    if: needs.changes.outputs.audit == 'true'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
@@ -185,6 +242,8 @@ jobs:
       run: npm audit --omit=dev --audit-level=high
 
   frontend-tests:
+    needs: changes
+    if: needs.changes.outputs.frontend == 'true'
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
