@@ -13,6 +13,7 @@ import { Asset, AssetService } from '../../../core/services/asset.service';
 import { AssetQuickViewDialogComponent } from '../asset-quick-view-dialog/asset-quick-view-dialog.component';
 import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
 import { apiErrorMessage } from '../../../core/http/api-error';
+import { AuthService } from '../../../core/auth/auth.service';
 
 @Component({
   selector: 'app-asset-list',
@@ -36,6 +37,9 @@ export class AssetListComponent implements OnInit {
   private assetService = inject(AssetService);
   private cdr = inject(ChangeDetectorRef);
   private dialog = inject(MatDialog);
+  private auth = inject(AuthService);
+
+  readonly canEditStatement = this.auth.hasPermission('organization.company.update');
 
   displayedColumns: string[] = ['tag', 'name', 'category', 'unit', 'employee', 'status', 'actions'];
   dataSource = new MatTableDataSource<Asset>([]);

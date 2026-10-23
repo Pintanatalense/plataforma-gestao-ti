@@ -88,3 +88,21 @@ Ações críticas são gravadas na tabela `audit_logs` e consultadas em **Admini
 * Histórico dos eventos de cada chamado do Service Desk (inclui vínculo, reserva, entrega e devolução de ativos e materiais), colaborador criado e backup concluído/falho.
 * Senhas, tokens e o texto digitado no campo de e-mail do login **nunca** são registrados.
 * Não são auditados: logout, restauração de backup feita por script, importação/exportação e leituras. Detalhes e limites em [09](09-seguranca-e-auditoria.md).
+
+---
+
+## 5. Modelo do Termo de Responsabilidade
+
+O termo impresso no detalhe do ativo ("Termo de Responsabilidade e Cautela") usa um modelo de texto. Sem nenhuma alteração vale o **modelo padrão do sistema**; uma empresa que tem o próprio texto pode editá-lo.
+
+**Onde:** *Patrimônio e Ativos* → botão **Modelo do termo** (exige a permissão `organization.company.update`; quem só tem `assets.write` não vê o botão).
+
+- O texto é editado como **texto simples**, sem HTML. O visual (tabelas, assinaturas) é padronizado pelo sistema.
+- **Campos automáticos** (clique para inserir): `{{colaborador}}`, `{{matricula}}`, `{{cargo}}`, `{{setor}}`, `{{unidade}}`, `{{patrimonio}}`, `{{categoria}}`, `{{equipamento}}`, `{{empresa}}`, `{{data}}`.
+- **Blocos prontos** (sozinhos em uma linha): `{{tabela_colaborador}}`, `{{tabela_equipamento}}`, `{{tabela_especificacoes}}` e `{{assinaturas}}`.
+- **Formatação:** `# Título`, `> Subtítulo`, `## Seção`, listas com `1.` ou `-`, `**negrito**`; linha em branco separa parágrafos.
+- **Ver prévia** abre o termo com dados de exemplo, sem salvar. **Salvar modelo** passa a valer para todos os termos gerados a partir daí (não altera termos já impressos). **Voltar ao modelo padrão** apaga o modelo próprio.
+- Campos escritos errados (por exemplo `{{matricula_errada}}`) são avisados na tela e aparecem como escritos no documento.
+- Cada alteração e cada restauração ficam na auditoria (`assets.statement_template_changed`), sem o texto do modelo.
+
+Limite: 20.000 caracteres. O cabeçalho do rodapé ("Documento gerado eletronicamente em ... ID Ativo ...") é fixo.

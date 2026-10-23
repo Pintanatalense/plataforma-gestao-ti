@@ -1,6 +1,6 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
-import { Observable } from 'rxjs';
+import { Observable, tap } from 'rxjs';
 
 export interface AssetCategory {
   id: string;
@@ -221,6 +221,30 @@ export class AssetService {
     return this.http.post<GlpiImportExecuteResponse>(`${this.assetsUrl}/glpi-import/execute`, formData);
   }
 
+  // Modelo do Termo de Responsabilidade (editável)
+  getStatementTemplate(): Observable<StatementTemplate> {
+    return this.http.get<StatementTemplate>(`${this.assetsUrl}/statement-template`);
+  }
+
+  saveStatementTemplate(template: string): Observable<StatementTemplate> {
+    return this.http.put<StatementTemplate>(`${this.assetsUrl}/statement-template`, { template });
+  }
+
+  resetStatementTemplate(): Observable<StatementTemplate> {
+    return this.http.delete<StatementTemplate>(`${this.assetsUrl}/statement-template`);
+  }
+
+  /** Abre a prévia (dados de exemplo) em outra aba, sem salvar o modelo. */
+  previewStatementTemplate(template: string): Observable<Blob> {
+    return this.http.post(`${this.assetsUrl}/statement-template/preview`, { template }, { responseType: 'blob' }).pipe(
+      tap((blob) => {
+        const url = URL.createObjectURL(new Blob([blob], { type: 'text/html;charset=utf-8' }));
+        window.open(url, '_blank');
+        setTimeout(() => URL.revokeObjectURL(url), 60000);
+      })
+    );
+  }
+
   // Responsibility Statement
   getResponsibilityStatementUrl(assetId: string): string {
     return `${this.assetsUrl}/${assetId}/responsibility-statement`;
@@ -237,4 +261,13 @@ export class AssetService {
       error: (err) => console.error('Erro ao gerar termo de responsabilidade:', err)
     });
   }
+}
+
+export interface StatementTemplate {
+  template: string;
+  is_default: boolean;
+  default_template: string;
+  fields: Record<string, string>;
+  blocks: Record<string, string>;
+  unknown_fields: string[];
 }

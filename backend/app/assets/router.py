@@ -1,6 +1,8 @@
 import json
 import uuid
 
+from pydantic import BaseModel, Field
+
 from fastapi import APIRouter, Depends, File, Form, UploadFile, status
 from fastapi.responses import HTMLResponse
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -14,6 +16,8 @@ from app.assets.glpi_import_service import GlpiAssetImportService
 from app.assets.repository import AssetRepository
 from app.assets.schemas import AssetCategoryCreate, AssetCategoryResponse, AssetCategoryUpdate, AssetCreate, AssetResponse, AssetUpdate
 from app.assets.services import AssetService
+from app.assets.statement_template import BLOCK_FIELDS, DEFAULT_TEMPLATE, INLINE_FIELDS, unknown_fields
+from app.audit.repository import AuditRepository
 from app.core.exceptions import ValidationException
 from app.core.dependencies import require_permission, get_current_user_id, get_token_payload
 from app.database import get_db
@@ -61,6 +65,71 @@ async def delete_category(
     service: AssetService = Depends(get_asset_service),
 ):
     await service.delete_category(category_id)
+
+
+# ---- Modelo do Termo de Responsabilidade (declarado antes de "/{asset_id}") -------------------------------------
+
+STATEMENT_ENTITY_ID = uuid.uuid5(uuid.NAMESPACE_DNS, "asset_statement_template")
+
+
+class StatementTemplateIn(BaseModel):
+    template: str = Field(..., max_length=40000)
+
+
+def _template_payload(template: str, is_default: bool) -> dict:
+    return {
+        "template": template,
+        "is_default": is_default,
+        "default_template": DEFAULT_TEMPLATE,
+        "fields": INLINE_FIELDS,
+        "blocks": BLOCK_FIELDS,
+        "unknown_fields": unknown_fields(template),
+    }
+
+
+@router.get("/statement-template", dependencies=[Depends(require_permission("assets.read"))],
+            summary="Modelo atual do Termo de Responsabilidade (próprio da empresa ou padrão do sistema)")
+async def get_statement_template(service: AssetService = Depends(get_asset_service)):
+    template, is_default = await service.get_statement_template()
+    return _template_payload(template, is_default)
+
+
+@router.put("/statement-template", dependencies=[Depends(require_permission("organization.company.update"))],
+            summary="Salva o modelo próprio do Termo de Responsabilidade")
+async def save_statement_template(
+    body: StatementTemplateIn,
+    service: AssetService = Depends(get_asset_service),
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    saved = await service.save_statement_template(body.template)
+    await AuditRepository(db).create(
+        event_type="assets.statement_template_changed", entity_type="system_setting", entity_id=STATEMENT_ENTITY_ID,
+        data={"customized": True, "characters": len(saved)}, user_id=user_id,
+    )
+    return _template_payload(saved, False)
+
+
+@router.delete("/statement-template", dependencies=[Depends(require_permission("organization.company.update"))],
+               summary="Volta ao modelo padrão do sistema")
+async def reset_statement_template(
+    service: AssetService = Depends(get_asset_service),
+    db: AsyncSession = Depends(get_db),
+    user_id: uuid.UUID = Depends(get_current_user_id),
+):
+    await service.reset_statement_template()
+    await AuditRepository(db).create(
+        event_type="assets.statement_template_changed", entity_type="system_setting", entity_id=STATEMENT_ENTITY_ID,
+        data={"customized": False}, user_id=user_id,
+    )
+    return _template_payload(DEFAULT_TEMPLATE, True)
+
+
+@router.post("/statement-template/preview", response_class=HTMLResponse,
+             dependencies=[Depends(require_permission("organization.company.update"))],
+             summary="Prévia do modelo com dados de exemplo (não salva nada)")
+async def preview_statement_template(body: StatementTemplateIn, service: AssetService = Depends(get_asset_service)):
+    return HTMLResponse(content=await service.render_statement_preview(body.template))
 
 
 @router.get("", response_model=list[AssetResponse], dependencies=[Depends(require_permission("assets.read"))])
