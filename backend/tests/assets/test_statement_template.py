@@ -146,3 +146,32 @@ async def test_editing_needs_the_company_permission(client: AsyncClient, db_sess
     assert (await client.put(BASE, json={"template": "x"}, headers=reader)).status_code == 403
     assert (await client.delete(BASE, headers=reader)).status_code == 403
     assert (await client.post(f"{BASE}/preview", json={"template": "x"}, headers=reader)).status_code == 403
+
+
+async def test_own_asset_statement_works_with_read_own_and_the_custom_template(client: AsyncClient, db_session: AsyncSession):
+    org = await make_org(db_session)
+    cat = await make_asset_category(db_session)
+    me = await make_employee(db_session, org)
+    other = await make_employee(db_session, org)
+    mine = await make_asset(db_session, org, cat, status="IN_USE", employee=me)
+    theirs = await make_asset(db_session, org, cat, status="IN_USE", employee=other)
+    user = await make_user(db_session, me)
+    manager = await make_user(db_session)
+    saved = await client.put(
+        BASE, json={"template": "# Termo próprio de {{colaborador}}"}, headers=headers_for(manager, "organization.company.update")
+    )
+    assert saved.status_code == 200
+    headers = headers_for(user, "assets.read_own")
+
+    ok = await client.get(f"/api/v1/assets/{mine.id}/responsibility-statement", headers=headers)
+    assert ok.status_code == 200 and f"Termo próprio de {me.name}" in ok.text
+
+    denied = await client.get(f"/api/v1/assets/{theirs.id}/responsibility-statement", headers=headers)
+    assert denied.status_code == 403
+
+
+async def test_template_limit_is_enforced_by_the_api(client: AsyncClient, db_session: AsyncSession):
+    _, headers = await _manager(db_session)
+    too_big = {"template": "a" * 20001}
+    assert (await client.put(BASE, json=too_big, headers=headers)).status_code in (400, 422)
+    assert (await client.post(f"{BASE}/preview", json=too_big, headers=headers)).status_code in (400, 422)

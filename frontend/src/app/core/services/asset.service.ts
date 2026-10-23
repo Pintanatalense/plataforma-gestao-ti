@@ -1,5 +1,7 @@
 import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { MatSnackBar } from '@angular/material/snack-bar';
+import { apiErrorMessage } from '../http/api-error';
 import { Observable, tap } from 'rxjs';
 
 export interface AssetCategory {
@@ -129,6 +131,7 @@ export interface GlpiImportExecuteResponse {
 })
 export class AssetService {
   private http = inject(HttpClient);
+  private snackBar = inject(MatSnackBar);
   private assetsUrl = '/api/v1/assets';
   private movementsUrl = '/api/v1/movements';
 
@@ -237,11 +240,7 @@ export class AssetService {
   /** Abre a prévia (dados de exemplo) em outra aba, sem salvar o modelo. */
   previewStatementTemplate(template: string): Observable<Blob> {
     return this.http.post(`${this.assetsUrl}/statement-template/preview`, { template }, { responseType: 'blob' }).pipe(
-      tap((blob) => {
-        const url = URL.createObjectURL(new Blob([blob], { type: 'text/html;charset=utf-8' }));
-        window.open(url, '_blank');
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-      })
+      tap((blob) => this.openHtmlInNewTab(blob))
     );
   }
 
@@ -252,14 +251,20 @@ export class AssetService {
 
   openResponsibilityStatement(assetId: string): void {
     this.http.get(this.getResponsibilityStatementUrl(assetId), { responseType: 'blob' }).subscribe({
-      next: (blob) => {
-        const html = new Blob([blob], { type: 'text/html;charset=utf-8' });
-        const url = URL.createObjectURL(html);
-        window.open(url, '_blank');
-        setTimeout(() => URL.revokeObjectURL(url), 60000);
-      },
-      error: (err) => console.error('Erro ao gerar termo de responsabilidade:', err)
+      next: (blob) => this.openHtmlInNewTab(blob),
+      error: (err) =>
+        this.snackBar.open(apiErrorMessage(err, 'Não foi possível gerar o termo de responsabilidade.'), 'Fechar', { duration: 6000 })
     });
+  }
+
+  /** Abre o HTML gerado em outra aba; avisa se o navegador bloqueou o pop-up (antes não aparecia nada). */
+  private openHtmlInNewTab(blob: Blob): void {
+    const url = URL.createObjectURL(new Blob([blob], { type: 'text/html;charset=utf-8' }));
+    const opened = window.open(url, '_blank');
+    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    if (!opened) {
+      this.snackBar.open('O navegador bloqueou a nova aba. Permita pop-ups para este site e tente de novo.', 'Fechar', { duration: 8000 });
+    }
   }
 }
 
