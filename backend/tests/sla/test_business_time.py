@@ -140,3 +140,14 @@ class TestValidation:
     def test_bad_time_text_is_rejected(self):
         with pytest.raises(CalendarError):
             BusinessCalendar.from_dict({"timezone": "UTC", "weekly_hours": {"0": [["8h", "18:00"]]}})
+
+    def test_malformed_dicts_raise_calendar_error(self):
+        for bad in ({}, {"timezone": "UTC", "weekly_hours": {"x": [["08:00", "18:00"]]}},
+                    {"timezone": "UTC", "weekly_hours": {"0": [["08:00", "18:00"]]}, "holidays": ["não-é-data"]}):
+            with pytest.raises(CalendarError):
+                BusinessCalendar.from_dict(bad)
+
+    def test_minutes_must_be_a_reasonable_integer(self):
+        for bad in (1.5, True, 10**16):
+            with pytest.raises(ValueError):
+                add_business_minutes(utc(2026, 10, 19), bad, SP)

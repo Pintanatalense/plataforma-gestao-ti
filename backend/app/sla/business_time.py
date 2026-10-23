@@ -9,6 +9,7 @@ Convenções:
   seguinte): resolver exatamente no prazo conta como cumprido.
 - Com 0 minutos, devolve o próprio instante de início.
 - Os cálculos internos são em segundos; `business_minutes_between` arredonda para baixo.
+- Limitação: o expediente não vai até 24:00 (`datetime.time` não representa); um calendário 24x7 perde 1 minuto por dia (23:59-00:00).
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from zoneinfo import ZoneInfo
 
 WEEKDAYS = range(7)  # 0 = segunda ... 6 = domingo
 _MAX_DAYS = 3660  # trava contra calendário sem expediente ou prazo absurdo (~10 anos)
+_MAX_MINUTES = 60 * 24 * 365  # 1 ano de minutos; prazo de SLA maior que isso é erro de configuração
 
 Interval = tuple[time, time]
 
@@ -68,11 +70,16 @@ class BusinessCalendar:
     @classmethod
     def from_dict(cls, data: dict) -> "BusinessCalendar":
         """Lê o formato guardado no banco: {"timezone", "weekly_hours": {"0": [["08:00","18:00"]]}, "holidays": ["2026-12-25"]}."""
-        weekly: dict[int, tuple[Interval, ...]] = {}
-        for key, intervals in (data.get("weekly_hours") or {}).items():
-            weekly[int(key)] = tuple((parse_time(a), parse_time(b)) for a, b in intervals)
-        holidays = frozenset(date.fromisoformat(d) for d in data.get("holidays") or [])
-        return cls(data["timezone"], weekly, holidays)
+        try:
+            weekly: dict[int, tuple[Interval, ...]] = {}
+            for key, intervals in (data.get("weekly_hours") or {}).items():
+                weekly[int(key)] = tuple((parse_time(a), parse_time(b)) for a, b in intervals)
+            holidays = frozenset(date.fromisoformat(d) for d in data.get("holidays") or [])
+            return cls(data["timezone"], weekly, holidays)
+        except CalendarError:
+            raise
+        except (KeyError, ValueError, TypeError, AttributeError) as err:
+            raise CalendarError(f"Calendário malformado: {err}") from err
 
     def to_dict(self) -> dict:
         return {
@@ -108,8 +115,10 @@ def _utc(moment: datetime) -> datetime:
 
 def add_business_minutes(start: datetime, minutes: int, calendar: BusinessCalendar) -> datetime:
     """Instante (UTC) em que `minutes` minutos úteis terminam, contando a partir de `start`."""
-    if minutes < 0:
-        raise ValueError("minutes não pode ser negativo")
+    if isinstance(minutes, bool) or not isinstance(minutes, int):
+        raise ValueError("minutes deve ser um inteiro")
+    if minutes < 0 or minutes > _MAX_MINUTES:
+        raise ValueError(f"minutes deve estar entre 0 e {_MAX_MINUTES}")
     cursor = _utc(start)
     if minutes == 0:
         return cursor
