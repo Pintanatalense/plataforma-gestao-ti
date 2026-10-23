@@ -15,6 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 import app.models_registry  # noqa: F401
+from app.core.request_logging import setup_logging
 from app.config import get_settings
 from app.database import AsyncSessionLocal, engine
 from app.notifications.dispatcher import Dispatcher
@@ -162,7 +163,7 @@ async def _main() -> None:
 
 
 if __name__ == "__main__":
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
+    setup_logging(get_settings().LOG_LEVEL)
     if "--healthcheck" in sys.argv:
         sys.exit(asyncio.run(healthcheck()))
     asyncio.run(_main())

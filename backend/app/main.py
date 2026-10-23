@@ -22,6 +22,7 @@ from sqlalchemy import text
 
 from app.config import get_settings
 from app.core.exceptions import register_exception_handlers
+from app.core.request_logging import RequestIdMiddleware, setup_logging
 from app.database import engine, AsyncSessionLocal
 from app.audit.listener import setup_audit_listener
 
@@ -88,6 +89,9 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
+    setup_logging(settings.LOG_LEVEL)
+    app.add_middleware(RequestIdMiddleware)
+
     # --- CORS ---
     app.add_middleware(
         CORSMiddleware,
@@ -95,7 +99,7 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
-        expose_headers=["X-Total-Count"],  # total da listagem de auditoria
+        expose_headers=["X-Total-Count", "X-Request-ID"],  # total da listagem de auditoria
     )
 
     static_dir = settings.static_dir

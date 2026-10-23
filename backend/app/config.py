@@ -26,6 +26,7 @@ class Settings(BaseSettings):
     APP_NAME: str = "Plataforma de Gestão de TI"
     APP_VERSION: str = "0.1.0"
     DEBUG: bool = False
+    LOG_LEVEL: str = "INFO"  # DEBUG, INFO, WARNING, ERROR
     API_V1_PREFIX: str = "/api/v1"
 
     # --- Banco de Dados ---
