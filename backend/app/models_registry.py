@@ -9,5 +9,6 @@ from app.movements import models as _movements  # noqa: F401
 from app.notifications import models as _notifications  # noqa: F401
 from app.organization import models as _organization  # noqa: F401
 from app.service_desk import models as _service_desk  # noqa: F401
+from app.sla import models as _sla  # noqa: F401
 from app.stock import models as _stock  # noqa: F401
 from app.whatsapp import models as _whatsapp  # noqa: F401

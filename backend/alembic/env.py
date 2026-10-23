@@ -29,6 +29,7 @@ from app.attachments import models as attachments_models  # noqa: F401
 from app.notifications import models as notifications_models  # noqa: F401
 from app.audit import models as audit_models  # noqa: F401
 from app.backup import models as backup_models  # noqa: F401
+from app.sla import models as sla_models  # noqa: F401
 from app.whatsapp import models as whatsapp_models  # noqa: F401
 from app.core import settings_model  # noqa: F401  (tabela system_settings)
 

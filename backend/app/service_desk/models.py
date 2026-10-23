@@ -16,6 +16,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.timestamps import TimestampMixin
+import app.sla.models  # noqa: F401  (a FK sla_policy_id precisa da tabela no metadata)
 from app.database import Base
 
 if TYPE_CHECKING:
@@ -32,6 +33,10 @@ class TicketCategory(Base, TimestampMixin):
     is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
     default_sector_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sectors.id"), nullable=True)
     form_schema: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    # NULL = "Não se aplica": o chamado desta categoria não tem relógio de SLA (ADR-017).
+    sla_policy_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sla_policies.id", ondelete="SET NULL"), nullable=True, index=True
+    )
 
 
 class Ticket(Base, TimestampMixin):
