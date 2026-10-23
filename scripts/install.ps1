@@ -21,12 +21,28 @@
 .PARAMETER HttpsPort
   Porta HTTPS publicada (padrão 443).
 
+.PARAMETER Check
+  Só verifica os requisitos (não instala nem altera nada).
+
+.PARAMETER Yes
+  Instala sem perguntar o que faltar (Docker Desktop, via winget).
+
+.PARAMETER DryRun
+  Mostra o que seria instalado, sem executar.
+
+.NOTES
+  Plataforma de Gestão de TI — instalador Windows.
+  Developed by Hedú • InfraNuvem  (HeduInfo)  https://infranuvem.com.br
+
 .EXAMPLE
   powershell -ExecutionPolicy Bypass -File scripts\install.ps1
   powershell -ExecutionPolicy Bypass -File scripts\install.ps1 -Port 8080
 #>
 param(
   [switch]$EnvOnly,
+  [switch]$Check,
+  [switch]$Yes,
+  [switch]$DryRun,
   [int]$Port = 0,
   [switch]$Https,
   [string]$Hosts = '',
@@ -34,6 +50,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+try { [Console]::OutputEncoding = [System.Text.Encoding]::UTF8 } catch { }  # acentos e o selo da marca no console
 Set-Location (Join-Path $PSScriptRoot '..')
 
 function Say($msg)  { Write-Host "==> $msg" }
@@ -91,13 +108,146 @@ function New-LocalCert([string]$hostList) {
   Say "Certificado autoassinado criado em certs\ (válido por 2 anos; vale para: $san)."
 }
 
+
+# --- Identidade e requisitos mínimos ----------------------------------------------------------------
+$MinRamMb = 4096     # Docker Desktop (WSL2) pede 4 GB; 8 GB é o recomendado
+$RecRamMb = 8192
+$MinDiskGb = 10      # imagens, volumes do banco e anexos
+
+function Show-Banner {
+  Write-Host ''
+  Write-Host '  Plataforma de Gestão de TI — Instalador'
+  Write-Host "  Developed by Hedú • InfraNuvem • $((Get-Date).Year)  (HeduInfo)"
+  Write-Host '  https://infranuvem.com.br'
+  Write-Host ''
+}
+function Write-Ok([string]$m)      { Write-Host "  [ok]    $m" -ForegroundColor Green }
+function Write-Missing([string]$m) { Write-Host "  [FALTA] $m" -ForegroundColor Red }
+function Write-Note([string]$m)    { Write-Host "  [aviso] $m" -ForegroundColor Yellow }
+
+function Test-Admin {
+  $id = [Security.Principal.WindowsIdentity]::GetCurrent()
+  return (New-Object Security.Principal.WindowsPrincipal($id)).IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+}
+
+function Test-PortBusy([int]$port) {
+  return $null -ne (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue)
+}
+
+function Test-DockerRunning {
+  docker info *> $null
+  return ($LASTEXITCODE -eq 0)
+}
+
+function Confirm-Install([string]$question) {
+  if ($Yes) { return $true }
+  if (-not [Environment]::UserInteractive) { return $false }
+  $answer = Read-Host "$question [s/N]"
+  return ($answer -match '^(s|sim|y|yes)$')
+}
+
+function Start-DockerDesktop {
+  $exe = Join-Path $env:ProgramFiles 'Docker\Docker\Docker Desktop.exe'
+  if (-not (Test-Path $exe)) { return $false }
+  Say 'Abrindo o Docker Desktop e aguardando o motor iniciar (até 3 minutos)...'
+  Start-Process $exe
+  for ($i = 0; $i -lt 36; $i++) {
+    Start-Sleep -Seconds 5
+    if (Test-DockerRunning) { return $true }
+  }
+  return $false
+}
+
+# Verifica (e, se permitido, instala) os requisitos. Termina o script se algo essencial faltar.
+function Test-Requirements {
+  $blocking = $false
+  Say 'Verificando os requisitos mínimos...'
+
+  if ($PSVersionTable.PSVersion -ge [Version]'5.1') { Write-Ok "PowerShell $($PSVersionTable.PSVersion)" }
+  else { Write-Missing "PowerShell $($PSVersionTable.PSVersion) (mínimo 5.1)"; $blocking = $true }
+
+  $build = [Environment]::OSVersion.Version.Build
+  if (-not [Environment]::Is64BitOperatingSystem) { Write-Missing 'Windows de 32 bits não é suportado.'; $blocking = $true }
+  elseif ($build -ge 19041) { Write-Ok "Windows (build $build)" }
+  else { Write-Missing "Windows build $build (mínimo 19041, o Windows 10 versão 2004, exigido pelo WSL2 do Docker Desktop)"; $blocking = $true }
+
+  $ramMb = [int]((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1MB)
+  if ($ramMb -ge $RecRamMb) { Write-Ok "Memória: $ramMb MB" }
+  elseif ($ramMb -ge $MinRamMb) { Write-Note "Memória: $ramMb MB (funciona; o recomendado é $RecRamMb MB)" }
+  else { Write-Missing "Memória: $ramMb MB (mínimo $MinRamMb MB)"; $blocking = $true }
+
+  $drive = (Get-Location).Drive.Name
+  $freeGb = [int]((Get-PSDrive -Name $drive).Free / 1GB)
+  if ($freeGb -ge $MinDiskGb) { Write-Ok "Disco livre em ${drive}: $freeGb GB" }
+  else { Write-Missing "Disco livre em ${drive}: $freeGb GB (mínimo $MinDiskGb GB)"; $blocking = $true }
+
+  $cs = Get-CimInstance Win32_ComputerSystem
+  $virtOn = $cs.HypervisorPresent -or ((Get-CimInstance Win32_Processor | Where-Object { $_.VirtualizationFirmwareEnabled }) -ne $null)
+  if ($virtOn) { Write-Ok 'Virtualização habilitada' }
+  else { Write-Note 'Virtualização parece desativada na BIOS/UEFI; o Docker Desktop precisa dela (ative "Intel VT-x/AMD-V").' }
+
+  $httpPort = if ($Port -gt 0) { $Port } elseif ((Test-Path .env) -and (Get-EnvValue 'HTTP_PORT') -ne '') { [int](Get-EnvValue 'HTTP_PORT') } else { 80 }
+  $ports = @($httpPort)
+  if ($Https) { $ports += $(if ($HttpsPort -gt 0) { $HttpsPort } else { 443 }) }
+  $running = $false
+  if (Get-Command docker -ErrorAction SilentlyContinue) { $running = [bool](docker compose ps --status running -q 2>$null) }
+  foreach ($p in $ports) {
+    if ((Test-PortBusy $p) -and -not $running) { Write-Missing "Porta $p já está em uso por outro programa (escolha outra com -Port ou libere a porta)."; $blocking = $true }
+    else { Write-Ok "Porta $p livre" }
+  }
+
+  if (Get-Command curl.exe -ErrorAction SilentlyContinue) { Write-Ok 'curl.exe' }
+  else { Write-Missing 'curl.exe (vem com o Windows 10 1803 ou superior)'; $blocking = $true }
+
+  $hasDocker = [bool](Get-Command docker -ErrorAction SilentlyContinue)
+  $dockerReady = $false
+  if ($hasDocker) {
+    Write-Ok 'docker instalado'
+    docker compose version *> $null
+    if ($LASTEXITCODE -eq 0) { Write-Ok 'docker compose v2' } else { Write-Missing 'docker compose v2' }
+    if (Test-DockerRunning) { Write-Ok 'docker em execução'; $dockerReady = $true } else { Write-Missing 'docker instalado, mas não está em execução' }
+  } else { Write-Missing 'Docker Desktop' }
+
+  if ($Check) {
+    Write-Host ''
+    if (-not $blocking -and $dockerReady) { Say 'Tudo certo: o computador atende aos requisitos.'; exit 0 }
+    Fail 'Há requisitos faltando (veja [FALTA] acima). Rode sem -Check para instalar o que for possível.'
+  }
+  if ($blocking) { Fail 'Requisitos de hardware, sistema ou porta não atendidos (acima). Corrija e rode de novo.' }
+  if ($dockerReady) { return }
+
+  # Instalação / inicialização do Docker Desktop
+  if ($hasDocker) {
+    if ($DryRun) { Say 'Simulação: o Docker Desktop seria aberto e eu esperaria o motor iniciar.'; exit 0 }
+    if (Start-DockerDesktop) { Say 'Docker em execução.'; return }
+    Fail 'O Docker Desktop não ficou pronto. Abra-o manualmente, aceite os termos na primeira vez, espere aparecer "Engine running" e rode o instalador de novo.'
+  }
+
+  Write-Host ''
+  Write-Host 'Vou instalar o Docker Desktop (Docker Inc., pelo winget). Ele habilita o WSL2 e pode pedir para reiniciar o computador.'
+  $wingetCmd = 'winget install -e --id Docker.DockerDesktop --accept-package-agreements --accept-source-agreements'
+  if ($DryRun) { Write-Host "  (dry-run) $wingetCmd"; Say 'Simulação concluída: nada foi instalado.'; exit 0 }
+  if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+    Fail 'winget não encontrado. Instale o Docker Desktop manualmente: https://docs.docker.com/desktop/setup/install/windows-install/ e rode este instalador de novo.'
+  }
+  if (-not (Test-Admin)) { Fail 'Para instalar o Docker Desktop, abra o PowerShell como Administrador e rode o instalador de novo.' }
+  if (-not (Confirm-Install 'Posso continuar?')) { Fail 'Instalação cancelada. Instale o Docker Desktop e rode de novo (ou use -Yes).' }
+  winget install -e --id Docker.DockerDesktop --accept-package-agreements --accept-source-agreements
+  if ($LASTEXITCODE -ne 0) { Fail 'A instalação do Docker Desktop falhou. Veja a mensagem acima.' }
+  Write-Host ''
+  Say 'Docker Desktop instalado.'
+  Write-Host '    Próximos passos: reinicie o computador se o instalador pedir, abra o Docker Desktop,'
+  Write-Host '    aceite os termos de uso (só na primeira vez), espere aparecer "Engine running"'
+  Write-Host '    e rode este instalador de novo.'
+  exit 0
+}
+
 # --- 1. Pré-requisitos ----------------------------------------------------------------------------
+Show-Banner
 if (-not $EnvOnly) {
-  if (-not (Get-Command docker -ErrorAction SilentlyContinue)) { Fail 'Docker não encontrado. Instale o Docker Desktop: https://docs.docker.com/desktop/setup/install/windows-install/' }
+  Test-Requirements
   docker compose version *> $null
   if ($LASTEXITCODE -ne 0) { Fail "Docker Compose v2 não encontrado ('docker compose version' falhou)." }
-  docker info *> $null
-  if ($LASTEXITCODE -ne 0) { Fail 'O Docker está instalado, mas não está em execução. Abra o Docker Desktop e aguarde ele iniciar.' }
 }
 
 # --- 2. Arquivo .env ------------------------------------------------------------------------------

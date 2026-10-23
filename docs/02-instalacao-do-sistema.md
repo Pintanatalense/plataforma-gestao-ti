@@ -29,12 +29,26 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1      # Opção: -Po
 
 O script:
 
-1. confere se o Docker e o Compose v2 estão instalados **e em execução**;
+1. **verifica os requisitos mínimos** (memória, disco, portas, `curl`, `openssl`, Docker com Compose v2 em execução) e, se faltar algo, **instala**: no Linux `curl`, `openssl` e o Docker Engine (pelo gerenciador de pacotes da distribuição e pelo script oficial da Docker Inc.); no Windows o Docker Desktop, via `winget`. Sempre pergunta antes (use `--yes` / `-Yes` para não perguntar);
 2. cria o `.env` a partir do `.env.example` com `POSTGRES_PASSWORD`, `SECRET_KEY` e `APP_ENCRYPTION_KEY` **aleatórios** (nunca sobrescreve um `.env` que já exista);
 3. executa `docker compose up -d --build` (migrations e dados iniciais rodam sozinhos no backend);
 4. espera `/api/v1/health` responder e mostra o endereço.
 
 `--env-only` (`-EnvOnly` no PowerShell) só gera o `.env`.
+
+Opções para quem quer só olhar antes de instalar:
+
+| Linux / macOS / WSL | Windows (PowerShell) | O que faz |
+|---|---|---|
+| `--check` | `-Check` | só verifica os requisitos e diz o que falta; não instala nem altera nada |
+| `--dry-run` | `-DryRun` | mostra os comandos de instalação que seriam executados, sem executar |
+| `--yes` | `-Yes` | instala o que faltar sem perguntar |
+
+Mínimos que o instalador exige: Linux 2 GB de RAM e 10 GB de disco livre; Windows 4 GB de RAM, 10 GB de disco livre e Windows 10 build 19041 ou superior. Os valores recomendados da seção 1 (4 GB de RAM, 20 GB de disco) continuam valendo para uso real.
+
+Limites: no Windows, instalar o Docker Desktop exige PowerShell como **Administrador**, pode pedir reinicialização e, na primeira abertura, que você aceite os termos; depois disso rode o instalador de novo. No Linux é preciso ser root ou ter `sudo`; logo após instalar o Docker, o instalador usa `sudo` até você abrir uma nova sessão (grupo `docker`). No macOS o Docker Desktop continua sendo instalação manual.
+
+Os scripts exibem a assinatura da marca (`Developed by Hedú • InfraNuvem`). **Isso não é assinatura digital**: para o Windows reconhecer o `install.ps1` como de editor conhecido (Authenticode) ou para publicar uma assinatura GPG, é preciso um certificado ou chave do titular.
 
 > **Guarde uma cópia da `APP_ENCRYPTION_KEY` fora do servidor** (cofre de senhas). Ela cifra a senha do SMTP e os tokens dos canais gravados no banco; sem ela, uma restauração de backup não consegue lê-los.
 
