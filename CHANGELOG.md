@@ -2,11 +2,19 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões seguem [SemVer](https://semver.org/lang/pt-BR/). Cada item aponta o PR em `Pintanatalense/plataforma-gestao-ti`.
 
-## [Não lançado]
+## [0.1.1] — 2026-10-23
 
 ### Funcionalidades
 
-- **Modelo editável do Termo de Responsabilidade**: o texto do termo pode ser adaptado ao padrão da empresa (botão *Modelo do termo* em Patrimônio e Ativos), com prévia e volta ao modelo padrão; os dados do colaborador e do ativo continuam preenchidos automaticamente. Sem modelo próprio, o termo é o mesmo de antes.
+- **Modelo editável do Termo de Responsabilidade**: o texto do termo pode ser adaptado ao padrão da empresa (botão *Modelo do termo* em Patrimônio e Ativos, exige `organization.company.update`), com prévia e volta ao modelo padrão; os dados do colaborador e do ativo continuam preenchidos automaticamente. Sem modelo próprio, o termo é o mesmo de antes. O modelo é texto simples (sem HTML) e cada alteração fica na auditoria.
+
+### Correções
+
+- Gerar o termo de responsabilidade (lista, detalhe e visão rápida do ativo) falhava sem avisar quando a API respondia erro ou o navegador bloqueava a nova aba; agora mostra a mensagem.
+
+### Processo
+
+- O CI gasta bem menos minutos do GitHub Actions: não roda na `main` após o merge, roda só as áreas alteradas por PR, e a suíte completa (inclusive SQLite) roda toda segunda-feira. Dependabot passou a ser mensal e sem rebase automático.
 
 ## [0.1.0] — 2026-10-23 (versão para o piloto)
 

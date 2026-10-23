@@ -3,6 +3,8 @@
 import pytest
 from httpx import AsyncClient
 
+from app.config import get_settings
+
 
 @pytest.mark.asyncio
 async def test_healthcheck(client: AsyncClient) -> None:
@@ -22,4 +24,4 @@ async def test_healthcheck_contains_version(client: AsyncClient) -> None:
     """Verifica que o healthcheck retorna a versão da aplicação."""
     response = await client.get("/api/v1/health")
     data = response.json()
-    assert data["version"] == "0.1.0"
+    assert data["version"] == get_settings().APP_VERSION

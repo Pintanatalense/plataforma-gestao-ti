@@ -1,6 +1,6 @@
 [project]
 name = "plataforma-gestao-ti"
-version = "0.1.0"
+version = "0.1.1"
 description = "Plataforma Modular de Gestão de TI"
 requires-python = ">=3.12"
 dependencies = [
