@@ -134,6 +134,11 @@ export const routes: Routes = [
         loadComponent: () => import('./features/assets/asset-glpi-import/asset-glpi-import.component').then(m => m.AssetGlpiImportComponent)
       },
       {
+        path: 'assets/statement-template',
+        canActivate: [permissionGuard('organization.company.update')],
+        loadComponent: () => import('./features/assets/statement-template/statement-template.component').then(m => m.StatementTemplateComponent)
+      },
+      {
         path: 'assets/:id',
         canActivate: [permissionGuard('assets.read')],
         loadComponent: () => import('./features/assets/asset-detail/asset-detail.component').then(m => m.AssetDetailComponent)

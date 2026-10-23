@@ -2,6 +2,12 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões seguem [SemVer](https://semver.org/lang/pt-BR/). Cada item aponta o PR em `Pintanatalense/plataforma-gestao-ti`.
 
+## [Não lançado]
+
+### Funcionalidades
+
+- **Modelo editável do Termo de Responsabilidade**: o texto do termo pode ser adaptado ao padrão da empresa (botão *Modelo do termo* em Patrimônio e Ativos), com prévia e volta ao modelo padrão; os dados do colaborador e do ativo continuam preenchidos automaticamente. Sem modelo próprio, o termo é o mesmo de antes.
+
 ## [0.1.0] — 2026-10-23 (versão para o piloto)
 
 Primeira versão marcada. Reúne a estabilização, a qualidade funcional e as capacidades novas feitas a partir do plano diretor (`docs/plans/plano-diretor.md`).
