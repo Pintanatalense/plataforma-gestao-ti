@@ -26,20 +26,30 @@ PORT=""
 HTTPS=0
 HTTPS_HOSTS=""
 HTTPS_PORT_ARG=""
+need_arg() { if [ "$#" -lt 2 ] || [ -z "$2" ]; then echo "Faltou o valor de $1 (use --help)" >&2; exit 2; fi; }
+
 while [ $# -gt 0 ]; do
   case "$1" in
     --env-only) ENV_ONLY=1 ;;
     --check) CHECK_ONLY=1 ;;
     --yes|-y) ASSUME_YES=1 ;;
     --dry-run) DRY_RUN=1 ;;
-    --port) PORT="${2:-}"; shift ;;
+    --port) need_arg "$@"; PORT="$2"; shift ;;
     --https) HTTPS=1; case "${2:-}" in ""|--*) ;; *) HTTPS_HOSTS="$2"; shift ;; esac ;;
-    --https-port) HTTPS_PORT_ARG="${2:-}"; shift ;;
+    --https-port) need_arg "$@"; HTTPS_PORT_ARG="$2"; shift ;;
     -h|--help) sed -n '2,/^set -euo/p' "$0" | sed '$d' | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Opção desconhecida: $1 (use --help)" >&2; exit 2 ;;
   esac
   shift
 done
+
+case "$PORT$HTTPS_PORT_ARG" in *[!0-9]*) echo "Porta inválida: use só números (--port / --https-port)." >&2; exit 2 ;; esac
+for port_value in "$PORT" "$HTTPS_PORT_ARG"; do
+  if [ -n "$port_value" ] && { [ "$port_value" -lt 1 ] || [ "$port_value" -gt 65535 ]; }; then
+    echo "Porta fora do intervalo 1-65535: $port_value" >&2; exit 2
+  fi
+done
+case "$HTTPS_HOSTS" in *[!A-Za-z0-9._:,-]*) echo "--https: use só nomes/IPs separados por vírgula (letras, números, ponto, dois-pontos e hífen)." >&2; exit 2 ;; esac
 
 say()  { printf '==> %s\n' "$*"; }
 fail() { printf 'ERRO: %s\n' "$*" >&2; exit 1; }
@@ -90,8 +100,8 @@ set_env() { # set_env CHAVE VALOR: troca a linha "CHAVE=" (vazia) sem usar o val
 
 
 # --- Identidade e requisitos mínimos ----------------------------------------------------------------
-MIN_RAM_MB=2048      # abaixo disso o PostgreSQL e o build das imagens não cabem; 4096 é o recomendado
-REC_RAM_MB=4096
+MIN_RAM_MB=1800      # 2 GB com folga (uma VM de "2 GB" reporta ~1,9 GB); abaixo disso o PostgreSQL e o build não cabem
+REC_RAM_MB=3700      # 4 GB com folga
 MIN_DISK_GB=10       # imagens, volumes do banco e anexos
 BRAND_YEAR="$(date +%Y)"
 
@@ -129,8 +139,9 @@ docker() {
 
 detect_pm() {
   for pm in apt-get dnf yum zypper pacman apk; do
-    command -v "$pm" >/dev/null 2>&1 && { printf '%s' "$pm"; return; }
+    if command -v "$pm" >/dev/null 2>&1; then printf '%s' "$pm"; return 0; fi
   done
+  return 0
 }
 
 pm_install() { # pm_install pacote...
@@ -161,9 +172,11 @@ free_gb_disk() { df -Pk . 2>/dev/null | awk 'NR==2 {print int($4/1024/1024)}'; }
 
 port_busy() { # port_busy PORTA: 0 se alguém já escuta
   local port="$1"
-  if command -v ss >/dev/null 2>&1; then ss -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}$"
-  elif command -v netstat >/dev/null 2>&1; then netstat -ltn 2>/dev/null | awk '{print $4}' | grep -qE "[:.]${port}$"
+  local listing=""
+  if command -v ss >/dev/null 2>&1; then listing="$(ss -ltn 2>/dev/null || true)"
+  elif command -v netstat >/dev/null 2>&1; then listing="$(netstat -ltn 2>/dev/null || true)"
   else return 1; fi
+  printf '%s\n' "$listing" | awk -v port="$port" '{n = split($4, a, /[:.]/); if (a[n] == port) found = 1} END {exit found ? 0 : 1}'
 }
 
 install_docker() {
@@ -178,10 +191,13 @@ install_docker() {
       if [ "$DRY_RUN" -eq 1 ]; then
         printf '  (dry-run) curl -fsSL https://get.docker.com | %s sh\n' "${SUDO:-}"
       else
-        curl -fsSL https://get.docker.com -o /tmp/hedu-get-docker.sh || return 1
+        local tmp_dir rc=0
+        tmp_dir="$(mktemp -d)" || return 1
+        curl --proto '=https' --tlsv1.2 -fsSL https://get.docker.com -o "$tmp_dir/get-docker.sh" || rc=1
         # shellcheck disable=SC2086
-        $SUDO sh /tmp/hedu-get-docker.sh || { rm -f /tmp/hedu-get-docker.sh; return 1; }
-        rm -f /tmp/hedu-get-docker.sh
+        [ "$rc" -eq 0 ] && { $SUDO sh "$tmp_dir/get-docker.sh" || rc=1; }
+        rm -rf "$tmp_dir"
+        [ "$rc" -eq 0 ] || return 1
       fi
       ;;
   esac
@@ -189,7 +205,12 @@ install_docker() {
     if command -v systemctl >/dev/null 2>&1; then $SUDO systemctl enable --now docker >/dev/null 2>&1 || true
     elif command -v rc-service >/dev/null 2>&1; then $SUDO rc-update add docker default >/dev/null 2>&1 || true; $SUDO rc-service docker start >/dev/null 2>&1 || true
     fi
-    if [ -n "${SUDO_USER:-${USER:-}}" ] && [ "$(id -u)" -ne 0 ]; then $SUDO usermod -aG docker "${USER}" 2>/dev/null || true; fi
+    local target_user="${SUDO_USER:-${USER:-}}"
+    if [ -n "$target_user" ] && [ "$target_user" != "root" ]; then
+      if $SUDO usermod -aG docker "$target_user" 2>/dev/null; then
+        say "O usuário '$target_user' foi adicionado ao grupo docker (acesso equivalente a administrador do servidor)."
+      fi
+    fi
     # O grupo "docker" só vale em um novo login: nesta execução usa sudo.
     if ! command docker info >/dev/null 2>&1 && [ "$(id -u)" -ne 0 ]; then NEED_DOCKER_SUDO=1; fi
   fi
@@ -213,12 +234,17 @@ preflight() {
 
   ram="$(free_mb_ram)"
   if [ "$ram" -ge "$REC_RAM_MB" ]; then ok "Memória: ${ram} MB"
-  elif [ "$ram" -ge "$MIN_RAM_MB" ]; then note "Memória: ${ram} MB (funciona; o recomendado é ${REC_RAM_MB} MB)"
-  else miss "Memória: ${ram} MB (mínimo ${MIN_RAM_MB} MB)"; missing=1; fi
+  elif [ "$ram" -ge "$MIN_RAM_MB" ]; then note "Memória: ${ram} MB (funciona; o recomendado é 4 GB)"
+  else miss "Memória: ${ram} MB (mínimo 2 GB)"; missing=1; fi
 
   disk="$(free_gb_disk)"
   if [ "${disk:-0}" -ge "$MIN_DISK_GB" ]; then ok "Disco livre aqui: ${disk} GB"
   else miss "Disco livre aqui: ${disk:-0} GB (mínimo ${MIN_DISK_GB} GB)"; missing=1; fi
+
+  if type -P docker >/dev/null 2>&1 && ! command docker info >/dev/null 2>&1 \
+     && type -P sudo >/dev/null 2>&1 && sudo -n "$(type -P docker)" info >/dev/null 2>&1; then
+    NEED_DOCKER_SUDO=1
+  fi
 
   http_port="${PORT:-$(env_value HTTP_PORT)}"; http_port="${http_port:-80}"
   if [ "$HTTPS" -eq 1 ] || grep -qE '^COMPOSE_FILE=.*https' .env 2>/dev/null; then
@@ -226,7 +252,7 @@ preflight() {
   fi
   # Uma instalação já em execução ocupa as próprias portas: só é conflito se não for do compose deste projeto.
   for port in "$http_port" ${https_port:-}; do
-    if port_busy "$port" && ! docker compose ps --status running -q 2>/dev/null | grep -q .; then
+    if port_busy "$port" && [ -z "$(docker compose ps --status running -q 2>/dev/null || true)" ]; then
       miss "Porta ${port} já está em uso por outro programa (escolha outra com --port ou libere a porta)."; missing=1
     else
       ok "Porta ${port} livre"
@@ -269,7 +295,7 @@ preflight() {
     pm="$(detect_pm)"
     [ -n "$pm" ] || [ "$DRY_RUN" -eq 1 ] || fail "Gerenciador de pacotes não reconhecido. Instale manualmente: curl, openssl e Docker com Compose v2."
     echo
-    echo "Vou instalar o que falta:${to_install:+ $to_install}$([ "$docker_ok" -eq 0 ] && printf ' docker (Docker Engine + Compose v2,)')."
+    echo "Vou instalar o que falta:${to_install:+ $to_install}$([ "$docker_ok" -eq 0 ] && printf ' docker (Docker Engine + Compose v2)')."
     ask_yes "Posso continuar?" || fail "Instalação cancelada. Instale os itens acima e rode de novo (ou use --yes)."
     if [ -n "$to_install" ]; then
       # shellcheck disable=SC2086
@@ -291,11 +317,15 @@ preflight() {
 
 # --- 1. Pré-requisitos --------------------------------------------------------------------------
 banner
-if [ "$ENV_ONLY" -eq 1 ]; then
+if [ "$ENV_ONLY" -eq 1 ] && [ "$CHECK_ONLY" -eq 0 ]; then
   command -v openssl >/dev/null 2>&1 || fail "openssl não encontrado (usado para gerar as senhas)."
 else
   preflight
   [ "$CHECK_ONLY" -eq 1 ] && exit 0
+fi
+if [ "$DRY_RUN" -eq 1 ]; then
+  say "Simulação concluída: os requisitos estão atendidos e nada foi alterado."
+  exit 0
 fi
 
 # --- 2. Arquivo .env ----------------------------------------------------------------------------
@@ -315,7 +345,7 @@ fi
 if [ -n "$PORT" ]; then
   case "$PORT" in ''|*[!0-9]*) fail "Porta inválida: $PORT" ;; esac
   if grep -qE '^HTTP_PORT=' .env; then
-    awk -v v="$PORT" 'BEGIN{FS=OFS="="} $1=="HTTP_PORT" {print "HTTP_PORT=" v; next} {print}' .env > .env.tmp && cat .env.tmp > .env && rm -f .env.tmp
+    put_env HTTP_PORT "$PORT"
   else
     printf 'HTTP_PORT=%s\n' "$PORT" >> .env
   fi

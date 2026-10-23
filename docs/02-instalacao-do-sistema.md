@@ -7,7 +7,7 @@ Guia para instalar a Plataforma de Gestão de TI em um servidor, uma VM ou um co
 ## 1. Requisitos
 
 * **Sistema:** Linux (Ubuntu 22.04+, Debian 12+), Windows 10/11 com Docker Desktop (WSL2) ou macOS.
-* **Recursos mínimos:** 2 vCPUs, 4 GB de RAM, 20 GB de disco (SSD recomendado para o PostgreSQL).
+* **Recursos recomendados:** 2 vCPUs, 4 GB de RAM, 20 GB de disco (SSD recomendado para o PostgreSQL). O instalador só recusa abaixo dos mínimos da seção 2.
 * **Software:** Docker Engine 24+ com **Docker Compose v2** (`docker compose`, sem hífen) e Git.
 * **Rede:** porta TCP 80 livre (ou outra, via `HTTP_PORT`). Para WhatsApp (Meta) e Slack é preciso um endereço **HTTPS público**; Telegram e e-mail só precisam de saída para a internet.
 
@@ -44,9 +44,9 @@ Opções para quem quer só olhar antes de instalar:
 | `--dry-run` | `-DryRun` | mostra os comandos de instalação que seriam executados, sem executar |
 | `--yes` | `-Yes` | instala o que faltar sem perguntar |
 
-Mínimos que o instalador exige: Linux 2 GB de RAM e 10 GB de disco livre; Windows 4 GB de RAM, 10 GB de disco livre e Windows 10 build 19041 ou superior. Os valores recomendados da seção 1 (4 GB de RAM, 20 GB de disco) continuam valendo para uso real.
+Mínimos que o instalador exige (com uma pequena folga, porque a memória informada pelo sistema é um pouco menor que a nominal): Linux 2 GB de RAM e 10 GB de disco livre; Windows 4 GB de RAM (8 GB recomendados), 10 GB de disco livre e Windows 10 build 19041 ou superior. Para uso real valem os recomendados da seção 1. `--dry-run` e `--check` nunca alteram nada, nem o `.env`.
 
-Limites: no Windows, instalar o Docker Desktop exige PowerShell como **Administrador**, pode pedir reinicialização e, na primeira abertura, que você aceite os termos; depois disso rode o instalador de novo. No Linux é preciso ser root ou ter `sudo`; logo após instalar o Docker, o instalador usa `sudo` até você abrir uma nova sessão (grupo `docker`). No macOS o Docker Desktop continua sendo instalação manual.
+Limites: no Windows, instalar o Docker Desktop exige PowerShell como **Administrador**, pode pedir reinicialização e, na primeira abertura, que você aceite os termos; depois disso rode o instalador de novo. No Linux é preciso ser root ou ter `sudo`; o instalador adiciona seu usuário ao grupo `docker` (que dá acesso equivalente a administrador do servidor) e usa `sudo` até você abrir uma nova sessão. No macOS o Docker Desktop continua sendo instalação manual.
 
 Os scripts exibem a assinatura da marca (`Developed by Hedú • InfraNuvem`). **Isso não é assinatura digital**: para o Windows reconhecer o `install.ps1` como de editor conhecido (Authenticode) ou para publicar uma assinatura GPG, é preciso um certificado ou chave do titular.
 

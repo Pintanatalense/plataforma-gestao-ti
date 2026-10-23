@@ -56,6 +56,9 @@ Set-Location (Join-Path $PSScriptRoot '..')
 function Say($msg)  { Write-Host "==> $msg" }
 function Fail($msg) { Write-Host "ERRO: $msg" -ForegroundColor Red; exit 1 }
 
+if ($Port -lt 0 -or $Port -gt 65535 -or $HttpsPort -lt 0 -or $HttpsPort -gt 65535) { Fail 'Porta fora do intervalo 1-65535.' }
+if ($Hosts -notmatch '^[A-Za-z0-9._:, -]*$') { Fail '-Hosts: use só nomes/IPs separados por vírgula (letras, números, ponto, dois-pontos e hífen).' }
+
 function New-RandomBytes([int]$count) {
   $bytes = New-Object byte[] $count
   $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
@@ -110,8 +113,8 @@ function New-LocalCert([string]$hostList) {
 
 
 # --- Identidade e requisitos mínimos ----------------------------------------------------------------
-$MinRamMb = 4096     # Docker Desktop (WSL2) pede 4 GB; 8 GB é o recomendado
-$RecRamMb = 8192
+$MinRamMb = 3700     # 4 GB com folga: um PC de "4 GB" reporta ~3,9 GB. O Docker Desktop (WSL2) pede 4 GB
+$RecRamMb = 7400     # 8 GB com folga
 $MinDiskGb = 10      # imagens, volumes do banco e anexos
 
 function Show-Banner {
@@ -134,9 +137,25 @@ function Test-PortBusy([int]$port) {
   return $null -ne (Get-NetTCPConnection -State Listen -LocalPort $port -ErrorAction SilentlyContinue)
 }
 
-function Test-DockerRunning {
-  docker info *> $null
-  return ($LASTEXITCODE -eq 0)
+# No Windows PowerShell 5.1, com $ErrorActionPreference = 'Stop', o stderr de um programa nativo vira erro fatal.
+# Esta função roda o comando em modo 'Continue' e devolve só se ele terminou com sucesso.
+function Test-Native([scriptblock]$command) {
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try {
+    & $command *> $null
+    return ($LASTEXITCODE -eq 0)
+  } finally {
+    $ErrorActionPreference = $previous
+  }
+}
+
+function Test-DockerRunning { return (Test-Native { docker info }) }
+
+function Get-RunningComposeServices {
+  $previous = $ErrorActionPreference
+  $ErrorActionPreference = 'Continue'
+  try { return [bool]((docker compose ps --status running -q 2>$null) -join '') } finally { $ErrorActionPreference = $previous }
 }
 
 function Confirm-Install([string]$question) {
@@ -173,24 +192,38 @@ function Test-Requirements {
 
   $ramMb = [int]((Get-CimInstance Win32_ComputerSystem).TotalPhysicalMemory / 1MB)
   if ($ramMb -ge $RecRamMb) { Write-Ok "Memória: $ramMb MB" }
-  elseif ($ramMb -ge $MinRamMb) { Write-Note "Memória: $ramMb MB (funciona; o recomendado é $RecRamMb MB)" }
-  else { Write-Missing "Memória: $ramMb MB (mínimo $MinRamMb MB)"; $blocking = $true }
+  elseif ($ramMb -ge $MinRamMb) { Write-Note "Memória: $ramMb MB (funciona; o recomendado é 8 GB)" }
+  else { Write-Missing "Memória: $ramMb MB (mínimo 4 GB)"; $blocking = $true }
 
-  $drive = (Get-Location).Drive.Name
-  $freeGb = [int]((Get-PSDrive -Name $drive).Free / 1GB)
-  if ($freeGb -ge $MinDiskGb) { Write-Ok "Disco livre em ${drive}: $freeGb GB" }
-  else { Write-Missing "Disco livre em ${drive}: $freeGb GB (mínimo $MinDiskGb GB)"; $blocking = $true }
+  $driveInfo = (Get-Location).Drive
+  if ($null -eq $driveInfo) { Write-Note 'Pasta em caminho de rede (UNC): não consegui medir o disco livre.' }
+  else {
+    $drive = $driveInfo.Name
+    $freeGb = [int]($driveInfo.Free / 1GB)
+    if ($freeGb -ge $MinDiskGb) { Write-Ok "Disco livre em ${drive}: $freeGb GB" }
+    else { Write-Missing "Disco livre em ${drive}: $freeGb GB (mínimo $MinDiskGb GB)"; $blocking = $true }
+  }
 
   $cs = Get-CimInstance Win32_ComputerSystem
   $virtOn = $cs.HypervisorPresent -or ((Get-CimInstance Win32_Processor | Where-Object { $_.VirtualizationFirmwareEnabled }) -ne $null)
   if ($virtOn) { Write-Ok 'Virtualização habilitada' }
   else { Write-Note 'Virtualização parece desativada na BIOS/UEFI; o Docker Desktop precisa dela (ative "Intel VT-x/AMD-V").' }
 
-  $httpPort = if ($Port -gt 0) { $Port } elseif ((Test-Path .env) -and (Get-EnvValue 'HTTP_PORT') -ne '') { [int](Get-EnvValue 'HTTP_PORT') } else { 80 }
+  $httpPort = 80
+  if ($Port -gt 0) { $httpPort = $Port }
+  elseif (Test-Path .env) {
+    $envPort = 0
+    if ([int]::TryParse(((Get-EnvValue 'HTTP_PORT') -split '#')[0].Trim(), [ref]$envPort) -and $envPort -gt 0) { $httpPort = $envPort }
+  }
   $ports = @($httpPort)
-  if ($Https) { $ports += $(if ($HttpsPort -gt 0) { $HttpsPort } else { 443 }) }
+  if ($Https -or ((Test-Path .env) -and ((Get-EnvValue 'COMPOSE_FILE') -like '*https*'))) {
+    $envHttps = 0
+    if ($HttpsPort -gt 0) { $ports += $HttpsPort }
+    elseif ((Test-Path .env) -and [int]::TryParse(((Get-EnvValue 'HTTPS_PORT') -split '#')[0].Trim(), [ref]$envHttps) -and $envHttps -gt 0) { $ports += $envHttps }
+    else { $ports += 443 }
+  }
   $running = $false
-  if (Get-Command docker -ErrorAction SilentlyContinue) { $running = [bool](docker compose ps --status running -q 2>$null) }
+  if (Get-Command docker -ErrorAction SilentlyContinue) { $running = Get-RunningComposeServices }
   foreach ($p in $ports) {
     if ((Test-PortBusy $p) -and -not $running) { Write-Missing "Porta $p já está em uso por outro programa (escolha outra com -Port ou libere a porta)."; $blocking = $true }
     else { Write-Ok "Porta $p livre" }
@@ -203,8 +236,7 @@ function Test-Requirements {
   $dockerReady = $false
   if ($hasDocker) {
     Write-Ok 'docker instalado'
-    docker compose version *> $null
-    if ($LASTEXITCODE -eq 0) { Write-Ok 'docker compose v2' } else { Write-Missing 'docker compose v2' }
+    if (Test-Native { docker compose version }) { Write-Ok 'docker compose v2' } else { Write-Missing 'docker compose v2' }
     if (Test-DockerRunning) { Write-Ok 'docker em execução'; $dockerReady = $true } else { Write-Missing 'docker instalado, mas não está em execução' }
   } else { Write-Missing 'Docker Desktop' }
 
@@ -244,11 +276,11 @@ function Test-Requirements {
 
 # --- 1. Pré-requisitos ----------------------------------------------------------------------------
 Show-Banner
-if (-not $EnvOnly) {
+if (-not $EnvOnly -or $Check) {
   Test-Requirements
-  docker compose version *> $null
-  if ($LASTEXITCODE -ne 0) { Fail "Docker Compose v2 não encontrado ('docker compose version' falhou)." }
+  if (-not (Test-Native { docker compose version })) { Fail "Docker Compose v2 não encontrado ('docker compose version' falhou)." }
 }
+if ($DryRun) { Say 'Simulação concluída: os requisitos estão atendidos e nada foi alterado.'; exit 0 }
 
 # --- 2. Arquivo .env ------------------------------------------------------------------------------
 $generated = $false
@@ -303,8 +335,7 @@ $curlOpts = @('-fsS')
 if ((Get-EnvValue 'COMPOSE_FILE') -like '*https*') { $url = "https://localhost:$(Get-EnvValue 'HTTPS_PORT')"; $curlOpts = @('-fsSk') }
 Say "Aguardando o sistema responder em $url ..."
 for ($i = 0; $i -lt 90; $i++) {
-  curl.exe @curlOpts --max-time 5 -o NUL "$url/api/v1/health" 2>$null
-  if ($LASTEXITCODE -eq 0) {
+  if (Test-Native { curl.exe @curlOpts --max-time 5 -o NUL "$url/api/v1/health" }) {
     Write-Host ''
     Say 'Sistema no ar!'
     Write-Host "    Abra $url e siga o assistente: ele cria o administrador e deixa você escolher"
