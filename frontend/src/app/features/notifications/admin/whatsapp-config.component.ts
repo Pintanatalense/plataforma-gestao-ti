@@ -7,7 +7,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatInputModule } from '@angular/material/input';
 import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
-import { NotificationsAdminService, WhatsAppConfig, WhatsAppConnect, WhatsAppProvider, WhatsAppStatus } from '../../../core/services/notifications-admin.service';
+import { NotificationsAdminService, WhatsAppConfig, WhatsAppConnect, WhatsAppProvider, WhatsAppStatus, WhatsAppTestResult } from '../../../core/services/notifications-admin.service';
 import { apiErrorMessage } from './rules.component';
 
 /** URL completa do webhook a cadastrar na Meta (exige HTTPS público). */
@@ -74,6 +74,18 @@ export function safeQr(value: string | null | undefined): string | null {
             <input matInput [(ngModel)]="c.instance_name" name="wa_instance" data-testid="wa-instance" />
             <mat-hint>Letras, números, hífen e sublinhado</mat-hint>
           </mat-form-field>
+          <div class="row">
+            <mat-form-field appearance="outline">
+              <mat-label>Intervalo entre mensagens (s)</mat-label>
+              <input matInput type="number" min="0" max="60" [(ngModel)]="c.send_interval_seconds" name="wa_interval" data-testid="wa-interval" />
+              <mat-hint>Espera de 1× a 1,75× este valor; 0 desliga</mat-hint>
+            </mat-form-field>
+            <mat-form-field appearance="outline">
+              <mat-label>Máximo por pessoa por hora</mat-label>
+              <input matInput type="number" min="0" max="100" [(ngModel)]="c.max_per_hour" name="wa_per_hour" data-testid="wa-per-hour" />
+              <mat-hint>Proteção contra banimento; 0 desliga</mat-hint>
+            </mat-form-field>
+          </div>
         } @else {
           <mat-form-field appearance="outline">
             <mat-label>Token de acesso (permanente)</mat-label>
@@ -125,6 +137,23 @@ export function safeQr(value: string | null | undefined): string | null {
         <div class="footer">
           <button mat-flat-button color="primary" (click)="save()" [disabled]="saving()" data-testid="wa-save">Salvar</button>
         </div>
+
+        @if (c.enabled) {
+          <div class="connection" data-testid="wa-test">
+            <strong>Enviar teste</strong>
+            <span class="hint">Manda uma mensagem agora, fora da fila, para conferir o canal (salve antes). Até 5 testes por hora.</span>
+            <mat-form-field appearance="outline">
+              <mat-label>Número com DDI e DDD</mat-label>
+              <input matInput [(ngModel)]="testTo" name="wa_test_to" placeholder="5585999990000" data-testid="wa-test-to" />
+            </mat-form-field>
+            <div class="footer">
+              <button mat-stroked-button (click)="sendTest()" [disabled]="testing() || !testTo.trim()" data-testid="wa-test-send">Enviar teste</button>
+            </div>
+            @if (testResult(); as r) {
+              <span [class.ok]="r.ok" [class.error]="!r.ok" data-testid="wa-test-result">{{ r.detail }}</span>
+            }
+          </div>
+        }
 
         @if (c.provider === 'evolution') {
           <div class="connection" data-testid="wa-connection">
@@ -184,13 +213,19 @@ export class WhatsAppConfigComponent implements OnInit {
   statusFailed = signal(false);
   qr = signal<string | null>(null);
   connecting = signal(false);
+  testTo = '';
+  testing = signal(false);
+  testResult = signal<WhatsAppTestResult | null>(null);
   private timer: ReturnType<typeof setInterval> | null = null;
 
   ngOnInit(): void {
     this.destroyRef.onDestroy(() => this.stopRefresh());
     this.api.getWhatsAppConfig().subscribe({
       next: (c) => {
-        this.config.set({ ...c, provider: c.provider ?? 'meta', instance_name: c.instance_name ?? 'gestao-ti' });
+        this.config.set({
+          ...c, provider: c.provider ?? 'meta', instance_name: c.instance_name ?? 'gestao-ti',
+          send_interval_seconds: c.send_interval_seconds ?? 4, max_per_hour: c.max_per_hour ?? 10
+        });
         if (this.config()!.provider === 'evolution') this.loadStatus();
       },
       error: () => this.loadFailed.set(true)
@@ -284,6 +319,23 @@ export class WhatsAppConfigComponent implements OnInit {
     });
   }
 
+  sendTest(): void {
+    const to = this.testTo.replace(/\D/g, '');
+    if (!to) return;
+    this.testing.set(true);
+    this.testResult.set(null);
+    this.api.whatsAppTest(to).subscribe({
+      next: (r) => {
+        this.testing.set(false);
+        this.testResult.set(r);
+      },
+      error: (err) => {
+        this.testing.set(false);
+        this.testResult.set({ ok: false, detail: apiErrorMessage(err, 'Não foi possível enviar o teste.') });
+      }
+    });
+  }
+
   save(): void {
     const c = this.config();
     if (!c) return;
@@ -292,6 +344,7 @@ export class WhatsAppConfigComponent implements OnInit {
     this.api
       .saveWhatsAppConfig({
         enabled: c.enabled, provider: c.provider, instance_name: c.instance_name.trim(),
+        send_interval_seconds: c.send_interval_seconds, max_per_hour: c.max_per_hour,
         access_token: c.access_token, app_secret: c.app_secret, phone_number_id: c.phone_number_id.trim(),
         graph_version: c.graph_version.trim(), template_name: c.template_name.trim(),
         template_language: c.template_language.trim(), app_base_url: c.app_base_url.trim()

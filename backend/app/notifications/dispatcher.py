@@ -135,6 +135,16 @@ class Dispatcher:
     async def _record(self, delivery_id, started: datetime, result: DeliveryResult) -> bool:
         """Grava tentativa e novo estado. Retorna True se o canal acabou de degradar."""
         finished = datetime.now(timezone.utc)
+        if result.deferred:
+            async with self._session_factory() as session:
+                delivery = (
+                    await session.execute(select(Delivery).where(Delivery.id == delivery_id).with_for_update())
+                ).scalar_one()
+                delivery.status = "PENDING"
+                delivery.locked_at = None
+                delivery.next_attempt_at = finished + timedelta(seconds=max(result.retry_after_seconds or 1, 1))
+                await session.commit()
+            return False
         async with self._session_factory() as session:
             delivery = (
                 await session.execute(select(Delivery).where(Delivery.id == delivery_id).with_for_update())

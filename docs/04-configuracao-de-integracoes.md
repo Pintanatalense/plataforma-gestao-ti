@@ -52,7 +52,11 @@ O canal tem **dois provedores** (escolha na aba **Administração > Canais de co
 2. Suba o serviço opcional: `docker compose --profile whatsapp up -d`. Ele não publica porta no host; só o backend e o worker o alcançam.
 3. Na aba **WhatsApp**, escolha **Evolution API**, mantenha o nome da instância, marque *Canal habilitado* e **Salvar**.
 4. Clique em **Conectar número** e, no celular do chip dedicado, abra *WhatsApp > Aparelhos conectados > Conectar um aparelho* e leia o QR code (ele troca sozinho). O estado muda para *Conectado*.
-5. **Se cair:** o estado volta para *Desconectado*. O sistema tenta reenviar por um tempo; o que esgotar as tentativas aparece como falha em *Notificações > Entregas e regras*. Leia o QR code de novo para reconectar.
+5. **Teste:** com o canal habilitado e salvo, informe seu número (DDI + DDD) em **Enviar teste**. A mensagem vai na hora e o resultado aparece na tela (até 5 testes por hora; só os 4 últimos dígitos ficam na auditoria).
+6. **Ritmo contra banimento:** o sistema espera de 1× a 1,75× o **intervalo entre mensagens** (padrão 4 s) entre um envio e outro e manda no máximo **10 mensagens por hora para a mesma pessoa**. Mensagens que esperam a vez ficam pendentes e saem sozinhas, sem gastar tentativas. Ajuste ou zere (0 desliga) na aba, se precisar.
+7. **Se cair:** o estado volta para *Desconectado*. O sistema tenta reenviar por um tempo; o que esgotar as tentativas aparece como falha em *Notificações > Entregas e regras*. Leia o QR code de novo para reconectar. Mesmo sem mensagens na fila, o sistema confere a sessão a cada 5 minutos e **avisa os administradores por caixa de entrada e e-mail** (um aviso por queda, na segunda checagem seguida; nunca pelo próprio WhatsApp).
+
+> Os alertas de **garantia vencendo**, **estoque baixo** e **falha de backup** chegam por WhatsApp a quem vinculou o número, além de caixa de entrada e e-mail. Em instalações que já existiam, a regra de falha de backup é atualizada sozinha na migração, a menos que o administrador a tenha editado.
 
 > Neste provedor não há janela de 24 h nem template: o texto vai livre. A sessão do número fica no PostgreSQL (schema `evolution_api`) e no volume `evolution_instances`. **Homologação pendente:** os formatos exatos de erro da Evolution e o comportamento de reinício ainda precisam ser confirmados com um chip real (ADR-019, fase C5).
 

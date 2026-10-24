@@ -27,6 +27,7 @@ DEFAULT_JOBS: dict[str, str] = {
     "retention.cleanup": "daily:03:30",
     "stock.low_check": "every:30",
     "assets.warranty_check": "daily:08:00",
+    "whatsapp.health_check": "every:5",
 }
 
 
@@ -118,11 +119,50 @@ async def job_retention_cleanup(session_factory: SessionFactory) -> None:
         await session.commit()
 
 
+async def job_whatsapp_health(session_factory: SessionFactory) -> None:
+    """Avisa os administradores quando a sessão do WhatsApp (Evolution) cai, mesmo sem tráfego de mensagens.
+
+    Reaproveita o evento `channel.degraded` (regra para administradores por caixa de entrada e e-mail, nunca pelo
+    próprio WhatsApp). Debounce de uma checagem (5 min) e um único aviso por queda: as marcas somem ao reconectar.
+    """
+    from sqlalchemy import delete
+
+    from app.notifications.channel_store import load_channel
+    from app.notifications.channels import whatsapp_evolution as evolution
+    from app.notifications.channels.whatsapp import PROVIDER_EVOLUTION, WHATSAPP_CHANNEL, provider_of
+    from app.notifications.models import AutomationMark
+
+    seen_key, alerted_key = "whatsapp.down.seen", "whatsapp.down.alerted"
+    async with session_factory() as session:
+        stored = await load_channel(session, WHATSAPP_CHANNEL)
+        if stored is None or not stored.enabled or provider_of(stored) != PROVIDER_EVOLUTION:
+            await session.execute(delete(AutomationMark).where(AutomationMark.key.in_((seen_key, alerted_key))))
+            await session.commit()
+            return
+        state, detail = await evolution.connection_state(stored.config.get("instance_name") or evolution.DEFAULT_INSTANCE)
+        marks = set((await session.execute(select(AutomationMark.key).where(AutomationMark.key.in_((seen_key, alerted_key))))).scalars())
+        if state == "open":
+            if marks:
+                await session.execute(delete(AutomationMark).where(AutomationMark.key.in_((seen_key, alerted_key))))
+        elif seen_key not in marks:
+            session.add(AutomationMark(key=seen_key))
+        elif alerted_key not in marks:
+            reason = detail or f"estado da sessão: {'sem instância' if state == 'missing' else state}"
+            await emit_event(
+                session, event_type="channel.degraded", entity_type="channel", entity_id=None,
+                payload={"channel": WHATSAPP_CHANNEL, "error": f"WhatsApp desconectado ({reason}). Leia o QR code de novo em Canais de comunicação."},
+                priority="high",
+            )
+            session.add(AutomationMark(key=alerted_key))
+        await session.commit()
+
+
 JOBS: dict[str, Callable[[SessionFactory], Awaitable[None]]] = {
     "backup.daily": job_backup,
     "retention.cleanup": job_retention_cleanup,
     "stock.low_check": job_stock_low_check,
     "assets.warranty_check": job_warranty_check,
+    "whatsapp.health_check": job_whatsapp_health,
 }
 
 

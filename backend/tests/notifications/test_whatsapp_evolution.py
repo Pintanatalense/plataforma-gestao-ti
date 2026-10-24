@@ -1,6 +1,8 @@
 """WhatsApp pelo provedor Evolution (ADR-019, C2): envio, classificação, estado da conexão e rotas de administração."""
 import json
 import logging
+import uuid
+from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 
 import httpx
@@ -14,6 +16,10 @@ from app.notifications.channel_store import StoredChannel, load_channel, save_ch
 from app.notifications.channels import whatsapp_evolution as evo
 from app.notifications.channels.base import AdapterContext, Message, Recipient
 from app.notifications.channels.whatsapp import WhatsAppAdapter, provider_of
+from app.notifications.dispatcher import Dispatcher
+from app.notifications.jobs import DEFAULT_JOBS, job_whatsapp_health
+from app.notifications.models import AutomationMark, Delivery, DomainEvent, NotificationRule
+from app.notifications.rules_seed import seed_notification_rules
 from tests.factories import headers_for, make_employee, make_org, make_user
 
 pytestmark = pytest.mark.asyncio
@@ -362,3 +368,202 @@ async def test_connect_surfaces_an_error_body_returned_with_200(db_session: Asyn
     monkeypatch.setattr(evo, "http_client", lambda timeout=15.0: httpx.AsyncClient(transport=httpx.MockTransport(handler)))
     result = await evo.connect("gestao-ti")
     assert result["state"] == "error" and "boom" in result["detail"]
+
+
+# --- C3: ritmo contra banimento, entrega adiada, teste, saúde e regra de backup --------------------
+
+
+async def test_pacer_books_the_next_slot_with_a_random_gap_and_can_be_disabled():
+    clock = [100.0]
+    pacer = evo.Pacer(clock=lambda: clock[0], rng=lambda low, high: high)  # sempre o maior intervalo (interval * 1.75)
+    assert pacer.reserve(4) == 0.0
+    assert pacer.reserve(4) == pytest.approx(7.0)
+    clock[0] += 3
+    assert pacer.reserve(4) == pytest.approx(4.0)
+    clock[0] += 4
+    assert pacer.reserve(4) == 0.0
+    assert evo.Pacer().reserve(0) == 0.0  # intervalo 0 = sem ritmo
+
+
+async def test_second_message_inside_the_interval_is_deferred_without_calling_the_api(db_session: AsyncSession, fake: FakeEvolution):
+    await _configure(db_session, send_interval_seconds=30)
+    adapter = WhatsAppAdapter(AdapterContext(session_factory=SessionFactory))
+    message = Message(title="T", body_text="b")
+    assert (await adapter.send(Recipient(address="5585911110000"), message)).outcome == "ok"
+    second = await adapter.send(Recipient(address="5585922220000"), message)
+    assert second.deferred is True and second.retry_after_seconds >= 30
+    assert len(fake.sent()) == 1  # a segunda nem chegou à Evolution
+
+
+async def test_interval_zero_sends_back_to_back(db_session: AsyncSession, fake: FakeEvolution):
+    await _configure(db_session, send_interval_seconds=0)
+    adapter = WhatsAppAdapter(AdapterContext(session_factory=SessionFactory))
+    for phone in ("5585911110000", "5585922220000", "5585933330000"):
+        assert (await adapter.send(Recipient(address=phone), Message(title="T", body_text="b"))).outcome == "ok"
+    assert len(fake.sent()) == 3
+
+
+async def _sent_deliveries(db: AsyncSession, address: str, count: int, ago: timedelta = timedelta(minutes=5)) -> None:
+    event = DomainEvent(event_type="t.e", entity_type="t", payload={}, fanned_out_at=datetime.now(timezone.utc))
+    db.add(event)
+    await db.flush()
+    for _ in range(count):
+        db.add(Delivery(
+            event_id=event.id, channel="whatsapp", address=address, status="SENT", message={"title": "t", "body_text": "b"},
+            idempotency_key=uuid.uuid4().hex + uuid.uuid4().hex, sent_at=datetime.now(timezone.utc) - ago,
+        ))
+    await db.commit()
+
+
+async def test_hourly_limit_per_recipient_defers_and_only_counts_the_last_hour(db_session: AsyncSession, fake: FakeEvolution):
+    await _configure(db_session, send_interval_seconds=0, max_per_hour=3)
+    await _sent_deliveries(db_session, "5585911110000", 3)
+    await _sent_deliveries(db_session, "5585922220000", 3, ago=timedelta(hours=2))  # fora da janela
+
+    adapter = WhatsAppAdapter(AdapterContext(session_factory=SessionFactory))
+    capped = await adapter.send(Recipient(address="5585911110000"), Message(title="T", body_text="b"))
+    assert capped.deferred is True and "3 mensagens por hora" in capped.error
+    assert (await adapter.send(Recipient(address="5585922220000"), Message(title="T", body_text="b"))).outcome == "ok"
+    assert len(fake.sent()) == 1
+
+
+async def test_dispatcher_keeps_a_deferred_delivery_pending_without_spending_attempts_or_the_circuit(db_session: AsyncSession, fake: FakeEvolution):
+    await _configure(db_session, send_interval_seconds=60)
+    event = DomainEvent(event_type="t.e", entity_type="t", payload={}, fanned_out_at=datetime.now(timezone.utc))
+    db_session.add(event)
+    await db_session.flush()
+    for phone in ("5585911110000", "5585922220000"):
+        db_session.add(Delivery(
+            event_id=event.id, channel="whatsapp", address=phone, message={"title": "T", "body_text": "b"},
+            idempotency_key=uuid.uuid4().hex + uuid.uuid4().hex,
+        ))
+    await db_session.commit()
+
+    dispatcher = Dispatcher(SessionFactory)
+    assert await dispatcher.run_once() == 2
+    rows = list((await db_session.execute(select(Delivery).order_by(Delivery.status))).scalars())
+    await db_session.commit()
+    by_status = {r.status: r for r in rows}
+    assert set(by_status) == {"PENDING", "SENT"}
+    waiting = by_status["PENDING"]
+    await db_session.refresh(waiting)
+    assert waiting.attempts == 0 and waiting.locked_at is None  # não gastou tentativa
+    assert waiting.next_attempt_at > datetime.now(timezone.utc).replace(tzinfo=waiting.next_attempt_at.tzinfo) + timedelta(seconds=30)
+    assert dispatcher.circuit.open_channels(datetime.now(timezone.utc)) == set()
+    assert await dispatcher.run_once() == 0  # só volta quando chegar a hora
+
+
+async def test_config_stores_the_pacing_and_keeps_it_when_omitted(client: AsyncClient, db_session: AsyncSession, fake: FakeEvolution):
+    h = headers_for(await _admin(db_session))
+    saved = await client.put(f"{BASE}/whatsapp/config", json={"enabled": True, "provider": "evolution", "send_interval_seconds": 8, "max_per_hour": 5}, headers=h)
+    assert (saved.json()["send_interval_seconds"], saved.json()["max_per_hour"]) == (8, 5)
+    again = await client.put(f"{BASE}/whatsapp/config", json={"enabled": True, "provider": "evolution"}, headers=h)
+    assert (again.json()["send_interval_seconds"], again.json()["max_per_hour"]) == (8, 5)
+    default = (await client.get(f"{BASE}/whatsapp/config", headers=h)).json()
+    assert default["send_interval_seconds"] == 8
+    assert (await client.put(f"{BASE}/whatsapp/config", json={"provider": "evolution", "send_interval_seconds": 61}, headers=h)).status_code == 422
+    assert (await client.put(f"{BASE}/whatsapp/config", json={"provider": "evolution", "max_per_hour": -1}, headers=h)).status_code == 422
+
+
+# --- Enviar teste ---------------------------------------------------------------------------------
+
+
+async def test_send_test_goes_straight_to_the_number_and_audits_only_the_last_digits(client: AsyncClient, db_session: AsyncSession, fake: FakeEvolution):
+    h = headers_for(await _admin(db_session))
+    await _configure(db_session)
+    resp = await client.post(f"{BASE}/whatsapp/test", json={"to": "+55 (85) 99999-1234"}, headers=h)
+    assert resp.status_code == 200 and resp.json()["ok"] is True and "1234" in resp.json()["detail"]
+    [sent] = fake.sent()
+    assert sent["number"] == "5585999991234" and "Teste do canal" in sent["text"]
+
+    audit = (await db_session.execute(select(AuditLog).where(AuditLog.event_type == "notifications.whatsapp_test_sent"))).scalar_one()
+    assert audit.data == {"outcome": "ok", "to_last4": "1234"}
+    assert "5585999991234" not in json.dumps(audit.data)
+
+
+async def test_send_test_reports_failures_and_validates_input(client: AsyncClient, db_session: AsyncSession, fake: FakeEvolution):
+    h = headers_for(await _admin(db_session))
+    await _configure(db_session)
+    fake.send_responses = [(400, {"message": [{"exists": False}]})]
+    failed = (await client.post(f"{BASE}/whatsapp/test", json={"to": "5585999991234"}, headers=h)).json()
+    assert failed["ok"] is False and "sem WhatsApp" in failed["detail"]
+
+    for bad in ("123", "abc", "5" * 16, ""):
+        resp = await client.post(f"{BASE}/whatsapp/test", json={"to": bad}, headers=h)
+        assert resp.status_code >= 400, bad
+    assert len(fake.sent()) == 1
+
+
+async def test_send_test_needs_an_enabled_channel_permission_and_is_rate_limited(client: AsyncClient, db_session: AsyncSession, fake: FakeEvolution, monkeypatch):
+    from app.notifications import channels_router
+    from app.notifications.telegram_poller import SenderRateLimiter
+
+    monkeypatch.setattr(channels_router, "_test_limiter", SenderRateLimiter(limit=2, window=3600.0))
+    admin, user = await _admin(db_session), await make_user(db_session, await make_employee(db_session, await make_org(db_session)))
+    h = headers_for(admin)
+    off = await client.post(f"{BASE}/whatsapp/test", json={"to": "5585999991234"}, headers=h)
+    assert off.status_code >= 400 and "Habilite" in off.text
+
+    await _configure(db_session)
+    assert (await client.post(f"{BASE}/whatsapp/test", json={"to": "5585999991234"}, headers=headers_for(user))).status_code == 403
+    for _ in range(2):
+        assert (await client.post(f"{BASE}/whatsapp/test", json={"to": "5585999991234"}, headers=h)).status_code == 200
+    limited = await client.post(f"{BASE}/whatsapp/test", json={"to": "5585999991234"}, headers=h)
+    assert limited.status_code >= 400 and "Limite" in limited.text
+
+
+# --- Sessão caída: aviso aos administradores -------------------------------------------------------
+
+
+async def _degraded_events(db: AsyncSession) -> list[DomainEvent]:
+    rows = await db.execute(select(DomainEvent).where(DomainEvent.event_type == "channel.degraded"))
+    return list(rows.scalars())
+
+
+async def test_health_job_alerts_once_per_outage_after_one_debounce_check(db_session: AsyncSession, fake: FakeEvolution):
+    await _configure(db_session)
+    fake.created, fake.state = True, "close"
+
+    await job_whatsapp_health(SessionFactory)  # 1ª checagem: só anota (pode ser um tropeço)
+    assert await _degraded_events(db_session) == []
+    await job_whatsapp_health(SessionFactory)  # 2ª: avisa
+    [event] = await _degraded_events(db_session)
+    assert event.payload["channel"] == "whatsapp" and "QR code" in event.payload["error"]
+    await job_whatsapp_health(SessionFactory)
+    await job_whatsapp_health(SessionFactory)
+    assert len(await _degraded_events(db_session)) == 1  # um aviso por queda
+
+    fake.state = "open"  # reconectou: rearma
+    await job_whatsapp_health(SessionFactory)
+    assert (await db_session.execute(select(AutomationMark))).scalars().all() == []
+    fake.state = "close"
+    await job_whatsapp_health(SessionFactory)
+    await job_whatsapp_health(SessionFactory)
+    assert len(await _degraded_events(db_session)) == 2
+
+
+async def test_health_job_ignores_meta_and_disabled_channels_and_clears_old_marks(db_session: AsyncSession, fake: FakeEvolution):
+    db_session.add(AutomationMark(key="whatsapp.down.seen"))
+    await db_session.commit()
+    await save_channel(db_session, "whatsapp", True, {"phone_number_id": "1"}, {"access_token": "t"})  # Meta
+    await db_session.commit()
+    await job_whatsapp_health(SessionFactory)
+    await _configure(db_session, enabled=False)
+    await job_whatsapp_health(SessionFactory)
+    assert fake.calls == [] and await _degraded_events(db_session) == []
+    assert (await db_session.execute(select(AutomationMark))).scalars().all() == []
+
+
+async def test_health_job_is_a_default_scheduled_job():
+    assert DEFAULT_JOBS["whatsapp.health_check"] == "every:5"
+
+
+async def test_backup_failed_rule_reaches_the_linked_whatsapp_of_admins(db_session: AsyncSession):
+    await seed_notification_rules(db_session)
+    await db_session.commit()
+    rule = (await db_session.execute(select(NotificationRule).where(NotificationRule.code == "backup.failed"))).scalar_one()
+    assert rule.channels == ["in_app", "email", "preferred"]
+    # o aviso de sessão caída NÃO vai pelo próprio WhatsApp
+    degraded = (await db_session.execute(select(NotificationRule).where(NotificationRule.code == "channel.degraded"))).scalar_one()
+    assert "preferred" not in degraded.channels and "whatsapp" not in degraded.channels
+

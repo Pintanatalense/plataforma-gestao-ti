@@ -135,6 +135,15 @@ Decisões que mudam o texto acima:
 - **Dois pontos ficaram para os próximos PRs:** o intervalo/limite anti-banimento e o **Enviar teste** (C3), e o webhook de entrada (C4). Não há cartão de erro da Evolution homologado: a classificação de erros em `ok/retryable/permanent` foi escrita a partir do código e **precisa ser confirmada com um chip real (C5)**.
 - Neste PR **o container da Evolution não foi executado** (o Docker Desktop estava parado nesta máquina): o Compose foi validado só por `docker compose config`.
 
+### C3 (2026-10-24)
+
+- **Entrega adiada (`DeliveryResult.deferred`)**: o ritmo e o teto por hora não dormem dentro do envio (o ciclo do worker é sequencial e um sono longo atrasaria o batimento e os outros canais) nem gastam tentativas: a entrega volta a `PENDING` com `next_attempt_at` futuro e não conta para o circuito.
+- Ritmo: `Pacer` por adapter (intervalo sorteado entre 1× e 1,75× o configurado, padrão 4 s) e teto de 10 mensagens enviadas por hora por número (consulta `deliveries`), ambos em `config` e ajustáveis (0 desliga).
+- **Enviar teste** é direto (fora da fila) com limite de 5 por hora por administrador e auditoria só com os 4 últimos dígitos.
+- **Sessão caída**: job `whatsapp.health_check` (a cada 5 min) reaproveita o evento `channel.degraded` (que também é emitido pelo circuito do dispatcher após falhas seguidas); debounce de uma checagem e um aviso por queda, rearmado ao reconectar (`automation_marks`).
+- **`backup.failed` ganhou `preferred`**; a migration `u1e2f3a4b5c6d` só altera a regra semeada intacta. A regra `channel.degraded` continua sem canais externos de propósito.
+- Ainda **não homologado com chip real** (C5).
+
 ## Entrega em PRs
 
 | PR | Conteúdo | Depende de |

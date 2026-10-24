@@ -195,3 +195,48 @@ async def test_migration_creates_hub_tables_and_encrypts_legacy_smtp_password():
     from app.core.crypto import decrypt_json
 
     assert decrypt_json(row.secrets_encrypted) == {"password": "plain-pass"}
+
+
+@pytest.mark.migrations
+async def test_migration_adds_preferred_to_the_seeded_backup_failed_rule_only():
+    """Instalação antiga: `backup.failed` semeada ganha `preferred`; regra editada pelo administrador não muda."""
+    from alembic import command
+    from alembic.config import Config
+
+    url = os.environ["TEST_DATABASE_URL"]
+    engine = create_async_engine(url)
+    async with engine.begin() as conn:
+        await conn.execute(text("DROP SCHEMA public CASCADE"))
+        await conn.execute(text("CREATE SCHEMA public"))
+    backend = Path(__file__).resolve().parents[2]
+    cfg = Config(str(backend / "alembic.ini"))
+    cfg.set_main_option("script_location", str(backend / "alembic"))
+    cfg.set_main_option("sqlalchemy.url", url)
+    os.environ["DATABASE_URL"] = url
+
+    async def move(action, rev: str) -> None:
+        await asyncio.to_thread(action, cfg, rev)
+
+    async def channels() -> list:
+        async with engine.connect() as conn:
+            return (await conn.execute(text("SELECT channels FROM notification_rules WHERE code='backup.failed'"))).scalar_one()
+
+    await move(command.upgrade, "t0d1e2f3a4b5")
+    async with engine.begin() as conn:
+        await conn.execute(text(
+            "INSERT INTO notification_rules (id, code, name, enabled, event_type, condition, audience, channels, template_code, created_at, updated_at) "
+            "VALUES (gen_random_uuid(), 'backup.failed', 'Falha de backup', true, 'backup.failed', '{}'::jsonb, '[\"admins\"]'::jsonb, "
+            "'[\"in_app\",\"email\"]'::jsonb, 'backup.failed', now(), now())"
+        ))
+
+    await move(command.upgrade, "head")
+    assert await channels() == ["in_app", "email", "preferred"]
+
+    await move(command.downgrade, "t0d1e2f3a4b5")
+    assert await channels() == ["in_app", "email"]
+
+    async with engine.begin() as conn:  # o administrador já tinha mexido na regra
+        await conn.execute(text("UPDATE notification_rules SET channels = '[\"in_app\"]'::jsonb WHERE code='backup.failed'"))
+    await move(command.upgrade, "head")
+    assert await channels() == ["in_app"]
+    await engine.dispose()

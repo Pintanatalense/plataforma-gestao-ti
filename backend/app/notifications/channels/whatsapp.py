@@ -21,7 +21,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, ClassVar
 
 import httpx
-from sqlalchemy import select
+from sqlalchemy import func, select
 
 from app.notifications.channel_store import StoredChannel, load_channel
 from app.notifications.channels import whatsapp_evolution as evolution
@@ -33,7 +33,7 @@ from app.notifications.channels.base import (
     Message,
     Recipient,
 )
-from app.notifications.models import ConversationSession
+from app.notifications.models import ConversationSession, Delivery
 
 for _noisy in ("httpx", "httpcore"):  # a URL da Graph API pode carregar ids da conta
     logging.getLogger(_noisy).setLevel(logging.WARNING)
@@ -129,6 +129,7 @@ class WhatsAppAdapter:
 
     def __init__(self, ctx: AdapterContext) -> None:
         self._session_factory = ctx.session_factory
+        self._pacer = evolution.Pacer()  # um adapter por worker: o ritmo vale para o canal inteiro
 
     async def _load(self, phone: str):
         async with self._session_factory() as session:
@@ -175,12 +176,33 @@ class WhatsAppAdapter:
         status, body = await self._post(token, version, phone_id, recipient.address, self._template_payload(recipient.address, cfg, text))
         return classify(status, body)
 
-    @staticmethod
-    async def _send_evolution(stored: StoredChannel, recipient: Recipient, message: Message) -> DeliveryResult:
+    async def _sent_last_hour(self, address: str) -> int:
+        since = datetime.now(timezone.utc) - timedelta(hours=1)
+        async with self._session_factory() as session:
+            return (
+                await session.execute(
+                    select(func.count()).select_from(Delivery).where(
+                        Delivery.channel == WHATSAPP_CHANNEL, Delivery.address == address,
+                        Delivery.status == "SENT", Delivery.sent_at >= since,
+                    )
+                )
+            ).scalar_one()
+
+    async def _send_evolution(self, stored: StoredChannel, recipient: Recipient, message: Message) -> DeliveryResult:
         if not stored.enabled:
             return DeliveryResult("permanent", error="Canal WhatsApp desabilitado.")
         if not evolution.is_configured():
             return DeliveryResult("retryable", error="Evolution sem EVOLUTION_API_KEY no servidor: corrija o .env e reinicie.")
+        cfg = stored.config
+        per_hour = cfg.get("max_per_hour", evolution.DEFAULT_MAX_PER_HOUR)
+        if per_hour and await self._sent_last_hour(recipient.address) >= per_hour:
+            return DeliveryResult(
+                "retryable", deferred=True, retry_after_seconds=evolution.HOURLY_DEFER_SECONDS,
+                error=f"Limite de {per_hour} mensagens por hora para este número (proteção contra banimento).",
+            )
+        wait = self._pacer.reserve(cfg.get("send_interval_seconds", evolution.DEFAULT_INTERVAL_SECONDS))
+        if wait > 0:
+            return DeliveryResult("retryable", deferred=True, retry_after_seconds=max(int(wait) + 1, 1), error="Aguardando a vez (ritmo do canal).")
         instance = stored.config.get("instance_name") or evolution.DEFAULT_INSTANCE
         text = evolution.render_text(message, stored.config.get("app_base_url"))
         return await evolution.send_text(instance, recipient.address, text)
