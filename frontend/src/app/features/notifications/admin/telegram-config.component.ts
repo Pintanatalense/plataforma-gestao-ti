@@ -8,13 +8,14 @@ import { MatSlideToggleModule } from '@angular/material/slide-toggle';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { NotificationsAdminService, TelegramConfig } from '../../../core/services/notifications-admin.service';
 import { apiErrorMessage } from './rules.component';
+import { ChannelSelfTestComponent } from './channel-self-test.component';
 
 @Component({
   selector: 'app-telegram-config',
   standalone: true,
   imports: [
     CommonModule, FormsModule,
-    MatButtonModule, MatFormFieldModule, MatInputModule, MatSlideToggleModule, MatSnackBarModule
+    MatButtonModule, MatFormFieldModule, MatInputModule, MatSlideToggleModule, MatSnackBarModule, ChannelSelfTestComponent
   ],
   template: `
     <section class="card" data-testid="telegram-config">
@@ -40,6 +41,9 @@ import { apiErrorMessage } from './rules.component';
         <div class="footer">
           <button mat-flat-button color="primary" (click)="save()" [disabled]="saving()" data-testid="tg-save">Salvar</button>
         </div>
+        @if (c.enabled && c.bot_username) {
+          <app-channel-self-test channel="telegram" />
+        }
       } @else if (loadFailed()) {
         <p class="error" role="alert">Não foi possível carregar a configuração.</p>
       }

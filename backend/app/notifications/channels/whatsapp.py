@@ -200,10 +200,16 @@ class WhatsAppAdapter:
                 "retryable", deferred=True, retry_after_seconds=evolution.HOURLY_DEFER_SECONDS,
                 error=f"Limite de {per_hour} mensagens por hora para este número (proteção contra banimento).",
             )
+        instance = stored.config.get("instance_name") or evolution.DEFAULT_INSTANCE
+        # Sem sessão, a Evolution não responde ao envio e a conexão fica pendurada por 15 s, parando o ciclo do worker
+        # (homologação real, C5). Conferir o estado antes custa uma chamada local e devolve o motivo certo na hora.
+        # Vem antes do ritmo: sem sessão não se gasta a vez de ninguém.
+        offline = await evolution.offline_reason(instance)
+        if offline:
+            return DeliveryResult("retryable", error=offline)
         wait = self._pacer.reserve(cfg.get("send_interval_seconds", evolution.DEFAULT_INTERVAL_SECONDS))
         if wait > 0:
             return DeliveryResult("retryable", deferred=True, retry_after_seconds=max(int(wait) + 1, 1), error="Aguardando a vez (ritmo do canal).")
-        instance = stored.config.get("instance_name") or evolution.DEFAULT_INSTANCE
         text = evolution.render_text(message, stored.config.get("app_base_url"))
         return await evolution.send_text(instance, recipient.address, text)
 

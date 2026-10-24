@@ -45,8 +45,8 @@ class FakeEvolution:
 
     def __init__(self) -> None:
         self.calls: list[tuple[str, str, dict, str | None]] = []
-        self.created = False
-        self.state = "close"  # estado da instância depois de criada
+        self.created = True  # padrão: instância pronta e conectada (a maioria dos testes só quer enviar)
+        self.state = "open"
         self.send_responses: list[tuple[int, object]] = []
         self.owner = "5585999990000@s.whatsapp.net"
         self.logout_response: tuple[int, object] = (200, {"status": "SUCCESS"})
@@ -107,7 +107,8 @@ async def test_sends_free_text_with_api_key_and_no_window_or_template(db_session
     result = await _send()
 
     assert (result.outcome, result.provider_message_id) == ("ok", "BAE5OUT1")
-    [(method, path, payload, key)] = fake.calls
+    method, path, payload, key = fake.calls[-1]  # antes do envio, o adapter confere o estado da sessão
+    assert fake.calls[0][:2] == ("GET", "/instance/connectionState/gestao-ti")
     assert (method, path, key) == ("POST", "/message/sendText/gestao-ti", API_KEY)
     assert payload["number"] == "5585933330000" and payload["linkPreview"] is False
     assert payload["text"] == "*Garantia vencendo*\n\n3 ativos vencem em 7 dias\n\nAbrir no sistema: http://sys/assets"
@@ -175,6 +176,7 @@ async def test_old_configs_without_provider_are_meta():
 async def test_health_follows_the_connection_state(db_session: AsyncSession, fake: FakeEvolution):
     adapter = WhatsAppAdapter(AdapterContext(session_factory=SessionFactory))
     await _configure(db_session, display_phone="+55 85 99999-0000")
+    fake.created = False
     assert (await adapter.health()).ok is False  # instância ainda não criada
 
     fake.created, fake.state = True, "connecting"
@@ -248,6 +250,7 @@ async def test_link_code_available_for_evolution_when_server_is_configured(clien
 async def test_status_connect_and_disconnect_flow(client: AsyncClient, db_session: AsyncSession, fake: FakeEvolution):
     h = headers_for(await _admin(db_session))
     await _configure(db_session)
+    fake.created, fake.state = False, "close"
 
     status = (await client.get(f"{BASE}/whatsapp/status", headers=h)).json()
     assert (status["provider"], status["state"]) == ("evolution", "close")  # instância ainda não existe
@@ -307,7 +310,7 @@ async def test_connection_routes_require_manage_permission(client: AsyncClient, 
     for method, path in (("get", "status"), ("post", "connect"), ("post", "disconnect")):
         assert (await getattr(client, method)(f"{BASE}/whatsapp/{path}", headers=headers_for(user))).status_code == 403
     assert (await client.get(f"{BASE}/whatsapp/status", headers=headers_for(user, "notifications.manage"))).status_code == 200
-    assert fake.calls and all(path.startswith("/instance/connectionState") for _, path, _, _ in fake.calls)
+    assert fake.calls and all(path.startswith(("/instance/connectionState", "/instance/fetchInstances")) for _, path, _, _ in fake.calls)
 
 
 async def test_instance_name_is_url_encoded_in_paths():
@@ -772,3 +775,22 @@ async def test_nginx_hides_the_inbound_path_from_the_internet():
     block = conf.index("location /api/v1/integrations/whatsapp/evolution/ {")
     assert "return 404;" in conf[block: conf.index("}", block)]
     assert block < conf.index("location /api/ {")  # a regra específica vem antes do proxy geral
+
+
+async def test_send_while_disconnected_fails_fast_without_calling_send_text(db_session: AsyncSession, fake: FakeEvolution):
+    """Homologação real (C5): sem sessão a Evolution não responde ao envio e a chamada pendura por 15 s."""
+    await _configure(db_session)
+    for created, state, expected in ((True, "close", "close"), (True, "connecting", "connecting"), (False, "close", "instância não criada")):
+        fake.created, fake.state = created, state
+        result = await _send()
+        assert result.outcome == "retryable" and "desconectado" in result.error and expected in result.error, (state, result.error)
+    assert fake.sent() == []
+
+
+async def test_network_timeout_message_is_not_empty(monkeypatch):
+    def boom(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("")
+
+    monkeypatch.setattr(evo, "http_client", lambda timeout=15.0: httpx.AsyncClient(transport=httpx.MockTransport(boom)))
+    result = await evo.send_text("gestao-ti", "5585999990000", "oi")
+    assert result.outcome == "retryable" and "ReadTimeout" in result.error and "sem resposta" in result.error

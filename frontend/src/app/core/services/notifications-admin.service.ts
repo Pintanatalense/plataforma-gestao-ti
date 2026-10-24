@@ -237,6 +237,11 @@ export class NotificationsAdminService {
     return this.http.post<WhatsAppConnect>('/api/v1/notifications/whatsapp/connect', {}, refresh ? { params: { refresh: 'true' } } : {});
   }
 
+  /** Telegram/Slack: teste para a conta vinculada da própria pessoa. */
+  testSendToMyself(channel: 'telegram' | 'slack'): Observable<WhatsAppTestResult> {
+    return this.http.post<WhatsAppTestResult>(`/api/v1/notifications/channels/${channel}/test-send`, {});
+  }
+
   whatsAppTest(to: string): Observable<WhatsAppTestResult> {
     return this.http.post<WhatsAppTestResult>('/api/v1/notifications/whatsapp/test', { to });
   }
