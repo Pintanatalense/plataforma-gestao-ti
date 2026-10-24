@@ -313,6 +313,8 @@ async def update_whatsapp_config(body: WhatsAppConfigIn, db: DB, user_id: Curren
     )
     secrets_ = {k: v for k, v in {"access_token": token, "app_secret": app_secret}.items() if v}
     secrets_["verify_token"] = old.get("verify_token") or secrets.token_urlsafe(24)
+    if old.get("webhook_secret"):  # segredo da entrada da Evolution: trocar o provedor e voltar não pode invalidá-lo
+        secrets_["webhook_secret"] = old["webhook_secret"]
     await save_channel(db, WHATSAPP_CHANNEL, body.enabled, cfg, secrets_)
     await _audit_config(db, WHATSAPP_CHANNEL, body.enabled, user_id)
     await db.commit()
@@ -336,7 +338,9 @@ async def _save_evolution(body: WhatsAppConfigIn, current: StoredChannel | None,
         if getattr(body, key) is not None:
             cfg[key] = getattr(body, key)
     # Os segredos da Meta ficam guardados: voltar ao provedor antigo não obriga a digitar tudo de novo.
-    await save_channel(db, WHATSAPP_CHANNEL, body.enabled, cfg, dict(current.secrets) if current else {})
+    secrets_ = dict(current.secrets) if current else {}
+    secrets_.setdefault("webhook_secret", secrets.token_urlsafe(32))  # autentica a entrada de mensagens da Evolution
+    await save_channel(db, WHATSAPP_CHANNEL, body.enabled, cfg, secrets_)
     await _audit_config(db, WHATSAPP_CHANNEL, body.enabled, user_id)
     await db.commit()
     return _whatsapp_out(await load_channel(db, WHATSAPP_CHANNEL))
@@ -391,7 +395,13 @@ async def _remember_phone(db: AsyncSession, stored: StoredChannel, instance: str
 async def whatsapp_connect(db: DB, user_id: CurrentUser, refresh: bool = False):
     """Cria a instância se preciso e devolve o QR code para parear o número (a imagem nunca é gravada)."""
     stored, instance = await _evolution_instance(db)
-    result = await evolution.connect(instance)
+    secret = stored.secrets.get("webhook_secret")
+    if not secret:  # configuração salva antes deste recurso: gera o segredo agora
+        secret = secrets.token_urlsafe(32)
+        await save_channel(db, WHATSAPP_CHANNEL, stored.enabled, dict(stored.config), {**stored.secrets, "webhook_secret": secret})
+        await db.commit()
+    # A repetição que gira o QR (refresh) não reenvia o registro da entrada de mensagens.
+    result = await evolution.connect(instance, None if refresh else secret)
     if not refresh:  # a tela repete a chamada a cada poucos segundos para girar o QR: só o pedido inicial é auditado
         await AuditRepository(db).create(
             event_type="notifications.whatsapp_connect_requested", entity_type="notification",

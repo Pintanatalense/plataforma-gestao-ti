@@ -10,6 +10,7 @@ Rotas usadas (conferidas no código da v2.3.7; o formato exato dos erros ainda p
   GET    /instance/connectionState/{inst}    -> {instance: {instanceName, state: open|connecting|close}}
   GET    /instance/fetchInstances?instanceName=  -> [{ownerJid, profileName, ...}]
   DELETE /instance/logout/{instance}
+  POST   /webhook/set/{instance}             {webhook: {enabled, url, headers, events, byEvents, base64}}
   POST   /message/sendText/{instance}        {number, text, linkPreview}  -> 201 {key: {id}}
 
 Autenticação: cabeçalho `apikey` com a chave global.
@@ -100,6 +101,48 @@ def error_text(body: Any) -> str:
     return str(body)[:300]
 
 
+WEBHOOK_SECRET_HEADER = "X-Webhook-Secret"
+JID_RE = re.compile(r"^(\d{10,15})@s\.whatsapp\.net$")
+
+
+async def set_webhook(instance: str, secret: str) -> tuple[bool, str]:
+    """Aponta a entrada de mensagens da instância para o backend (rede interna), autenticada por segredo em cabeçalho."""
+    body = {"webhook": {
+        "enabled": True, "url": get_settings().EVOLUTION_WEBHOOK_URL, "byEvents": False, "base64": False,
+        "headers": {WEBHOOK_SECRET_HEADER: secret}, "events": ["MESSAGES_UPSERT"],
+    }}
+    status, resp = await evolution_call("POST", instance_path("webhook/set", instance), body)
+    if status in (200, 201):
+        return True, ""
+    return False, f"{status or 'rede'} {error_text(resp)}".strip()
+
+
+def parse_inbound(payload: Any, instance: str) -> list[tuple[str, str, str]]:
+    """(id da mensagem, telefone, texto) das mensagens de TEXTO recebidas em conversa privada.
+
+    Ignora: outros eventos, outra instância, mensagens nossas (`fromMe`, inclusive o eco do que enviamos), grupos,
+    mídia, e remetentes que a Evolution só identificou por `@lid` (sem telefone não há como vincular com segurança).
+    """
+    if not isinstance(payload, dict) or payload.get("instance") != instance:
+        return []
+    if str(payload.get("event") or "").replace("_", ".").lower() != "messages.upsert":
+        return []
+    data = payload.get("data")
+    items = data if isinstance(data, list) else [data]
+    found: list[tuple[str, str, str]] = []
+    for item in items:
+        if not isinstance(item, dict):
+            continue
+        key = item.get("key") or {}
+        match = JID_RE.match(str(key.get("remoteJid") or ""))
+        message = item.get("message") or {}
+        text = message.get("conversation") or (message.get("extendedTextMessage") or {}).get("text")
+        if key.get("fromMe") is True or not match or not key.get("id") or not isinstance(text, str) or not text.strip():
+            continue
+        found.append((str(key["id"]), match.group(1), text))
+    return found
+
+
 def instance_path(prefix: str, instance: str) -> str:
     return f"{prefix}/{quote(instance, safe='')}"
 
@@ -177,11 +220,18 @@ async def ensure_instance(instance: str) -> tuple[bool, str]:
     return False, f"{status or 'rede'} {error_text(body)}".strip()
 
 
-async def connect(instance: str) -> dict[str, Any]:
-    """Prepara a conexão: devolve {state, qr_base64, pairing_code, count, detail}."""
+async def connect(instance: str, webhook_secret: str | None = None) -> dict[str, Any]:
+    """Prepara a conexão: devolve {state, qr_base64, pairing_code, count, detail}.
+
+    Com `webhook_secret`, registra também a entrada de mensagens (necessária para o vínculo `vincular CÓDIGO`).
+    """
     ok, error = await ensure_instance(instance)
     if not ok:
         return {"state": "error", "detail": error}
+    if webhook_secret:
+        hooked, error = await set_webhook(instance, webhook_secret)
+        if not hooked:
+            return {"state": "error", "detail": f"Não consegui registrar a entrada de mensagens na Evolution: {error}"}
     status, body = await evolution_call("GET", instance_path("instance/connect", instance))
     if status != 200 or not isinstance(body, dict):
         return {"state": "error", "detail": f"{status or 'rede'} {error_text(body)}".strip()}

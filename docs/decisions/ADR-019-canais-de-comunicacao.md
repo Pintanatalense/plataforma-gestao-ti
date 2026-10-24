@@ -144,6 +144,15 @@ Decisões que mudam o texto acima:
 - **`backup.failed` ganhou `preferred`**; a migration `u1e2f3a4b5c6d` só altera a regra semeada intacta. A regra `channel.degraded` continua sem canais externos de propósito.
 - Ainda **não homologado com chip real** (C5).
 
+### C4 (2026-10-24)
+
+- **Entrada**: `POST /api/v1/integrations/whatsapp/evolution/webhook`, registrada na Evolution (`POST /webhook/set/{instância}`, evento `MESSAGES_UPSERT`, cabeçalho `X-Webhook-Secret`) ao clicar em *Conectar número*, apontando para `EVOLUTION_WEBHOOK_URL` (padrão `http://backend:8000/...`, rede do Compose).
+- **"Interno" imposto**: `location /api/v1/integrations/whatsapp/evolution/ { return 404; }` no Nginx (compartilhado pelos modos HTTP e HTTPS) e segredo próprio por instalação (`webhook_secret`, Fernet, comparado com `compare_digest`; a `apikey` que a Evolution coloca no corpo **não** autentica). Limite por remetente e deduplicação por id da mensagem, como na Meta.
+- **`@lid`**: a v2.3.7 já troca o `remoteJid` por `remoteJidAlt` quando existe; sem telefone (`@lid` puro), grupos, mídia, `fromMe` (inclusive o eco das nossas mensagens) e outras instâncias são ignorados. Só vale `^\d{10,15}@s.whatsapp.net$`; o endereço guardado é só dígitos, como na Meta.
+- **Não feito**: o vínculo "o sistema envia o código para o número informado" (opcional no §5) — o vínculo por `vincular CÓDIGO` basta para o piloto e evita enviar mensagens a números digitados.
+- O segredo do webhook fica em texto claro no banco da Evolution (tabela de webhook, visível a quem tem a chave global) — inerente ao desenho. Se o registro falhar no *Conectar*, o segredo novo já está salvo e o próximo clique o reenvia.
+- Ainda **não homologado com chip real** (C5): o formato exato do corpo do webhook foi lido do código da v2.3.7. O bloqueio do Nginx só foi coberto por teste do texto do arquivo: **conferir com `curl` de fora da rede no C5**.
+
 ## Entrega em PRs
 
 | PR | Conteúdo | Depende de |

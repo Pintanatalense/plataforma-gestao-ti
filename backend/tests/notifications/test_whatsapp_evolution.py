@@ -18,7 +18,10 @@ from app.notifications.channels.base import AdapterContext, Message, Recipient
 from app.notifications.channels.whatsapp import WhatsAppAdapter, provider_of
 from app.notifications.dispatcher import Dispatcher
 from app.notifications.jobs import DEFAULT_JOBS, job_whatsapp_health
-from app.notifications.models import AutomationMark, Delivery, DomainEvent, NotificationRule
+from app.notifications import whatsapp_evolution_webhook
+from app.notifications.linking import create_link_code
+from app.notifications.models import AutomationMark, Delivery, DomainEvent, InboundMessage, NotificationRule, UserChannelAddress
+from app.notifications.telegram_poller import SenderRateLimiter
 from app.notifications.rules_seed import seed_notification_rules
 from tests.factories import headers_for, make_employee, make_org, make_user
 
@@ -26,6 +29,7 @@ pytestmark = pytest.mark.asyncio
 
 BASE = "/api/v1/notifications"
 API_KEY = "evo-global-key-0123456789"
+HOOK_URL = "http://backend:8000/api/v1/integrations/whatsapp/evolution/webhook"
 SessionFactory: async_sessionmaker = None  # type: ignore[assignment]
 
 
@@ -33,7 +37,7 @@ SessionFactory: async_sessionmaker = None  # type: ignore[assignment]
 def _bind(db_session: AsyncSession, monkeypatch: pytest.MonkeyPatch) -> None:
     global SessionFactory
     SessionFactory = async_sessionmaker(bind=db_session.bind, class_=AsyncSession, expire_on_commit=False)
-    monkeypatch.setattr(evo, "get_settings", lambda: SimpleNamespace(EVOLUTION_BASE_URL="http://evolution:8080", EVOLUTION_API_KEY=API_KEY))
+    monkeypatch.setattr(evo, "get_settings", lambda: SimpleNamespace(EVOLUTION_BASE_URL="http://evolution:8080", EVOLUTION_API_KEY=API_KEY, EVOLUTION_WEBHOOK_URL=HOOK_URL))
 
 
 class FakeEvolution:
@@ -65,6 +69,8 @@ class FakeEvolution:
             if self.state == "open":
                 return httpx.Response(200, json={"instance": {"instanceName": "gestao-ti", "state": "open"}})
             return httpx.Response(200, json={"pairingCode": None, "code": "2@abc", "base64": "data:image/png;base64,QR", "count": 1})
+        if path.startswith("/webhook/set/"):
+            return httpx.Response(201, json={"enabled": True})
         if path == "/instance/fetchInstances":
             return httpx.Response(200, json=[{"name": "gestao-ti", "ownerJid": self.owner}])
         if path.startswith("/instance/logout/"):
@@ -113,7 +119,7 @@ async def test_disabled_channel_and_missing_server_key_do_not_call_the_api(db_se
     assert off.outcome == "permanent" and "desabilitado" in off.error
 
     await _configure(db_session)
-    monkeypatch.setattr(evo, "get_settings", lambda: SimpleNamespace(EVOLUTION_BASE_URL="http://evolution:8080", EVOLUTION_API_KEY=""))
+    monkeypatch.setattr(evo, "get_settings", lambda: SimpleNamespace(EVOLUTION_BASE_URL="http://evolution:8080", EVOLUTION_API_KEY="", EVOLUTION_WEBHOOK_URL=HOOK_URL))
     no_key = await _send()
     assert no_key.outcome == "retryable" and "EVOLUTION_API_KEY" in no_key.error
     assert fake.calls == []
@@ -204,7 +210,7 @@ async def test_config_saves_evolution_without_secrets_and_keeps_the_meta_ones(cl
 
 
 async def test_enabling_evolution_without_the_server_key_is_refused(client: AsyncClient, db_session: AsyncSession, monkeypatch):
-    monkeypatch.setattr(evo, "get_settings", lambda: SimpleNamespace(EVOLUTION_BASE_URL="http://evolution:8080", EVOLUTION_API_KEY=""))
+    monkeypatch.setattr(evo, "get_settings", lambda: SimpleNamespace(EVOLUTION_BASE_URL="http://evolution:8080", EVOLUTION_API_KEY="", EVOLUTION_WEBHOOK_URL=HOOK_URL))
     h = headers_for(await _admin(db_session))
     refused = await client.put(f"{BASE}/whatsapp/config", json={"enabled": True, "provider": "evolution"}, headers=h)
     assert refused.status_code >= 400 and "EVOLUTION_API_KEY" in refused.text
@@ -283,13 +289,13 @@ async def test_connect_and_disconnect_only_apply_to_the_evolution_provider(clien
 async def test_connection_errors_are_reported_not_hidden(client: AsyncClient, db_session: AsyncSession, fake: FakeEvolution, monkeypatch):
     h = headers_for(await _admin(db_session))
     await _configure(db_session)
-    monkeypatch.setattr(evo, "get_settings", lambda: SimpleNamespace(EVOLUTION_BASE_URL="http://evolution:8080", EVOLUTION_API_KEY=""))
+    monkeypatch.setattr(evo, "get_settings", lambda: SimpleNamespace(EVOLUTION_BASE_URL="http://evolution:8080", EVOLUTION_API_KEY="", EVOLUTION_WEBHOOK_URL=HOOK_URL))
     status = (await client.get(f"{BASE}/whatsapp/status", headers=h)).json()
     assert status["state"] == "unconfigured" and "EVOLUTION_API_KEY" in status["detail"]
     connect = (await client.post(f"{BASE}/whatsapp/connect", headers=h)).json()
     assert connect["state"] == "error" and "EVOLUTION_API_KEY" in connect["detail"]
 
-    monkeypatch.setattr(evo, "get_settings", lambda: SimpleNamespace(EVOLUTION_BASE_URL="http://evolution:8080", EVOLUTION_API_KEY=API_KEY))
+    monkeypatch.setattr(evo, "get_settings", lambda: SimpleNamespace(EVOLUTION_BASE_URL="http://evolution:8080", EVOLUTION_API_KEY=API_KEY, EVOLUTION_WEBHOOK_URL=HOOK_URL))
     fake.logout_response = (500, {"message": "falhou"})
     resp = await client.post(f"{BASE}/whatsapp/disconnect", headers=h)
     assert resp.status_code >= 400 and "não conseguiu desconectar" in resp.text
@@ -567,3 +573,202 @@ async def test_backup_failed_rule_reaches_the_linked_whatsapp_of_admins(db_sessi
     degraded = (await db_session.execute(select(NotificationRule).where(NotificationRule.code == "channel.degraded"))).scalar_one()
     assert "preferred" not in degraded.channels and "whatsapp" not in degraded.channels
 
+
+# --- C4: entrada de mensagens (vínculo pelo WhatsApp sem URL pública) -------------------------------
+
+HOOK = "/api/v1/integrations/whatsapp/evolution/webhook"
+SECRET = "hook-secret-0123456789"
+
+
+def upsert(text: str = "menu", jid: str = "5585977770000@s.whatsapp.net", msg_id: str | None = None, from_me: bool = False,
+           event: str = "messages.upsert", instance: str = "gestao-ti", extended: bool = False) -> dict:
+    message = {"extendedTextMessage": {"text": text}} if extended else {"conversation": text}
+    return {
+        "event": event, "instance": instance, "apikey": "ignorada",
+        "data": {"key": {"remoteJid": jid, "fromMe": from_me, "id": msg_id or f"MSG{uuid.uuid4().hex[:12]}"}, "pushName": "Fulano", "message": message, "messageType": "conversation"},
+    }
+
+
+async def _hooked(db: AsyncSession, **cfg) -> None:
+    await save_channel(db, "whatsapp", True, {"provider": "evolution", "instance_name": "gestao-ti", **cfg}, {"webhook_secret": SECRET})
+    await db.commit()
+
+
+def hook_headers(secret: str | None = SECRET) -> dict:
+    return {"X-Webhook-Secret": secret} if secret else {}
+
+
+@pytest.fixture(autouse=True)
+def _fresh_hook_limiter(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(whatsapp_evolution_webhook, "_limiter", SenderRateLimiter(limit=1000))
+
+
+async def _replies(db: AsyncSession) -> list[Delivery]:
+    rows = await db.execute(select(Delivery).where(Delivery.channel == "whatsapp").order_by(Delivery.created_at))
+    return list(rows.scalars())
+
+
+async def test_hook_refuses_wrong_or_missing_secret_and_other_providers(client: AsyncClient, db_session: AsyncSession):
+    await _hooked(db_session)
+    body = upsert()
+    for headers in ({}, {"X-Webhook-Secret": "errado"}, {"X-Webhook-Secret": SECRET + "x"}):
+        resp = await client.post(HOOK, json=body, headers=headers)
+        assert resp.status_code == 401 and resp.content == b""
+    assert (await db_session.execute(select(InboundMessage))).scalars().all() == []
+
+    # chave da API da Evolution no corpo não vale como autenticação
+    assert (await client.post(HOOK, json={**body, "apikey": API_KEY})).status_code == 401
+
+    await save_channel(db_session, "whatsapp", True, {"provider": "evolution"}, {})  # sem segredo gerado: nada é aceito
+    await db_session.commit()
+    assert (await client.post(HOOK, json=body, headers=hook_headers())).status_code == 401
+
+    await save_channel(db_session, "whatsapp", True, {"phone_number_id": "1"}, {"webhook_secret": SECRET})  # provedor Meta
+    await db_session.commit()
+    assert (await client.post(HOOK, json=body, headers=hook_headers())).status_code == 404
+    await save_channel(db_session, "whatsapp", False, {"provider": "evolution"}, {"webhook_secret": SECRET})  # desabilitado
+    await db_session.commit()
+    assert (await client.post(HOOK, json=body, headers=hook_headers())).status_code == 404
+
+
+async def test_hook_rejects_bad_json(client: AsyncClient, db_session: AsyncSession):
+    await _hooked(db_session)
+    resp = await client.post(HOOK, content=b"{nao-e-json", headers={**hook_headers(), "Content-Type": "application/json"})
+    assert resp.status_code == 400
+
+
+async def test_link_code_sent_to_the_company_number_links_the_phone_and_queues_the_reply(client: AsyncClient, db_session: AsyncSession):
+    await _hooked(db_session)
+    user = await make_user(db_session, await make_employee(db_session, await make_org(db_session)))
+    code, _ = await create_link_code(db_session, user.id, "whatsapp")
+    await db_session.commit()
+
+    resp = await client.post(HOOK, json=upsert(f"vincular {code}"), headers=hook_headers())
+    assert resp.status_code == 200 and resp.json() == {"status": "ok"}
+    address = (await db_session.execute(select(UserChannelAddress).where(UserChannelAddress.user_id == user.id))).scalar_one()
+    assert (address.channel, address.address) == ("whatsapp", "5585977770000") and address.verified_at
+    [reply] = await _replies(db_session)
+    assert reply.address == "5585977770000" and "vinculado" in reply.message["body_text"]
+
+
+async def test_unlinked_sender_only_gets_instructions(client: AsyncClient, db_session: AsyncSession):
+    await _hooked(db_session)
+    await client.post(HOOK, json=upsert("quais são meus chamados?"), headers=hook_headers())
+    [reply] = await _replies(db_session)
+    assert "vincular" in reply.message["body_text"].lower()
+    assert (await db_session.execute(select(UserChannelAddress))).scalars().all() == []
+
+
+async def test_only_private_text_from_other_people_on_the_right_instance_is_processed(client: AsyncClient, db_session: AsyncSession):
+    await _hooked(db_session)
+    ignored = [
+        upsert(from_me=True),  # eco do que nós mesmos enviamos
+        upsert(jid="120363012345678901@g.us"),  # grupo
+        upsert(jid="987654321098765@lid"),  # só o identificador interno: sem telefone não há vínculo seguro
+        upsert(jid="status@broadcast"),
+        upsert(instance="outra-instancia"),
+        upsert(event="connection.update"),
+        upsert(text="   "),
+        {"event": "messages.upsert", "instance": "gestao-ti", "data": {"key": {"remoteJid": "5585911110000@s.whatsapp.net", "fromMe": False, "id": "IMG1"}, "message": {"imageMessage": {}}}},
+        {"event": "messages.upsert", "instance": "gestao-ti", "data": "lixo"},
+        {"event": "messages.upsert", "instance": "gestao-ti"},
+    ]
+    for body in ignored:
+        assert (await client.post(HOOK, json=body, headers=hook_headers())).status_code == 200
+    assert await _replies(db_session) == []
+    assert (await db_session.execute(select(InboundMessage))).scalars().all() == []
+
+    # formatos aceitos: texto estendido, nome do evento em maiúsculas, lista de mensagens
+    await client.post(HOOK, json=upsert("menu", extended=True, jid="5585911110000@s.whatsapp.net"), headers=hook_headers())
+    await client.post(HOOK, json=upsert("menu", event="MESSAGES_UPSERT", jid="5585922220000@s.whatsapp.net"), headers=hook_headers())
+    listed = upsert("menu", jid="5585933330000@s.whatsapp.net")
+    listed["data"] = [listed["data"]]
+    await client.post(HOOK, json=listed, headers=hook_headers())
+    assert sorted(r.address for r in await _replies(db_session)) == ["5585911110000", "5585922220000", "5585933330000"]
+
+
+async def test_redelivered_message_runs_once(client: AsyncClient, db_session: AsyncSession):
+    await _hooked(db_session)
+    body = upsert("menu", msg_id="SAME1")
+    for _ in range(3):
+        assert (await client.post(HOOK, json=body, headers=hook_headers())).status_code == 200
+    assert len(await _replies(db_session)) == 1
+
+
+async def test_per_sender_flood_is_dropped(client: AsyncClient, db_session: AsyncSession, monkeypatch):
+    monkeypatch.setattr(whatsapp_evolution_webhook, "_limiter", SenderRateLimiter(limit=2))
+    await _hooked(db_session)
+    for _ in range(5):
+        await client.post(HOOK, json=upsert("menu"), headers=hook_headers())
+    assert len(await _replies(db_session)) == 2
+
+
+async def test_parse_inbound_is_strict_about_the_phone_format():
+    good = upsert(jid="5585977770000@s.whatsapp.net")
+    assert evo.parse_inbound(good, "gestao-ti")[0][1] == "5585977770000"
+    for jid in ("123@s.whatsapp.net", "5585977770000@lid", "5585977770000", "abc@s.whatsapp.net", "5585977770000:12@s.whatsapp.net"):
+        assert evo.parse_inbound(upsert(jid=jid), "gestao-ti") == [], jid
+    assert evo.parse_inbound(None, "gestao-ti") == [] and evo.parse_inbound([], "gestao-ti") == []
+
+
+async def test_connect_registers_the_webhook_once_with_secret_and_the_qr_refresh_does_not(client: AsyncClient, db_session: AsyncSession, fake: FakeEvolution):
+    h = headers_for(await _admin(db_session))
+    await client.put(f"{BASE}/whatsapp/config", json={"enabled": True, "provider": "evolution"}, headers=h)
+    secret = (await load_channel(db_session, "whatsapp")).secrets["webhook_secret"]
+    assert len(secret) >= 32
+
+    await client.post(f"{BASE}/whatsapp/connect", headers=h)
+    [(method, path, payload, key)] = [c for c in fake.calls if c[1].startswith("/webhook/set/")]
+    assert (method, path, key) == ("POST", "/webhook/set/gestao-ti", API_KEY)
+    hook = payload["webhook"]
+    assert hook["url"].endswith("/api/v1/integrations/whatsapp/evolution/webhook") and hook["enabled"] is True
+    assert hook["headers"] == {"X-Webhook-Secret": secret} and hook["events"] == ["MESSAGES_UPSERT"]
+
+    fake.calls.clear()
+    await client.post(f"{BASE}/whatsapp/connect?refresh=true", headers=h)
+    assert not any(c[1].startswith("/webhook/set/") for c in fake.calls)
+
+    await client.put(f"{BASE}/whatsapp/config", json={"enabled": True, "provider": "evolution", "instance_name": "gestao-ti"}, headers=h)
+    assert (await load_channel(db_session, "whatsapp")).secrets["webhook_secret"] == secret  # salvar de novo não troca o segredo
+    config = (await client.get(f"{BASE}/whatsapp/config", headers=h)).text
+    assert secret not in config
+
+
+async def test_saving_the_meta_provider_keeps_the_evolution_webhook_secret(client: AsyncClient, db_session: AsyncSession, fake: FakeEvolution):
+    h = headers_for(await _admin(db_session))
+    await client.put(f"{BASE}/whatsapp/config", json={"enabled": False, "provider": "evolution"}, headers=h)
+    secret = (await load_channel(db_session, "whatsapp")).secrets["webhook_secret"]
+    await client.put(f"{BASE}/whatsapp/config", json={"enabled": False, "provider": "meta"}, headers=h)
+    await client.put(f"{BASE}/whatsapp/config", json={"enabled": False, "provider": "evolution"}, headers=h)
+    assert (await load_channel(db_session, "whatsapp")).secrets["webhook_secret"] == secret  # continua o que a Evolution tem registrado
+
+
+async def test_old_configs_without_a_webhook_secret_get_one_on_connect(client: AsyncClient, db_session: AsyncSession, fake: FakeEvolution):
+    h = headers_for(await _admin(db_session))
+    await _configure(db_session)  # salva sem segredo, como antes do C4
+    await client.post(f"{BASE}/whatsapp/connect", headers=h)
+    secret = (await load_channel(db_session, "whatsapp")).secrets["webhook_secret"]
+    [(_, _, payload, _)] = [c for c in fake.calls if c[1].startswith("/webhook/set/")]
+    assert payload["webhook"]["headers"]["X-Webhook-Secret"] == secret
+
+
+async def test_connect_reports_when_the_webhook_cannot_be_registered(db_session: AsyncSession, fake: FakeEvolution, monkeypatch):
+    fake.created = True
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/webhook/set/"):
+            return httpx.Response(400, json={"message": "invalid url"})
+        return fake.handler(request)
+
+    monkeypatch.setattr(evo, "http_client", lambda timeout=15.0: httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    result = await evo.connect("gestao-ti", "segredo")
+    assert result["state"] == "error" and "entrada de mensagens" in result["detail"]
+
+
+async def test_nginx_hides_the_inbound_path_from_the_internet():
+    from pathlib import Path
+
+    conf = (Path(__file__).resolve().parents[3] / "nginx" / "app-locations.conf").read_text(encoding="utf-8")
+    block = conf.index("location /api/v1/integrations/whatsapp/evolution/ {")
+    assert "return 404;" in conf[block: conf.index("}", block)]
+    assert block < conf.index("location /api/ {")  # a regra específica vem antes do proxy geral

@@ -205,6 +205,9 @@ def _mount_routers(app: FastAPI) -> None:
     from app.notifications.whatsapp_webhook import router as whatsapp_webhook_router
     app.include_router(whatsapp_webhook_router, prefix=prefix)
 
+    from app.notifications.whatsapp_evolution_webhook import router as whatsapp_evolution_webhook_router
+    app.include_router(whatsapp_evolution_webhook_router, prefix=prefix)
+
     from app.notifications.push_router import router as push_router
     app.include_router(push_router, prefix=prefix)
 
