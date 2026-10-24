@@ -81,7 +81,8 @@ async def evolution_call(
         async with http_client(timeout) as client:
             response = await client.request(method, url, json=payload, params=params, headers={"apikey": settings.EVOLUTION_API_KEY})
     except httpx.HTTPError as exc:
-        return 0, {"message": f"{type(exc).__name__}: {exc}"}
+        # Sem sessão pareada a Evolution deixa o envio pendurado (observado na v2.3.7): o timeout vem com texto vazio
+        return 0, {"message": f"{type(exc).__name__}: {exc}".rstrip(": ") + f" (sem resposta em {timeout:.0f} s)"}
     try:
         body = response.json()
     except ValueError:

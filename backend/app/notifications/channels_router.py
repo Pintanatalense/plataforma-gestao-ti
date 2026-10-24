@@ -400,6 +400,7 @@ async def whatsapp_connect(db: DB, user_id: CurrentUser, refresh: bool = False):
         secret = secrets.token_urlsafe(32)
         await save_channel(db, WHATSAPP_CHANNEL, stored.enabled, dict(stored.config), {**stored.secrets, "webhook_secret": secret})
         await db.commit()
+        stored = await load_channel(db, WHATSAPP_CHANNEL)  # os saves seguintes (telefone) partem do segredo novo, não do antigo
     # A repetição que gira o QR (refresh) não reenvia o registro da entrada de mensagens.
     result = await evolution.connect(instance, None if refresh else secret)
     if not refresh:  # a tela repete a chamada a cada poucos segundos para girar o QR: só o pedido inicial é auditado

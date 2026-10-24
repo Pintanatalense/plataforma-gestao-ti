@@ -204,6 +204,12 @@ class WhatsAppAdapter:
         if wait > 0:
             return DeliveryResult("retryable", deferred=True, retry_after_seconds=max(int(wait) + 1, 1), error="Aguardando a vez (ritmo do canal).")
         instance = stored.config.get("instance_name") or evolution.DEFAULT_INSTANCE
+        # Sem sessão, a Evolution não responde ao envio e a conexão fica pendurada por 15 s, parando o ciclo do worker
+        # (homologação real, C5). Conferir o estado antes custa uma chamada local e devolve o motivo certo na hora.
+        state, detail = await evolution.connection_state(instance)
+        if state != "open":
+            reason = detail or ("instância não criada" if state == "missing" else f"estado: {state}")
+            return DeliveryResult("retryable", error=f"WhatsApp desconectado ({reason}). Leia o QR code em Canais de comunicação.")
         text = evolution.render_text(message, stored.config.get("app_base_url"))
         return await evolution.send_text(instance, recipient.address, text)
 

@@ -153,6 +153,16 @@ Decisões que mudam o texto acima:
 - O segredo do webhook fica em texto claro no banco da Evolution (tabela de webhook, visível a quem tem a chave global) — inerente ao desenho. Se o registro falhar no *Conectar*, o segredo novo já está salvo e o próximo clique o reenvia.
 - Ainda **não homologado com chip real** (C5): o formato exato do corpo do webhook foi lido do código da v2.3.7. O bloqueio do Nginx só foi coberto por teste do texto do arquivo: **conferir com `curl` de fora da rede no C5**.
 
+### C5 — homologação com a Evolution real (2026-10-24), parte sem chip
+
+Rodada no Docker Desktop com `evoapicloud/evolution-api:v2.3.7` no Compose de desenvolvimento:
+
+- **Confirmado:** o container sobe com `CACHE_REDIS_ENABLED=false`/`CACHE_LOCAL_ENABLED=true` (sem Redis) e com o schema `evolution_api` no mesmo PostgreSQL; a guarda de chave não interfere na subida normal; `connectionState` de instância inexistente é `404`; `instance/create` + `instance/connect` devolvem QR em PNG (`data:image/png;base64,...`); `webhook/set` aceita a URL interna `http://backend:8000/...`, o evento `MESSAGES_UPSERT` e o cabeçalho com o segredo; `logout` sem conexão responde ok.
+- **Nginx:** com o canal configurado, o backend direto responde `401` (sem segredo ou errado) e `200` (certo), enquanto o Nginx responde `404` ao mesmo pedido, inclusive com `//` e `%2e` no caminho.
+- **Diferença encontrada:** `sendText` em instância **sem sessão pareada pendura** até o timeout (15 s), com mensagem vazia. Como o ciclo do worker é sequencial, isso travaria os outros canais; o adapter agora confere o estado da sessão antes de enviar e falha na hora com o motivo.
+- **Bug achado nos testes:** conectar uma instalação com configuração anterior ao C4 gravava o telefone com os segredos antigos e **perdia o `webhook_secret` recém-criado**; corrigido (recarrega a configuração depois de gerar o segredo).
+- **Ainda sem chip:** envio real, formato de erro de número sem WhatsApp, recebimento de `vincular CÓDIGO`, queda de sessão com sessão pareada.
+
 ## Entrega em PRs
 
 | PR | Conteúdo | Depende de |
