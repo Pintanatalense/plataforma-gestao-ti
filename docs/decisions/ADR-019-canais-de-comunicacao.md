@@ -62,10 +62,16 @@ O canal continua sendo **um só** (`whatsapp`, uma linha em `channel_configs`), 
 
 Configuração por provedor (segredos continuam cifrados com Fernet):
 
+Os endpoints da Evolution citados aqui (envio de texto, estado da conexão, QR code, webhook com cabeçalho customizado) e a necessidade ou não de Redis **não foram verificados contra uma versão real**; o C2 começa conferindo isso na documentação da versão escolhida.
+
 - **Evolution:** `config = {provider, base_url, instance_name, display_phone, app_base_url}`, `secrets = {api_key, webhook_secret}`.
 - **Meta:** como hoje (`phone_number_id`, `graph_version`, `template_name`, `template_language` · `access_token`, `app_secret`, `verify_token`).
 
 Trocar de provedor é editar o canal e (para a Meta) cadastrar os templates; as regras, os vínculos e o histórico não mudam, porque ficam acima do driver. As mensagens são as mesmas: título, corpo e link, formatados para leitura no WhatsApp (negrito com `*…*`, uma informação por linha).
+
+**Classificação de erros (contrato do driver):** cada driver traduz a resposta do provedor para `ok / retryable / permanent`, que é o que o hub usa para retentativa e circuito. Na Evolution: sessão desconectada, instância indisponível, erro de rede ou 5xx = `retryable`; número sem WhatsApp, destinatário inválido ou 4xx de parâmetro = `permanent`; chave inválida = `retryable` com mensagem de configuração (como o token da Meta). A tabela exata de códigos é definida no C2 contra a versão escolhida. A janela de 24 h (`ConversationSession.last_interaction_at`) passa a ser decisão **do driver Meta**, não do adapter.
+
+**Endereço da pessoa:** os vínculos (`UserChannelAddress`) guardam o telefone **normalizado** (só dígitos, DDI 55, regra do nono dígito), igual nos dois drivers; o JID da Evolution é convertido na entrada. Sem isso, trocar de provedor quebraria vínculos e o `ALREADY_LINKED_ELSEWHERE`.
 
 ### 3. Evolution API: como rodar sem custo e reduzir o risco
 
@@ -73,11 +79,11 @@ A Evolution **não é oficial**: o número fica pareado por sessão (QR code), p
 
 1. **Número dedicado**, nunca o WhatsApp pessoal de alguém nem o de atendimento a clientes.
 2. **Só quem optou recebe**: apenas pessoas que **vincularam o número** (opt-in), e a primeira conversa parte da pessoa (`vincular CÓDIGO` para o número da empresa). Sem lista fria, sem disparo em massa.
-3. **Volume baixo e ritmo humano**: alertas são poucos por dia; o adapter ganha intervalo mínimo entre envios (com variação aleatória) e limite por hora e por destinatário. A capacidade `rate_per_second` do canal cai de 10 para um valor conservador, configurável.
+3. **Volume baixo e ritmo humano**: alertas são poucos por dia; o adapter ganha intervalo mínimo entre envios (com variação aleatória) e limite por hora e por destinatário. A capacidade `rate_per_second` do canal cai de 10 para um valor conservador; hoje é um `ClassVar` fixo e o limite do `dispatcher` é **por canal**, não por destinatário, então "configurável", o limite por hora/destinatário e a variação aleatória são código novo do C3.
 4. **Estado visível**: a aba mostra "Conectado / Desconectado / Aguardando QR code" e o último erro. Sessão caída vira alerta ao administrador **por e-mail e in-app** (nunca pelo próprio WhatsApp).
-5. **E-mail em paralelo continua nas regras de alerta** (§6): se o WhatsApp cair ou o número for banido, ninguém fica sem aviso.
-6. **Isolamento de rede:** a Evolution roda como serviço **opcional** do Compose (perfil `whatsapp`), com **tag de imagem fixa**, **sem porta publicada no host**: só o backend a alcança, pela rede interna. A `api_key` dela nunca vai ao navegador.
-7. **Dados:** a Evolution usa o PostgreSQL do próprio Compose (banco/schema separado `evolution`, como previsto no ADR-013 §14) e guarda a sessão num volume; entra no backup junto com os outros volumes. Versão, variáveis e se o cache dispensa Redis **devem ser conferidos na documentação da versão escolhida no momento da implementação** (o serviço foi removido do Compose na Fase G do ADR-013, e o histórico do Git tem a configuração antiga como ponto de partida).
+5. **E-mail em paralelo continua nas regras de alerta** (§6): se o WhatsApp cair ou o número for banido, ninguém fica sem aviso. A queda reaproveita o evento **`channel.degraded`** que já existe (regra para administradores por `in_app` e `email`, emitido em `dispatcher.py`); falta definir o gatilho da Evolution, hoje só detectável por `health()`.
+6. **Isolamento de rede:** a Evolution roda como serviço **opcional** do Compose (perfil `whatsapp`), com **tag de imagem fixa**, **sem porta publicada no host**: só o backend a alcança, pela rede interna. A `api_key` dela nunca vai ao navegador: o `GET` do canal devolve só máscara/indicador, como os outros segredos. A chave global da Evolution (`AUTHENTICATION_API_KEY`) tem poder sobre todas as instâncias; deve ser forte e vir do `.env` do servidor, e o `base_url` informado pelo administrador é restrito a host interno do Compose (allowlist), para o backend não virar cliente HTTP de qualquer endereço (SSRF).
+7. **Dados:** a Evolution usa o PostgreSQL do próprio Compose (banco/schema separado `evolution`, como previsto no ADR-013 §14) e guarda a sessão num volume. **Hoje o volume dela não entra no backup** (`scripts/backup.sh` cobre o dump do banco e os volumes de anexos/logo); incluí-lo, ou aceitar refazer o QR code, é decisão do C2. Perder a sessão exige novo pareamento, não perde dados do sistema. Se o schema `evolution` ficar no mesmo banco, conferir se o `pg_dump --clean` do backup e o restore devem incluí-lo. Versão, variáveis e se o cache dispensa Redis **devem ser conferidos na documentação da versão escolhida no momento da implementação** (o serviço foi removido do Compose na Fase G do ADR-013, e o histórico do Git tem a configuração antiga como ponto de partida).
 
 ### 4. Testar e conferir antes de depender
 
@@ -87,7 +93,9 @@ A Evolution **não é oficial**: o número fica pareado por sessão (QR code), p
 
 ### 5. Vínculo sem URL pública
 
-- **Caminho principal (Evolution):** a pessoa gera o código em *Minhas preferências* e envia `vincular CÓDIGO` ao número da empresa; a Evolution entrega a mensagem ao backend por **webhook interno** (rede do Docker, sem HTTPS público), autenticado por segredo (cabeçalho customizado, `compare_digest`, como o ADR-013 §250 já prevê). Reaproveita `linking.py` e `ALREADY_LINKED_ELSEWHERE`.
+- **Caminho principal (Evolution):** a pessoa gera o código em *Minhas preferências* e envia `vincular CÓDIGO` ao número da empresa; a Evolution entrega a mensagem ao backend por **webhook interno** (rede do Docker, sem HTTPS público), autenticado por segredo (cabeçalho customizado, `compare_digest`, como o ADR-013 §250 já prevê; nunca em query string). Reaproveita `linking.py` e `ALREADY_LINKED_ELSEWHERE`.
+
+**"Interno" precisa ser imposto, não presumido:** o roteador da API está sob `/api/` e o Nginx encaminha esse prefixo da internet para o backend. A rota do webhook da Evolution usa um caminho próprio **bloqueado no Nginx** (negado fora da rede interna), além do segredo; o backend também valida que a `instance_name` do payload é a configurada e aplica o limite de taxa que já existe (`SenderRateLimiter`). O parser de entrada da Evolution é novo: `extract_messages` e a verificação de assinatura atuais são da Meta.
 - **Caminho alternativo (opcional):** a pessoa informa o número e o sistema envia o código; ela o digita na tela. Exige endpoint novo que valide o código e grave o número informado, e **limite de envios por usuário e por hora** (senão qualquer usuário dispararia mensagens para números arbitrários, o que também aumenta o risco de banimento). Na Evolution o código vai como texto comum; na Meta exigiria template de autenticação.
 
 O menu conversacional (abrir/consultar chamado pelo WhatsApp) passa a funcionar também no piloto, porque o webhook interno não depende de domínio público.
@@ -96,7 +104,9 @@ O menu conversacional (abrir/consultar chamado pelo WhatsApp) passa a funcionar 
 
 Só recebe por WhatsApp quem **vinculou o número**. A escolha do canal por regra **já existe** (`rules.component.ts` lista os canais, inclusive `preferred`, validados em `admin_router.py`).
 
-**Plano B por e-mail:** as regras de garantia, estoque e backup já incluem `email` junto de `in_app` e `preferred`, então quem não vinculou o WhatsApp (ou quando o número cair) recebe por e-mail em paralelo; o `fanout` pula o canal externo sem endereço. Decisão: manter o **e-mail em paralelo** nas regras de alerta e documentar. Enviar o e-mail só depois de o WhatsApp esgotar as tentativas exigiria encadeamento de entregas e nova chave de idempotência, e fica fora desta etapa.
+**Como o WhatsApp entra numa regra:** pelo canal `preferred`, que o `fanout` expande para todos os canais vinculados da pessoa. Garantia e estoque já têm `preferred` e `email`; **`backup.failed` hoje só tem `in_app` e `email`**, então o C3 precisa acrescentar `preferred` a ela. O seed só cria regras que ainda não existem (por código), então instalações já semeadas exigem **migration de dados ou edição na tela de regras**; o C3 trata isso.
+
+**Plano B por e-mail:** quem não vinculou o WhatsApp (ou quando o número cair) recebe por e-mail em paralelo; o `fanout` pula o canal externo sem endereço. Decisão: manter o **e-mail em paralelo** nas regras de alerta e documentar. Enviar o e-mail só depois de o WhatsApp esgotar as tentativas exigiria encadeamento de entregas e nova chave de idempotência, e fica fora desta etapa.
 
 ### 7. Preparado para a Meta (construído só quando a migração for decidida)
 
@@ -114,9 +124,9 @@ Para "ficar pronto para receber ambos" basta o driver (§2), que já mantém o c
 | PR | Conteúdo | Depende de |
 |---|---|---|
 | **C1** | Página `/channels` com as 4 abas e guard por permissão; extrai o SMTP e a recuperação de senha de `admin.component` para um componente próprio e move os cards de WhatsApp/Telegram/Slack; redirecionamentos; sem mudança de backend (a extração do SMTP é a parte maior) | — |
-| **C2** | Driver de WhatsApp (contrato + **driver Evolution** + driver Meta com o código atual movido sem mudar comportamento); campo `provider`; serviço `evolution` opcional no Compose (perfil `whatsapp`, tag fixa, sem porta publicada); estado da conexão e QR code | C1 |
-| **C3** | **Enviar teste**; ritmo anti-banimento (intervalo, limite por hora/destinatário); texto formatado dos alertas; alerta de sessão caída ao administrador por e-mail/in-app; regras de garantia, estoque e backup com WhatsApp + e-mail documentado como plano B | C2 |
-| **C4** | Vínculo: webhook interno da Evolution (`vincular CÓDIGO`) e, opcionalmente, código enviado com limite por usuário/hora | C2 |
+| **C2** | Driver de WhatsApp (contrato + **driver Evolution** + driver Meta com o código atual movido sem mudar comportamento); campo `provider`; serviço `evolution` opcional no Compose (perfil `whatsapp`, tag fixa, sem porta publicada); estado da conexão e QR code; normalização do telefone; decisão sobre backup do volume e do schema | C1 |
+| **C3** | **Enviar teste**; ritmo anti-banimento (intervalo, limite por hora/destinatário); texto formatado dos alertas; alerta de sessão caída ao administrador por e-mail/in-app; regras de garantia, estoque e backup com WhatsApp + e-mail documentado como plano B (inclui `preferred` em `backup.failed` e a migração das regras já semeadas); gatilho de `channel.degraded` para a Evolution | C2 |
+| **C4** | Vínculo: webhook interno da Evolution (`vincular CÓDIGO`) com rota bloqueada no Nginx, parser próprio e segredo; opcionalmente, código enviado com limite por usuário/hora | C2 |
 | **C5** | Homologação com um chip dedicado real e reescrita do `docs/04` com o passo a passo (instalar, parear, vincular, testar, o que fazer se cair/banir) | chip e Compose no piloto |
 | *Futuro* | Itens do §7 (templates, status, autenticação), se a migração para a Meta for decidida | decisão do dono |
 
