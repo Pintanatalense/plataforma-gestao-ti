@@ -62,7 +62,7 @@ Em **Organização > Empresa** (permissão de leitura/edição da empresa) alter
 3. Selecione o colaborador correspondente, digite o e-mail corporativo e use a senha provisória **aleatória já sugerida** (ou digite outra); informe-a ao usuário por canal seguro. O sistema o obriga a trocá-la no primeiro acesso.
 4. Selecione o perfil de acesso adequado (ex: `Técnico N2` ou `Gestor de TI`).
 
-**Redefinir a senha de alguém:** em **Identidade > Usuários**, use o botão *Resetar Senha*: o sistema gera uma senha temporária aleatória, mostrada **uma única vez** para você copiar; a sessão aberta do usuário é encerrada e ele precisa trocar a senha ao entrar. **Recuperação por e-mail:** o próprio usuário pode pedir um link em "Esqueci minha senha" quando o administrador ativa o recurso (Painel Administrativo, aba de e-mail; exige SMTP com TLS testado). Veja [ADR-018](decisions/ADR-018-recuperacao-de-senha.md).
+**Redefinir a senha de alguém:** em **Identidade > Usuários**, use o botão *Resetar Senha*: o sistema gera uma senha temporária aleatória, mostrada **uma única vez** para você copiar; a sessão aberta do usuário é encerrada e ele precisa trocar a senha ao entrar. **Recuperação por e-mail:** o próprio usuário pode pedir um link em "Esqueci minha senha" quando o administrador ativa o recurso (**Canais de comunicação > E-mail**; exige SMTP com TLS testado). Veja [ADR-018](decisions/ADR-018-recuperacao-de-senha.md).
 
 Quem tem apenas permissão de editar usuários **não** pode conceder o papel de administrador, dar permissões que não possui nem alterar a conta de um administrador; o último administrador ativo não pode ser inativado ou rebaixado.
 

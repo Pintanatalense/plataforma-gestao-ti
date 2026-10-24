@@ -243,6 +243,28 @@ describe('ChannelsComponent', () => {
     expect(fixture.nativeElement.querySelector('[data-testid="jobs-error"]')).toBeTruthy();
   });
 
+  it('with `only` it shows just that channel and hides the worker schedule', async () => {
+    const api = {
+      health: vi.fn().mockReturnValue(
+        of(health({}, [
+          { ...base, channel: 'email', enabled: true, circuit_open: false, pending: 0, dead: 0 },
+          { ...base, channel: 'whatsapp', enabled: false, circuit_open: false, pending: 0, dead: 0 }
+        ]))
+      ),
+      listJobs: vi.fn().mockReturnValue(of({ items: [] })),
+      testChannel: vi.fn()
+    };
+    const fixture = await mount(ChannelsComponent, api, false);
+    expect(fixture.nativeElement.querySelectorAll('[data-testid="channel-card"]').length).toBe(2);
+
+    fixture.componentRef.setInput('only', 'whatsapp');
+    fixture.detectChanges();
+    const cards = fixture.nativeElement.querySelectorAll('[data-testid="channel-card"]');
+    expect(cards.length).toBe(1);
+    expect(cards[0].textContent).toContain('WhatsApp');
+    expect(fixture.nativeElement.querySelector('[data-testid="jobs-table"]')).toBeNull();
+  });
+
   it('runs a job on demand and only when it is enabled', async () => {
     const jobs = [
       { name: 'backup.daily', schedule: 'daily:02:00', enabled: true, next_run_at: '2026-10-18T05:00:00Z', last_run_at: '2026-10-17T05:00:00Z', last_status: 'error', last_error: 'disco cheio' },

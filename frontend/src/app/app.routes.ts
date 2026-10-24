@@ -2,7 +2,7 @@ import { Routes } from '@angular/router';
 import { LoginComponent } from './features/auth/login/login.component';
 import { ShellComponent } from './core/layout/shell/shell.component';
 import { setupGuard } from './core/auth/setup.guard';
-import { authGuard, guestGuard, permissionGuard } from './core/auth/auth.guard';
+import { anyPermissionGuard, authGuard, guestGuard, permissionGuard } from './core/auth/auth.guard';
 
 export const routes: Routes = [
   {
@@ -82,6 +82,11 @@ export const routes: Routes = [
         path: 'admin',
         canActivate: [permissionGuard('identity.roles.read')],
         loadComponent: () => import('./features/admin/admin.component').then(m => m.AdminComponent)
+      },
+      {
+        path: 'channels',
+        canActivate: [anyPermissionGuard('notifications.manage', 'system.backup.manage')],
+        loadComponent: () => import('./features/channels/channels-page.component').then(m => m.ChannelsPageComponent)
       },
       {
         path: 'notifications',

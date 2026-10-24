@@ -24,8 +24,7 @@ import {
   DbBackup,
   CsvExportRequest,
   DemoStatus,
-  DemoCleanPreview,
-  SmtpConfig, PasswordResetConfig } from '../../core/services/admin.service';
+  DemoCleanPreview } from '../../core/services/admin.service';
 
 
 @Component({
@@ -127,21 +126,6 @@ export class AdminComponent implements OnInit {
   seedingDemo = false;
   seedingTest = false;
 
-  // --- Notificações por E-mail / SMTP (MOD-11) ---
-  smtpConfig: SmtpConfig = {
-    is_enabled: false,
-    host: 'smtp.gmail.com',
-    port: 587,
-    security: 'STARTTLS',
-    username: '',
-    from_email: 'suporte@empresa.com.br',
-    from_name: 'Service Desk Central',
-    app_base_url: 'http://localhost'
-  };
-  smtpPasswordInput = '';
-  /** Falha ao ler a configuração salva: o formulário só tem os padrões do código e NÃO pode ser salvo por cima dela. */
-  smtpLoadError: string | null = null;
-
   // --- Estados de carregamento/erro das listas do painel ---
   templatesError: string | null = null;
   backupsError: string | null = null;
@@ -149,18 +133,10 @@ export class AdminComponent implements OnInit {
   demoStatusError: string | null = null;
   verifyingBackup: Record<string, boolean> = {};
   backupVerification: Record<string, { valid: boolean; message: string }> = {};
-  loadingSmtpConfig = false;
-  savingSmtpConfig = false;
-  testSmtpEmail = '';
-  testingSmtp = false;
-  smtpTestFeedback: { success: boolean; message: string } | null = null;
-
   ngOnInit(): void {
     this.loadTemplates();
     this.loadBackups();
     this.loadDemoStatus();
-    this.loadSmtpConfig();
-    this.loadPasswordReset();
   }
 
   // ==========================================
@@ -623,149 +599,6 @@ export class AdminComponent implements OnInit {
         this.seedingTest = false;
         const msg = apiErrorMessage(err, 'Erro ao carregar dados de testes/homologação.');
         this.snackBar.open(msg, 'Fechar', { duration: 5000 });
-      }
-    });
-  }
-
-  // ==========================================
-  // NOTIFICAÇÕES POR E-MAIL / SMTP (MOD-11)
-  // ==========================================
-  loadSmtpConfig(): void {
-    this.loadingSmtpConfig = true;
-    this.smtpLoadError = null;
-    this.adminService.getSmtpConfig().subscribe({
-      next: (cfg) => {
-        this.smtpConfig = cfg;
-        this.smtpPasswordInput = cfg.password || '';
-        this.loadingSmtpConfig = false;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.loadingSmtpConfig = false;
-        this.smtpLoadError = apiErrorMessage(err, 'Não foi possível ler a configuração de e-mail salva.');
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  saveSmtpConfig(): void {
-    // sem a configuração real carregada o formulário só tem os valores padrão do código: salvar apagaria a configuração de verdade
-    if (this.smtpLoadError || this.loadingSmtpConfig) return;
-    this.savingSmtpConfig = true;
-    const payload: SmtpConfig = {
-      ...this.smtpConfig,
-      password: this.smtpPasswordInput ? this.smtpPasswordInput : undefined
-    };
-    this.adminService.updateSmtpConfig(payload).subscribe({
-      next: (cfg) => {
-        this.smtpConfig = cfg;
-        this.smtpPasswordInput = cfg.password || '********';
-        this.savingSmtpConfig = false;
-        this.snackBar.open('Configurações de SMTP salvas com sucesso!', 'OK', { duration: 3000 });
-        this.loadPasswordReset(); // alterar o SMTP desliga a recuperação de senha
-      },
-      error: (err) => {
-        this.savingSmtpConfig = false;
-        const msg = apiErrorMessage(err, 'Erro ao salvar configuração SMTP.');
-        this.snackBar.open(msg, 'Fechar', { duration: 4000 });
-      }
-    });
-  }
-
-  // ------ Recuperação de senha por e-mail (ADR-018)
-  passwordReset: PasswordResetConfig | null = null;
-  passwordResetError: string | null = null;
-  savingPasswordReset = false;
-
-  loadPasswordReset(): void {
-    this.passwordResetError = null;
-    this.adminService.getPasswordResetConfig().subscribe({
-      next: (cfg) => {
-        this.passwordReset = cfg;
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.passwordReset = null;
-        this.passwordResetError = apiErrorMessage(err, 'Não foi possível ler o estado da recuperação de senha.');
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  togglePasswordReset(): void {
-    if (!this.passwordReset || this.savingPasswordReset) return;
-    const enable = !this.passwordReset.enabled;
-    if (!enable) {
-      this.applyPasswordReset(false);
-      return;
-    }
-    // a confirmação mostra o que está SALVO no servidor (o formulário pode ter edições ainda não salvas):
-    // o link de recuperação sai desse servidor e aponta para esse endereço
-    this.savingPasswordReset = true;
-    this.adminService.getSmtpConfig().subscribe({
-      next: (saved) => {
-        this.savingPasswordReset = false;
-        const ok = confirm(
-          'Ativar a recuperação de senha por e-mail?\n\n' +
-          `Servidor: ${saved.host}:${saved.port}\n` +
-          `Remetente: ${saved.from_email}\n` +
-          `Endereço dos links: ${saved.app_base_url}\n\n` +
-          'Qualquer pessoa poderá pedir um link por e-mail, sem estar logada. Confirme que esses dados estão corretos.'
-        );
-        if (ok) this.applyPasswordReset(true);
-        else this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.savingPasswordReset = false;
-        this.snackBar.open(apiErrorMessage(err, 'Não foi possível ler a configuração de e-mail salva.'), 'Fechar', { duration: 6000 });
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  private applyPasswordReset(enable: boolean): void {
-    this.savingPasswordReset = true;
-    this.adminService.setPasswordReset(enable).subscribe({
-      next: (cfg) => {
-        this.passwordReset = cfg;
-        this.savingPasswordReset = false;
-        this.snackBar.open(enable ? 'Recuperação de senha ativada.' : 'Recuperação de senha desativada.', 'OK', { duration: 3000 });
-        this.cdr.detectChanges();
-      },
-      error: (err) => {
-        this.savingPasswordReset = false;
-        this.snackBar.open(apiErrorMessage(err, 'Não foi possível alterar a recuperação de senha.'), 'Fechar', { duration: 6000 });
-        this.cdr.detectChanges();
-      }
-    });
-  }
-
-  runSmtpTest(): void {
-    if (!this.testSmtpEmail || !this.testSmtpEmail.includes('@')) {
-      this.snackBar.open('Informe um e-mail de destino válido para o teste.', 'OK', { duration: 3000 });
-      return;
-    }
-    this.testingSmtp = true;
-    this.smtpTestFeedback = null;
-    this.adminService.testSmtpConnection({
-      target_email: this.testSmtpEmail,
-      host: this.smtpConfig.host,
-      port: this.smtpConfig.port,
-      security: this.smtpConfig.security,
-      username: this.smtpConfig.username,
-      password: this.smtpPasswordInput && this.smtpPasswordInput !== '********' ? this.smtpPasswordInput : undefined,
-      from_email: this.smtpConfig.from_email,
-      from_name: this.smtpConfig.from_name
-    }).subscribe({
-      next: (res) => {
-        this.testingSmtp = false;
-        this.smtpTestFeedback = { success: true, message: `E-mail de teste enviado com sucesso para ${res.target_email}!` };
-        this.loadPasswordReset(); // um teste ok homologa o SMTP salvo
-      },
-      error: (err) => {
-        this.testingSmtp = false;
-        const msg = apiErrorMessage(err, 'Falha na conexão SMTP.');
-        this.smtpTestFeedback = { success: false, message: msg };
       }
     });
   }

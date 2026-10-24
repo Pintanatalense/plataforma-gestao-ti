@@ -9,7 +9,7 @@ Este documento detalha o funcionamento, parametrização segura e testes de cone
 O módulo de e-mail é responsável por alertar os usuários sobre o ciclo de vida dos chamados no Service Desk.
 
 ### 1.1. Configuração dos Parâmetros SMTP
-1. Acesse **Administração > Servidor de E-mail (SMTP)**.
+1. Acesse **Administração > Canais de comunicação > E-mail** (quem tem `notifications.manage` ou `system.backup.manage`).
 2. Ative a chave **Notificações por E-mail**.
 3. Preencha os dados do provedor da empresa:
    * **Servidor (Host):** Ex: `smtp.gmail.com`, `smtp.office365.com` ou servidor interno Postfix.

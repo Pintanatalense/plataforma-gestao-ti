@@ -3,7 +3,7 @@ import { Router, UrlTree, provideRouter } from '@angular/router';
 import { provideHttpClient } from '@angular/common/http';
 import { provideHttpClientTesting } from '@angular/common/http/testing';
 import { firstValueFrom, isObservable, of } from 'rxjs';
-import { authGuard, guestGuard, permissionGuard } from './auth.guard';
+import { anyPermissionGuard, authGuard, guestGuard, permissionGuard } from './auth.guard';
 import { AuthService, UserAccount } from './auth.service';
 
 describe('Route guards', () => {
@@ -69,6 +69,24 @@ describe('Route guards', () => {
     vi.spyOn(auth, 'ensureUser').mockReturnValue(of(admin));
     vi.spyOn(auth, 'currentUserValue', 'get').mockReturnValue(admin);
     expect(await run(permissionGuard('identity.users.read'))).toBe(true);
+  });
+
+  it('anyPermissionGuard allows a user with just one of the permissions', async () => {
+    const user = makeUser({ roles: [{ permissions: [{ code: 'system.backup.manage' }] }] });
+    vi.spyOn(auth, 'ensureUser').mockReturnValue(of(user));
+    vi.spyOn(auth, 'currentUserValue', 'get').mockReturnValue(user);
+    expect(await run(anyPermissionGuard('notifications.manage', 'system.backup.manage'))).toBe(true);
+  });
+
+  it('anyPermissionGuard blocks a user with none of them and sends a missing session to /login', async () => {
+    vi.spyOn(auth, 'ensureUser').mockReturnValue(of(makeUser()));
+    vi.spyOn(auth, 'currentUserValue', 'get').mockReturnValue(makeUser());
+    const denied = (await run(anyPermissionGuard('notifications.manage', 'system.backup.manage'))) as UrlTree;
+    expect(router.serializeUrl(denied)).toBe('/dashboard');
+
+    vi.spyOn(auth, 'ensureUser').mockReturnValue(of(null));
+    const anon = (await run(anyPermissionGuard('notifications.manage'))) as UrlTree;
+    expect(router.serializeUrl(anon)).toBe('/login');
   });
 
   it('guestGuard sends logged users to dashboard', async () => {
