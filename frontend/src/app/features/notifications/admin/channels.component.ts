@@ -1,4 +1,4 @@
-import { Component, DestroyRef, NgZone, OnInit, inject, signal } from '@angular/core';
+import { Component, DestroyRef, NgZone, OnInit, inject, input, signal } from '@angular/core';
 import { CommonModule, DatePipe } from '@angular/common';
 import { MatButtonModule } from '@angular/material/button';
 import { MatIconModule } from '@angular/material/icon';
@@ -43,7 +43,7 @@ export function channelState(c: { enabled: boolean; circuit_open: boolean; dead:
       </section>
 
       <div class="cards">
-        @for (c of h.channels; track c.channel) {
+        @for (c of visibleChannels(h.channels); track c.channel) {
           <article class="card" [class]="'st-' + state(c)" data-testid="channel-card">
             <header>
               <h3>{{ name(c.channel) }}</h3>
@@ -73,34 +73,36 @@ export function channelState(c: { enabled: boolean; circuit_open: boolean; dead:
       <p class="error" role="alert">Não foi possível carregar a saúde dos canais.</p>
     }
 
-    <h3 class="jobs-title">Agenda do worker</h3>
-    @if (jobsFailed()) {
-      <p class="error" role="alert" data-testid="jobs-error">Não foi possível carregar a agenda do worker.</p>
+    @if (!only()) {
+      <h3 class="jobs-title">Agenda do worker</h3>
+      @if (jobsFailed()) {
+        <p class="error" role="alert" data-testid="jobs-error">Não foi possível carregar a agenda do worker.</p>
+      }
+      <div class="table-wrap">
+        <table class="grid" data-testid="jobs-table">
+          <thead><tr><th>Ativo</th><th>Tarefa</th><th>Agenda</th><th>Próxima</th><th>Última</th><th></th></tr></thead>
+          <tbody>
+            @for (j of jobs(); track j.name) {
+              <tr data-testid="job-row">
+                <td><mat-slide-toggle [checked]="j.enabled" (change)="setEnabled(j, $event.checked)" aria-label="Ativar tarefa" /></td>
+                <td><code>{{ j.name }}</code></td>
+                <td>{{ j.schedule }}</td>
+                <td>{{ j.next_run_at | date: 'dd/MM HH:mm' }}</td>
+                <td>
+                  @if (j.last_run_at) {
+                    {{ j.last_run_at | date: 'dd/MM HH:mm' }} — <span [class.error]="j.last_status === 'error'">{{ j.last_status }}</span>
+                    @if (j.last_error) { <div class="error small">{{ j.last_error }}</div> }
+                  } @else { — }
+                </td>
+                <td class="row-actions">
+                  <button mat-button (click)="run(j)" [disabled]="!j.enabled" data-testid="run-job">Executar agora</button>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
     }
-    <div class="table-wrap">
-      <table class="grid" data-testid="jobs-table">
-        <thead><tr><th>Ativo</th><th>Tarefa</th><th>Agenda</th><th>Próxima</th><th>Última</th><th></th></tr></thead>
-        <tbody>
-          @for (j of jobs(); track j.name) {
-            <tr data-testid="job-row">
-              <td><mat-slide-toggle [checked]="j.enabled" (change)="setEnabled(j, $event.checked)" aria-label="Ativar tarefa" /></td>
-              <td><code>{{ j.name }}</code></td>
-              <td>{{ j.schedule }}</td>
-              <td>{{ j.next_run_at | date: 'dd/MM HH:mm' }}</td>
-              <td>
-                @if (j.last_run_at) {
-                  {{ j.last_run_at | date: 'dd/MM HH:mm' }} — <span [class.error]="j.last_status === 'error'">{{ j.last_status }}</span>
-                  @if (j.last_error) { <div class="error small">{{ j.last_error }}</div> }
-                } @else { — }
-              </td>
-              <td class="row-actions">
-                <button mat-button (click)="run(j)" [disabled]="!j.enabled" data-testid="run-job">Executar agora</button>
-              </td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    </div>
   `,
   styles: [`
     .worker { display: flex; gap: 12px; align-items: center; padding: 12px 16px; border-radius: 8px; margin-top: 16px; background: #dcfce7; }
@@ -129,6 +131,9 @@ export class ChannelsComponent implements OnInit {
   private destroyRef = inject(DestroyRef);
   private zone = inject(NgZone);
 
+  /** Mostra só o cartão deste canal e esconde a agenda do worker (usado nas abas da página Canais). */
+  only = input<string | null>(null);
+
   health = signal<HealthResponse | null>(null);
   jobs = signal<JobItem[]>([]);
   loadFailed = signal(false);
@@ -144,6 +149,11 @@ export class ChannelsComponent implements OnInit {
     this.destroyRef.onDestroy(() => clearInterval(timer));
   }
 
+  visibleChannels<T extends { channel: string }>(all: T[]): T[] {
+    const only = this.only();
+    return only ? all.filter((c) => c.channel === only) : all;
+  }
+
   refresh(): void {
     this.api.health().subscribe({
       next: (h) => {
@@ -152,6 +162,7 @@ export class ChannelsComponent implements OnInit {
       },
       error: () => this.loadFailed.set(true)
     });
+    if (this.only()) return; // a agenda do worker não aparece nas abas por canal
     this.api.listJobs().subscribe({
       next: (r) => {
         this.jobs.set(r.items);

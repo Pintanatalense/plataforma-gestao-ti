@@ -15,6 +15,8 @@ interface NavItem {
   label: string;
   route: string;
   permission?: string;
+  /** Basta ter UMA delas (ex.: Canais de comunicação). */
+  anyPermission?: string[];
 }
 
 interface NavSection {
@@ -235,6 +237,7 @@ export class SidebarComponent implements OnInit {
       title: 'Administração & Sistema',
       items: [
         { icon: 'settings_applications', label: 'Painel Administrativo', route: '/admin', permission: 'identity.roles.read' },
+        { icon: 'forum', label: 'Canais de comunicação', route: '/channels', anyPermission: ['notifications.manage', 'system.backup.manage'] },
         { icon: 'history', label: 'Auditoria', route: '/audit', permission: 'audit.read' },
         { icon: 'people', label: 'Usuários', route: '/identity/users', permission: 'identity.users.read' },
         { icon: 'admin_panel_settings', label: 'Perfis (Roles)', route: '/identity/roles', permission: 'identity.roles.read' }
@@ -257,6 +260,7 @@ export class SidebarComponent implements OnInit {
   }
 
   canAccess(item: NavItem): boolean {
+    if (item.anyPermission) return item.anyPermission.some((p) => this.authService.hasPermission(p));
     if (!item.permission) return true;
     return this.authService.hasPermission(item.permission);
   }

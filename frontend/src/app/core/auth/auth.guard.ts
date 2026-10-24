@@ -49,6 +49,23 @@ export const permissionGuard = (permission: string): CanActivateFn => {
   };
 };
 
+/** Exige ao menos UMA das permissões (ou admin). Mesma regra do `permissionGuard`, para telas com acessos alternativos. */
+export const anyPermissionGuard = (...permissions: string[]): CanActivateFn => {
+  return () => {
+    const authService = inject(AuthService);
+    const router = inject(Router);
+
+    return authService.ensureUser().pipe(
+      map((user) => {
+        if (!user) {
+          return router.createUrlTree(['/login']);
+        }
+        return permissions.some((p) => authService.hasPermission(p)) ? true : router.createUrlTree(['/dashboard']);
+      })
+    );
+  };
+};
+
 /** Impede usuário já autenticado de voltar à tela de login. */
 export const guestGuard: CanActivateFn = () => {
   const authService = inject(AuthService);

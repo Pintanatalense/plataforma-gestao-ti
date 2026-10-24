@@ -92,7 +92,7 @@ Faça na instalação com o **modelo de exemplo** (Etapa 2) ou cadastre itens na
 
 ## Etapa 6 — E-mail (SMTP)
 
-1. Administração → aba **Servidor de E-mail (SMTP)**: servidor, porta, usuário, senha; salve e use o **teste de envio**.
+1. Administração → **Canais de comunicação** → aba **E-mail**: servidor, porta, usuário, senha; salve e use o **teste de envio**.
 2. **Esperado:** e-mail de teste chega. A senha não aparece de volta na tela (campo mascarado).
 3. Gere um chamado novo: o e-mail deve chegar **fora** do horário de silêncio (20h–07h, fuso Fortaleza); dentro dele fica agendado para as 07h (o sino não atrasa).
 4. Reinicie tudo (`docker compose restart`) e repita o teste de envio: confirma que a senha cifrada continua legível (mesma `APP_ENCRYPTION_KEY`).
@@ -101,7 +101,7 @@ Faça na instalação com o **modelo de exemplo** (Etapa 2) ou cadastre itens na
 
 Depende da Etapa 6 (SMTP funcionando). **Nasce desativada**: antes de ativar, a tela de login **não** tem "Esqueci minha senha" e `POST /api/v1/identity/password-reset/request` responde 404.
 
-1. Administração → aba de e-mail → cartão **Recuperação de senha por e-mail**. **Esperado:** botão **desabilitado** com a explicação enquanto o SMTP não estiver habilitado com **STARTTLS ou SSL/TLS** e **testado com sucesso** (use o teste de envio da Etapa 6 com a configuração salva).
+1. Administração → **Canais de comunicação** → aba **E-mail** → cartão **Recuperação de senha por e-mail**. **Esperado:** botão **desabilitado** com a explicação enquanto o SMTP não estiver habilitado com **STARTTLS ou SSL/TLS** e **testado com sucesso** (use o teste de envio da Etapa 6 com a configuração salva).
 2. Como **administrador**, clique em **Ativar recuperação de senha** (depois de ativo, o botão vira **Desativar recuperação de senha**). **Esperado:** uma confirmação mostra servidor, remetente e **endereço dos links** — confira que o endereço é o que os usuários acessam (`app_base_url`); confirme. (Quem só gerencia o SMTP, sem ser administrador, é recusado.)
 3. Na tela de login, clique em **Esqueci minha senha**, informe o e-mail de um usuário. **Esperado:** mensagem genérica ("Se o e-mail estiver cadastrado...") — a mesma para e-mail inexistente; o e-mail com o link chega em instantes.
 4. Abra o link. **Esperado:** a barra de endereço **perde o token** (`/reset-password` sem `?token=`); defina a senha nova (8+ caracteres, confirmação igual) → "Senha redefinida". Entre com a nova senha; **sessões antigas** desse usuário caem.
