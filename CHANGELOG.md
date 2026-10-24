@@ -2,6 +2,13 @@
 
 Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); versões seguem [SemVer](https://semver.org/lang/pt-BR/). Cada item aponta o PR em `Pintanatalense/plataforma-gestao-ti`.
 
+## [Não lançado]
+
+### Funcionalidades
+
+- **Página Canais de comunicação** (`/channels`, menu Administração & Sistema), com uma aba por canal: E-mail, WhatsApp, Telegram e Slack. O SMTP e a recuperação de senha saíram do Painel Administrativo para a aba E-mail.
+- **WhatsApp pela Evolution API (sem custo por mensagem)** como novo provedor do canal, ao lado da Meta Cloud API, que continua disponível. A Evolution **não é oficial**: pode desconectar ou ter o número banido; use um chip dedicado. É um serviço opcional do Compose (`docker compose --profile whatsapp up -d`), sem porta publicada, e o pareamento é feito pelo QR code na própria aba WhatsApp. Instalações já configuradas com a Meta seguem como estavam.
+
 ## [0.1.1] — 2026-10-23
 
 ### Funcionalidades

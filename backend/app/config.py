@@ -45,6 +45,10 @@ class Settings(BaseSettings):
 
     # --- Notificações ---
     APP_TIMEZONE: str = "America/Fortaleza"
+    # WhatsApp pela Evolution API (ADR-019). Endereço e chave vêm do servidor, nunca da tela: o administrador
+    # não escolhe para onde o backend manda requisições. Sem EVOLUTION_API_KEY o provedor fica indisponível.
+    EVOLUTION_BASE_URL: str = "http://evolution:8080"
+    EVOLUTION_API_KEY: str = ""
 
     # --- Anexos ---
     ATTACHMENT_STORAGE_PATH: str = "/data/attachments"

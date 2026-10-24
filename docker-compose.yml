@@ -6,6 +6,9 @@
 #   - backend:  API FastAPI (NÃO publicada no host; acessada pelo Nginx)
 #   - worker:   worker de notificações e agenda (1 réplica; mesma imagem do backend)
 #   - nginx:    única porta publicada; constrói e serve o frontend Angular
+#   - evolution: OPCIONAL (perfil "whatsapp"): WhatsApp pela Evolution API, sem custo por mensagem (ADR-019).
+#               Não é oficial: use um chip dedicado. Sobe com:  docker compose --profile whatsapp up -d
+#               NÃO publica porta no host; só o backend e o worker a alcançam, pela rede do Compose.
 #
 # Pré-requisito: copiar .env.example para .env e preencher POSTGRES_PASSWORD
 # SECRET_KEY e APP_ENCRYPTION_KEY (o compose se recusa a subir sem eles).
@@ -47,6 +50,8 @@ services:
       DEBUG: ${DEBUG:-false}
       ENABLE_QA_SEED: ${ENABLE_QA_SEED:-false}
       ENABLE_API_DOCS: ${ENABLE_API_DOCS:-true}
+      EVOLUTION_BASE_URL: http://evolution:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
       ATTACHMENT_STORAGE_PATH: /data/attachments
       ATTACHMENT_MAX_SIZE_MB: ${ATTACHMENT_MAX_SIZE_MB:-100}
       BACKUP_STORAGE_PATH: /data/backups
@@ -79,6 +84,8 @@ services:
       SECRET_KEY: ${SECRET_KEY:?Defina SECRET_KEY no .env (openssl rand -hex 32)}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?Defina APP_ENCRYPTION_KEY no .env (veja .env.example)}
       APP_TIMEZONE: ${APP_TIMEZONE:-America/Fortaleza}
+      EVOLUTION_BASE_URL: http://evolution:8080
+      EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
       BACKUP_STORAGE_PATH: /data/backups
     volumes:
       - backups_data:/data/backups
@@ -91,6 +98,40 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+
+  # WhatsApp pela Evolution API (opcional; ADR-019). Versão FIXA: atualizar é uma decisão, não um acaso.
+  # A sessão do número fica no PostgreSQL (schema evolution_api) e em /evolution/instances. Se a sessão cair,
+  # basta ler o QR code de novo na tela Canais de comunicação > WhatsApp.
+  evolution:
+    image: evoapicloud/evolution-api:v2.3.7
+    profiles: ["whatsapp"]
+    restart: unless-stopped
+    # Sem chave, a Evolution cairia numa chave padrão pública do código dela. Por isso o serviço RECUSA subir sem uma
+    # chave própria (>= 24 caracteres); o resto da linha é o ENTRYPOINT original da imagem.
+    entrypoint:
+      - /bin/bash
+      - -c
+      - >-
+        if [ "$${#AUTHENTICATION_API_KEY}" -lt 24 ]; then
+        echo "EVOLUTION_API_KEY ausente ou curta no .env (use: openssl rand -hex 24)" >&2; exit 1; fi;
+        . ./Docker/scripts/deploy_database.sh && npm run start:prod
+    environment:
+      SERVER_PORT: 8080
+      SERVER_URL: http://evolution:8080
+      AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-}
+      DATABASE_PROVIDER: postgresql
+      DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}@postgres:5432/${POSTGRES_DB:-gestao_ti}?schema=evolution_api
+      DATABASE_CONNECTION_CLIENT_NAME: gestao_ti_evolution
+      CACHE_REDIS_ENABLED: "false"
+      CACHE_LOCAL_ENABLED: "true"
+      WEBHOOK_GLOBAL_ENABLED: "false"
+      TELEMETRY_ENABLED: "false"
+      CONFIG_SESSION_PHONE_CLIENT: Gestao TI
+    volumes:
+      - evolution_instances:/evolution/instances
+    depends_on:
+      postgres:
+        condition: service_healthy
 
   nginx:
     build:
@@ -108,3 +149,4 @@ volumes:
   attachments_data:
   backups_data:
   static_data:
+  evolution_instances:

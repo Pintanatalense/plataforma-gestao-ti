@@ -293,6 +293,7 @@ if (Test-Path .env) {
   Set-EnvValue 'POSTGRES_PASSWORD' (New-Hex 16) $true
   Set-EnvValue 'SECRET_KEY' (New-Hex 32) $true
   Set-EnvValue 'APP_ENCRYPTION_KEY' (New-FernetKey) $true
+  Set-EnvValue 'EVOLUTION_API_KEY' (New-Hex 24) $true
   $generated = $true
 }
 

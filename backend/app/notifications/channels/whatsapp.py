@@ -1,7 +1,11 @@
 """
-Canal WhatsApp pela Meta Cloud API (oficial). Decisão do ADR-013 §14.1: sem Evolution/não oficial.
+Canal WhatsApp com dois provedores atrás do mesmo adapter (ADR-019): `evolution` (não oficial, sem custo, padrão
+das instalações novas) e `meta` (Cloud API oficial; só instalações já configuradas dependem dele hoje).
+O provedor vem de `config['provider']`; configurações antigas, sem o campo, são `meta`.
 
-Regra da plataforma: dentro de 24 h após a última mensagem DA PESSOA, a empresa pode enviar texto livre;
+Provedor Evolution: ver `whatsapp_evolution.py` (texto livre sempre, sem janela de 24 h nem template).
+
+Provedor Meta. Regra da plataforma: dentro de 24 h após a última mensagem DA PESSOA, a empresa pode enviar texto livre;
 fora disso só vale mensagem de *template* aprovado. O adapter decide sozinho:
 
   janela aberta  -> texto livre
@@ -19,7 +23,8 @@ from typing import Any, ClassVar
 import httpx
 from sqlalchemy import select
 
-from app.notifications.channel_store import load_channel
+from app.notifications.channel_store import StoredChannel, load_channel
+from app.notifications.channels import whatsapp_evolution as evolution
 from app.notifications.channels.base import (
     AdapterContext,
     Capabilities,
@@ -34,6 +39,8 @@ for _noisy in ("httpx", "httpcore"):  # a URL da Graph API pode carregar ids da 
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 WHATSAPP_CHANNEL = "whatsapp"
+PROVIDER_EVOLUTION = "evolution"
+PROVIDER_META = "meta"
 GRAPH_BASE = "https://graph.facebook.com"
 DEFAULT_GRAPH_VERSION = "v21.0"
 CUSTOMER_WINDOW = timedelta(hours=24)
@@ -106,6 +113,12 @@ def render_text(message: Message, base_url: str | None) -> str:
     return text if len(text) <= MAX_TEXT else text[: MAX_TEXT - 1] + "…"
 
 
+def provider_of(stored: StoredChannel | None) -> str:
+    """Configurações antigas (sem o campo) são da Meta, que era o único provedor."""
+    provider = (stored.config.get("provider") if stored else None) or PROVIDER_META
+    return provider if provider in (PROVIDER_EVOLUTION, PROVIDER_META) else PROVIDER_META
+
+
 def _aware(value: datetime) -> datetime:
     return value if value.tzinfo else value.replace(tzinfo=timezone.utc)
 
@@ -131,6 +144,8 @@ class WhatsAppAdapter:
 
     async def send(self, recipient: Recipient, message: Message) -> DeliveryResult:
         stored, last_inbound = await self._load(recipient.address)
+        if stored is not None and provider_of(stored) == PROVIDER_EVOLUTION:
+            return await self._send_evolution(stored, recipient, message)
         if stored is None or not stored.enabled or not stored.secrets.get("access_token"):
             return DeliveryResult("permanent", error="Canal WhatsApp desabilitado ou sem token.")
         cfg = stored.config
@@ -161,6 +176,16 @@ class WhatsAppAdapter:
         return classify(status, body)
 
     @staticmethod
+    async def _send_evolution(stored: StoredChannel, recipient: Recipient, message: Message) -> DeliveryResult:
+        if not stored.enabled:
+            return DeliveryResult("permanent", error="Canal WhatsApp desabilitado.")
+        if not evolution.is_configured():
+            return DeliveryResult("retryable", error="Evolution sem EVOLUTION_API_KEY no servidor: corrija o .env e reinicie.")
+        instance = stored.config.get("instance_name") or evolution.DEFAULT_INSTANCE
+        text = evolution.render_text(message, stored.config.get("app_base_url"))
+        return await evolution.send_text(instance, recipient.address, text)
+
+    @staticmethod
     def _text_payload(to: str, text: str) -> dict:
         return {"messaging_product": "whatsapp", "to": to, "type": "text", "text": {"body": text, "preview_url": False}}
 
@@ -186,6 +211,11 @@ class WhatsAppAdapter:
             stored = await load_channel(session, WHATSAPP_CHANNEL)
         if stored is None or not stored.enabled:
             return ChannelHealth(ok=False, detail="Desabilitado.")
+        if provider_of(stored) == PROVIDER_EVOLUTION:
+            state, detail = await evolution.connection_state(stored.config.get("instance_name") or evolution.DEFAULT_INSTANCE)
+            if state == "open":
+                return ChannelHealth(ok=True, detail=f"Evolution conectada {stored.config.get('display_phone') or ''}".strip())
+            return ChannelHealth(ok=False, detail=detail or f"WhatsApp não está conectado (estado: {state}).")
         token, phone_id = stored.secrets.get("access_token"), stored.config.get("phone_number_id")
         if not token or not phone_id:
             return ChannelHealth(ok=False, detail="Token ou Phone Number ID não configurados.")
