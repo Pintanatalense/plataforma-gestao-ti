@@ -49,6 +49,8 @@ class Settings(BaseSettings):
     # não escolhe para onde o backend manda requisições. Sem EVOLUTION_API_KEY o provedor fica indisponível.
     EVOLUTION_BASE_URL: str = "http://evolution:8080"
     EVOLUTION_API_KEY: str = ""
+    # Para onde a Evolution entrega as mensagens recebidas: o backend, pela rede do Compose (nunca pelo Nginx/internet).
+    EVOLUTION_WEBHOOK_URL: str = "http://backend:8000/api/v1/integrations/whatsapp/evolution/webhook"
 
     # --- Anexos ---
     ATTACHMENT_STORAGE_PATH: str = "/data/attachments"
