@@ -206,6 +206,17 @@ async def connection_state(instance: str) -> tuple[str, str]:
     return "error", f"{status or 'rede'} {error_text(body)}".strip()
 
 
+async def offline_reason(instance: str) -> str | None:
+    """None se a sessão está aberta; senão, o motivo legível (usado antes de enviar, para falhar na hora)."""
+    state, detail = await connection_state(instance)
+    if state == "open":
+        return None
+    if state == "error":
+        return f"Não consegui consultar a Evolution ({detail})."
+    reason = detail or ("instância não criada" if state == "missing" else f"estado: {state}")
+    return f"WhatsApp desconectado ({reason}). Leia o QR code em Canais de comunicação."
+
+
 async def ensure_instance(instance: str) -> tuple[bool, str]:
     """Cria a instância se não existir. Devolve (ok, erro)."""
     state, detail = await connection_state(instance)

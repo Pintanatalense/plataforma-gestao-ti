@@ -386,7 +386,8 @@ async def _remember_phone(db: AsyncSession, stored: StoredChannel, instance: str
     """Guarda o telefone pareado (usado no link wa.me do vínculo) na primeira vez que a sessão aparece aberta."""
     phone = await evolution.owner_phone(instance)
     if phone:
-        await save_channel(db, WHATSAPP_CHANNEL, stored.enabled, {**stored.config, "display_phone": phone}, dict(stored.secrets))
+        fresh = await load_channel(db, WHATSAPP_CHANNEL) or stored  # outra requisição pode ter mudado segredos nesse meio-tempo
+        await save_channel(db, WHATSAPP_CHANNEL, fresh.enabled, {**fresh.config, "display_phone": phone}, dict(fresh.secrets))
         await db.commit()
     return phone
 
@@ -422,6 +423,7 @@ async def whatsapp_disconnect(db: DB, user_id: CurrentUser):
     ok, error = await evolution.logout(instance)
     if not ok:
         raise BusinessRuleException(f"A Evolution não conseguiu desconectar: {error}")
+    stored = await load_channel(db, WHATSAPP_CHANNEL) or stored  # o logout pode demorar: parte do estado de agora
     await save_channel(db, WHATSAPP_CHANNEL, stored.enabled, {k: v for k, v in stored.config.items() if k != "display_phone"}, dict(stored.secrets))
     await AuditRepository(db).create(
         event_type="notifications.whatsapp_disconnected", entity_type="notification",
@@ -460,6 +462,9 @@ async def whatsapp_test(body: WhatsAppTestIn, db: DB, user_id: CurrentUser):
         if not evolution.is_configured():
             raise BusinessRuleException("A Evolution não está configurada neste servidor (EVOLUTION_API_KEY).")
         instance = stored.config.get("instance_name") or evolution.DEFAULT_INSTANCE
+        offline = await evolution.offline_reason(instance)
+        if offline:
+            return WhatsAppTestOut(ok=False, detail=offline)
         result = await evolution.send_text(instance, digits, evolution.render_text(message, None))
     else:
         factory = async_sessionmaker(bind=db.bind, class_=AsyncSession, expire_on_commit=False)
