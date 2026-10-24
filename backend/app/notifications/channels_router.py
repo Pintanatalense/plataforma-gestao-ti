@@ -25,6 +25,7 @@ from app.notifications.channels.slack import SLACK_CHANNEL
 from app.notifications.channels.slack import api_call as slack_api_call
 from app.notifications.channels.telegram import TELEGRAM_CHANNEL, api_call
 from app.notifications.channels import whatsapp_evolution as evolution
+from app.notifications.channels import build_adapter
 from app.notifications.channels.base import AdapterContext, Message, Recipient
 from app.notifications.channels.whatsapp import (
     DEFAULT_GRAPH_VERSION,
@@ -479,6 +480,54 @@ async def whatsapp_test(body: WhatsAppTestIn, db: DB, user_id: CurrentUser):
     if result.outcome == "ok":
         return WhatsAppTestOut(ok=True, detail=f"Mensagem enviada para o final {digits[-4:]}.")
     return WhatsAppTestOut(ok=False, detail=result.error or "Falha no envio.")
+
+
+class ChannelTestOut(BaseModel):
+    ok: bool
+    detail: str
+
+
+_self_test_limiter = SenderRateLimiter(limit=5, window=3600.0)  # por administrador e canal
+
+
+@router.post("/channels/{channel}/test-send", response_model=ChannelTestOut, dependencies=[Manage])
+async def test_send_to_myself(channel: str, db: DB, user_id: CurrentUser):
+    """Manda uma mensagem de teste, agora, para a conta do próprio administrador no Telegram ou Slack.
+
+    Só vai para o endereço que a pessoa vinculou (nunca para um destino digitado): sem vínculo, orienta a vincular.
+    O WhatsApp tem rota própria (`/whatsapp/test`), que aceita um número.
+    """
+    if channel not in (TELEGRAM_CHANNEL, SLACK_CHANNEL):
+        raise BusinessRuleException("Teste para a própria conta vale para Telegram e Slack.")
+    stored = await load_channel(db, channel)
+    if not is_ready(channel, stored):
+        raise BusinessRuleException(f"Habilite e salve o {LABELS[channel]} antes de testar.")
+    address = (
+        await db.execute(
+            select(UserChannelAddress).where(
+                UserChannelAddress.user_id == user_id, UserChannelAddress.channel == channel, UserChannelAddress.verified_at.is_not(None)
+            )
+        )
+    ).scalar_one_or_none()
+    if address is None:
+        raise BusinessRuleException(
+            f"Sua conta ainda não está vinculada ao {LABELS[channel]}. Vincule em Notificações > Minhas preferências e teste de novo."
+        )
+    if not _self_test_limiter.allow(f"{user_id}:{channel}"):
+        raise BusinessRuleException("Limite de 5 testes por hora atingido. Tente mais tarde.")
+
+    factory = async_sessionmaker(bind=db.bind, class_=AsyncSession, expire_on_commit=False)
+    adapter = build_adapter(channel, AdapterContext(session_factory=factory))
+    message = Message(title=f"Teste do canal {LABELS[channel]}", body_text="Se você recebeu esta mensagem, o canal está funcionando.")
+    result = await adapter.send(Recipient(address=address.address, user_id=str(user_id)), message)
+    await AuditRepository(db).create(
+        event_type=f"notifications.{channel}_test_sent", entity_type="notification",
+        entity_id=uuid.uuid5(uuid.NAMESPACE_OID, f"channel:{channel}"), data={"outcome": result.outcome}, user_id=user_id,
+    )
+    await db.commit()
+    if result.outcome == "ok":
+        return ChannelTestOut(ok=True, detail=f"Mensagem enviada para a sua conta no {LABELS[channel]}.")
+    return ChannelTestOut(ok=False, detail=result.error or "Falha no envio.")
 
 
 # --- Slack (administração) ------------------------------------------------------------------------
