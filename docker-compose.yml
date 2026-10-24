@@ -125,6 +125,7 @@ services:
       CACHE_REDIS_ENABLED: "false"
       CACHE_LOCAL_ENABLED: "true"
       WEBHOOK_GLOBAL_ENABLED: "false"
+      TELEMETRY_ENABLED: "false"
       CONFIG_SESSION_PHONE_CLIENT: Gestao TI
     volumes:
       - evolution_instances:/evolution/instances

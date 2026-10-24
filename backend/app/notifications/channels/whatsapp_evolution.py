@@ -33,7 +33,7 @@ for _noisy in ("httpx", "httpcore"):  # a URL carrega o nome da instância; o ca
 DEFAULT_INSTANCE = "gestao-ti"
 INSTANCE_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 MAX_TEXT = 4000
-CLOSED_HINTS = ("connection closed", "not connected", "instance is not", "does not exist", "not found")
+CLOSED_HINTS = ("connection closed", "not connected", "instance is not", "does not exist", "not found", "timed out", "timeout")
 
 
 def http_client(timeout: float = 15.0) -> httpx.AsyncClient:
@@ -79,6 +79,15 @@ def instance_path(prefix: str, instance: str) -> str:
     return f"{prefix}/{quote(instance, safe='')}"
 
 
+def _lacks_whatsapp(body: Any) -> bool:
+    """A Evolution responde `exists: false` para número que não tem WhatsApp (em qualquer nível do corpo)."""
+    if isinstance(body, dict):
+        return body.get("exists") is False or any(_lacks_whatsapp(v) for v in body.values())
+    if isinstance(body, list):
+        return any(_lacks_whatsapp(v) for v in body)
+    return False
+
+
 def classify(status: int, body: Any) -> DeliveryResult:
     """Traduz a resposta da Evolution para a política de retentativa do hub."""
     if status in (200, 201) and isinstance(body, dict) and (body.get("key") or {}).get("id"):
@@ -94,6 +103,8 @@ def classify(status: int, body: Any) -> DeliveryResult:
     if status == 404 or any(hint in lowered for hint in CLOSED_HINTS):
         # instância inexistente ou sessão caída: resolve ao reconectar, então vale tentar de novo depois
         return DeliveryResult("retryable", error=f"WhatsApp desconectado ou instância ausente: {detail}")
+    if _lacks_whatsapp(body):
+        detail = f"{detail} (número sem WhatsApp)".strip()
     # 400 com outro motivo: número sem WhatsApp, destinatário inválido...
     return DeliveryResult("permanent", error=detail)
 
@@ -149,6 +160,8 @@ async def connect(instance: str) -> dict[str, Any]:
     status, body = await evolution_call("GET", instance_path("instance/connect", instance))
     if status != 200 or not isinstance(body, dict):
         return {"state": "error", "detail": f"{status or 'rede'} {error_text(body)}".strip()}
+    if body.get("error"):
+        return {"state": "error", "detail": error_text(body) or "A Evolution recusou o pedido de conexão."}
     if (body.get("instance") or {}).get("state") == "open":
         return {"state": "open", "detail": ""}
     return {

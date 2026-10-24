@@ -261,7 +261,7 @@ export class WhatsAppConfigComponent implements OnInit {
   }
 
   private refreshQr(): void {
-    this.api.whatsAppConnect().subscribe({
+    this.api.whatsAppConnect(true).subscribe({
       next: (r) => this.applyConnect(r),
       error: () => this.stopRefresh()
     });

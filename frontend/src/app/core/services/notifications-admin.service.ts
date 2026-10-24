@@ -224,8 +224,9 @@ export class NotificationsAdminService {
     return this.http.get<WhatsAppStatus>('/api/v1/notifications/whatsapp/status');
   }
 
-  whatsAppConnect(): Observable<WhatsAppConnect> {
-    return this.http.post<WhatsAppConnect>('/api/v1/notifications/whatsapp/connect', {});
+  /** `refresh`: repetição automática para girar o QR (não gera nova linha de auditoria). */
+  whatsAppConnect(refresh = false): Observable<WhatsAppConnect> {
+    return this.http.post<WhatsAppConnect>('/api/v1/notifications/whatsapp/connect', {}, refresh ? { params: { refresh: 'true' } } : {});
   }
 
   whatsAppDisconnect(): Observable<WhatsAppStatus> {

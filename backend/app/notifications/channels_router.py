@@ -207,7 +207,7 @@ class WhatsAppConfigIn(BaseModel):
     enabled: bool = False
     # Sem o campo, mantém o provedor atual (ou `meta` numa instalação nova), como antes do ADR-019.
     provider: str | None = Field(None, pattern=r"^(evolution|meta)$")
-    instance_name: str = Field(evolution.DEFAULT_INSTANCE, pattern=r"^[A-Za-z0-9_-]{1,40}$")  # só Evolution
+    instance_name: str | None = Field(None, pattern=r"^[A-Za-z0-9_-]{1,40}$")  # só Evolution; vazio = manter/padrão
     access_token: str = Field("", max_length=1000)  # vazio ou mascarado = manter o atual
     app_secret: str = Field("", max_length=200)  # idem
     phone_number_id: str = Field("", max_length=50)
@@ -279,7 +279,12 @@ async def update_whatsapp_config(body: WhatsAppConfigIn, db: DB, user_id: Curren
         raise BusinessRuleException("Para habilitar o WhatsApp informe o token de acesso, o App Secret e o Phone Number ID.")
 
     cfg = dict(current.config) if current else {}
-    changed = token != old.get("access_token") or phone_id != cfg.get("phone_number_id") or body.graph_version != cfg.get("graph_version")
+    # Trocar de provedor: o número exibido era da Evolution, e o link wa.me do vínculo usaria o número errado.
+    switching = current is not None and provider_of(current) != PROVIDER_META
+    if switching:
+        cfg.pop("display_phone", None)
+        cfg.pop("verified_name", None)
+    changed = switching or token != old.get("access_token") or phone_id != cfg.get("phone_number_id") or body.graph_version != cfg.get("graph_version")
     if token and phone_id and changed:
         # Valida o par token/número na Graph API e descobre o telefone exibido (usado no link wa.me).
         status, resp = await graph_call(
@@ -310,9 +315,12 @@ async def _save_evolution(body: WhatsAppConfigIn, current: StoredChannel | None,
             "Compose com o perfil whatsapp (docker compose --profile whatsapp up -d)."
         )
     cfg = dict(current.config) if current else {}
-    if cfg.get("instance_name") and cfg["instance_name"] != body.instance_name:
-        cfg.pop("display_phone", None)  # o número exibido era da instância anterior
-    cfg.update(provider=PROVIDER_EVOLUTION, instance_name=body.instance_name, app_base_url=body.app_base_url.strip())
+    instance_name = body.instance_name or cfg.get("instance_name") or evolution.DEFAULT_INSTANCE
+    # O número exibido era de outra instância ou da Meta: o link wa.me do vínculo apontaria para o número errado.
+    if provider_of(current) != PROVIDER_EVOLUTION or cfg.get("instance_name") != instance_name:
+        cfg.pop("display_phone", None)
+        cfg.pop("verified_name", None)
+    cfg.update(provider=PROVIDER_EVOLUTION, instance_name=instance_name, app_base_url=body.app_base_url.strip())
     # Os segredos da Meta ficam guardados: voltar ao provedor antigo não obriga a digitar tudo de novo.
     await save_channel(db, WHATSAPP_CHANNEL, body.enabled, cfg, dict(current.secrets) if current else {})
     await _audit_config(db, WHATSAPP_CHANNEL, body.enabled, user_id)
@@ -366,15 +374,16 @@ async def _remember_phone(db: AsyncSession, stored: StoredChannel, instance: str
 
 
 @router.post("/whatsapp/connect", response_model=WhatsAppConnectOut, dependencies=[Manage])
-async def whatsapp_connect(db: DB, user_id: CurrentUser):
+async def whatsapp_connect(db: DB, user_id: CurrentUser, refresh: bool = False):
     """Cria a instância se preciso e devolve o QR code para parear o número (a imagem nunca é gravada)."""
     stored, instance = await _evolution_instance(db)
     result = await evolution.connect(instance)
-    await AuditRepository(db).create(
-        event_type="notifications.whatsapp_connect_requested", entity_type="notification",
-        entity_id=uuid.uuid5(uuid.NAMESPACE_OID, f"channel:{WHATSAPP_CHANNEL}"), data={"state": result["state"]}, user_id=user_id,
-    )
-    await db.commit()
+    if not refresh:  # a tela repete a chamada a cada poucos segundos para girar o QR: só o pedido inicial é auditado
+        await AuditRepository(db).create(
+            event_type="notifications.whatsapp_connect_requested", entity_type="notification",
+            entity_id=uuid.uuid5(uuid.NAMESPACE_OID, f"channel:{WHATSAPP_CHANNEL}"), data={"state": result["state"]}, user_id=user_id,
+        )
+        await db.commit()
     phone = stored.config.get("display_phone")
     if result["state"] == "open" and not phone:
         phone = await _remember_phone(db, stored, instance)

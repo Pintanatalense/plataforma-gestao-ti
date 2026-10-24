@@ -300,3 +300,65 @@ async def test_connection_routes_require_manage_permission(client: AsyncClient, 
 
 async def test_instance_name_is_url_encoded_in_paths():
     assert evo.instance_path("message/sendText", "a b/c") == "message/sendText/a%20b%2Fc"
+
+
+# --- Revisão do PR: troca de provedor, auditoria do QR e mensagens de erro -------------------------
+
+
+async def test_switching_provider_forgets_the_displayed_phone_both_ways(client: AsyncClient, db_session: AsyncSession, fake: FakeEvolution):
+    h = headers_for(await _admin(db_session))
+    await save_channel(db_session, "whatsapp", False, {"phone_number_id": "1", "display_phone": "+55 85 1111-1111", "verified_name": "Meta"}, {"access_token": "t"})
+    await db_session.commit()
+
+    to_evo = await client.put(f"{BASE}/whatsapp/config", json={"enabled": False, "provider": "evolution"}, headers=h)
+    assert to_evo.status_code == 200 and to_evo.json()["display_phone"] is None  # o wa.me não pode apontar para o número da Meta
+
+    await save_channel(db_session, "whatsapp", False, {"provider": "evolution", "instance_name": "gestao-ti", "display_phone": "5585999990000"}, {"access_token": "t"})
+    await db_session.commit()
+    to_meta = await client.put(f"{BASE}/whatsapp/config", json={"enabled": False, "provider": "meta"}, headers=h)
+    assert to_meta.status_code == 200
+    body = to_meta.json()
+    assert body["provider"] == "meta" and body["display_phone"] is None and body["verified_name"] is None
+
+
+async def test_instance_name_is_optional_and_kept_when_omitted(client: AsyncClient, db_session: AsyncSession, fake: FakeEvolution):
+    h = headers_for(await _admin(db_session))
+    await _configure(db_session, instance_name="ti-matriz")
+    saved = await client.put(f"{BASE}/whatsapp/config", json={"enabled": False, "provider": "evolution"}, headers=h)
+    assert saved.status_code == 200 and saved.json()["instance_name"] == "ti-matriz"
+    # a Meta não precisa mandar o nome da instância
+    assert (await client.put(f"{BASE}/whatsapp/config", json={"enabled": False, "provider": "meta"}, headers=h)).status_code == 200
+
+
+async def test_qr_refresh_is_not_audited_but_the_first_request_is(client: AsyncClient, db_session: AsyncSession, fake: FakeEvolution):
+    h = headers_for(await _admin(db_session))
+    await _configure(db_session)
+
+    async def audited() -> int:
+        rows = await db_session.execute(select(AuditLog.event_type).where(AuditLog.event_type == "notifications.whatsapp_connect_requested"))
+        return len(list(rows.scalars()))
+
+    await client.post(f"{BASE}/whatsapp/connect", headers=h)
+    assert await audited() == 1
+    for _ in range(3):
+        assert (await client.post(f"{BASE}/whatsapp/connect?refresh=true", headers=h)).status_code == 200
+    assert await audited() == 1
+
+
+async def test_error_messages_are_specific():
+    no_whatsapp = evo.classify(400, {"status": 400, "message": [{"jid": "5585@s.whatsapp.net", "exists": False, "number": "5585"}]})
+    assert no_whatsapp.outcome == "permanent" and "sem WhatsApp" in no_whatsapp.error
+    assert evo.classify(400, {"message": "Timed Out"}).outcome == "retryable"
+
+
+async def test_connect_surfaces_an_error_body_returned_with_200(db_session: AsyncSession, fake: FakeEvolution, monkeypatch):
+    fake.created = True
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.url.path.startswith("/instance/connect/"):
+            return httpx.Response(200, json={"error": True, "message": "Error: boom"})
+        return fake.handler(request)
+
+    monkeypatch.setattr(evo, "http_client", lambda timeout=15.0: httpx.AsyncClient(transport=httpx.MockTransport(handler)))
+    result = await evo.connect("gestao-ti")
+    assert result["state"] == "error" and "boom" in result["detail"]

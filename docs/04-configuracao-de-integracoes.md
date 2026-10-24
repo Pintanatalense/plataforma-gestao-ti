@@ -58,7 +58,7 @@ O canal tem **dois provedores** (escolha na aba **Administração > Canais de co
 
 **Meta Cloud API (oficial)** — seções 2.1 a 2.6, abaixo.
 
-O canal WhatsApp faz parte do hub de notificações (ADR-013). Usa **somente a API oficial da Meta**: não há mais Evolution, QR Code, "anti-ban" nem fila própria — a Meta limita a taxa e o hub faz retentativa, circuito e painel de entregas.
+O canal WhatsApp faz parte do hub de notificações (ADR-013). Com a **Meta**, não há QR Code nem fila própria: a Meta limita a taxa e o hub faz retentativa, circuito e painel de entregas.
 
 ### 2.1. O que você precisa na Meta
 1. Uma conta **Meta Business** e um app com o produto **WhatsApp** (Cloud API).
