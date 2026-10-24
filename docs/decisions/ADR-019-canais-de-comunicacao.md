@@ -1,12 +1,13 @@
 # ADR-019 — Página "Canais de comunicação" e WhatsApp para alertas
 
-**Status:** Proposto (2026-10-23). Nada implementado; as fases abaixo viram PRs depois da aprovação.  
+**Status:** Proposto (2026-10-23), **revisado no mesmo dia**: o provedor inicial do WhatsApp passou a ser a **Evolution API** (sem custo), mantendo a Meta Cloud API como segundo provedor. Nada implementado; as fases abaixo viram PRs depois da aprovação.  
 **Data:** 2026-10-23  
-**Depende de:** ADR-013 (hub de notificações), ADR-018 (e-mail)
+**Depende de:** ADR-013 (hub de notificações), ADR-018 (e-mail)  
+**Altera:** ADR-013 §14.1 (WhatsApp: "Meta Cloud API" passa a "Evolution API primeiro, Meta pronta para entrar")
 
 ## Contexto
 
-O envio por WhatsApp **já existe no código** (ADR-013, Meta Cloud API oficial), mas nunca foi exercitado com uma conta Meta real e a configuração está espalhada:
+O envio por WhatsApp **já existe no código** pela Meta Cloud API oficial (ADR-013), mas nunca foi exercitado com conta real e a configuração está espalhada:
 
 | Canal | Onde se configura hoje |
 |---|---|
@@ -15,14 +16,20 @@ O envio por WhatsApp **já existe no código** (ADR-013, Meta Cloud API oficial)
 | Vínculo da pessoa com o canal | Notificações → Minhas preferências |
 | Respostas rápidas do chamado ("WhatsApp" no chamado) | Administração (templates do sistema) |
 
-O que o WhatsApp já faz (verificado no código): adapter `notifications/channels/whatsapp.py` (texto livre dentro de 24 h, *template* fora da janela), webhook com assinatura HMAC, vínculo por código (`vincular CÓDIGO`), painel de saúde, retentativa e circuito no hub, regras evento → audiência → canais (`notification_rules`), as automações de alerta do worker (`automations.py`: garantia vencendo em 30 e 7 dias, estoque baixo) e o alerta de falha de backup (`jobs.py`, evento `backup.failed`). O ADR-013 §18 já registra como limite conhecido que o canal nunca foi testado contra a Meta real.
+O que já existe e será reaproveitado: adapter `notifications/channels/whatsapp.py`, webhook com assinatura, vínculo por código (`vincular CÓDIGO`), painel de saúde, retentativa e circuito no hub, regras evento → audiência → canais (`notification_rules`), os alertas do worker (`automations.py`: garantia vencendo em 30 e 7 dias, estoque baixo; `jobs.py`: `backup.failed`).
+
+## Decisão do dono do produto (2026-10-23)
+
+> O projeto **não pode nascer com custos**. Usar a **Evolution API**; se houver fluxo considerável e julgarmos necessário, migrar para a API oficial. O sistema deve ficar **pronto para receber ambos**.
+
+Isto reverte a recomendação do ADR-013 §14.1 ("Evolution só se o custo for impeditivo e o risco de banimento for aceito explicitamente"). **O risco foi aceito explicitamente** pelo dono do produto; o ADR passa a registrar como mitigá-lo (§3) em vez de evitá-lo.
 
 ## Problemas a resolver
 
 1. **Configuração fragmentada**: o administrador não encontra "onde ligo o WhatsApp"; o e-mail fica numa tela e os outros canais em outra.
-2. **Template genérico demais**: fora da janela de 24 h o adapter envia **um único template com uma variável que recebe a mensagem inteira** (`Aviso do TI: {{1}}`). A Meta costuma reprovar corpo de template em que a variável é quase todo o texto, e o texto vira uma linha só (quebras viram ` | `). Para alertas (que são sempre fora da janela) isso é o caminho principal, então precisa ser bem feito.
-3. **Sem teste fim a fim**: não há como o administrador mandar uma mensagem de teste para um número, nem ver se o template foi aprovado pela Meta.
-4. **O vínculo depende do webhook público**: a pessoa precisa mandar `vincular CÓDIGO` ao número, o que exige URL HTTPS acessível pela Meta. Para só **enviar alertas**, isso é um obstáculo grande no piloto.
+2. **Provedor único e pago**: o adapter só fala com a Meta (por mensagem de template, com aprovação prévia), o que contraria a decisão acima.
+3. **Sem teste fim a fim**: não há como o administrador mandar uma mensagem de teste nem ver se o canal está conectado.
+4. **O vínculo depende de URL pública**: pela Meta, o webhook precisa ser acessível da internet. Com a Evolution rodando na mesma rede do Docker, isso deixa de ser obstáculo.
 
 ## Decisão
 
@@ -39,69 +46,110 @@ A aba E-mail recebe o SMTP e a recuperação de senha (que depende dele). "Entre
 
 **Permissões (como o backend já exige, sem criar nenhuma nova):** a aba E-mail aceita `notifications.manage` **ou** `system.backup.manage` (`email_router.py`); WhatsApp, Telegram e Slack exigem `notifications.manage`. A rota `/channels` precisa de um guard que aceite qualquer das duas e de abas mostradas só para quem pode usá-las. Ligar a recuperação de senha continua restrito a administrador (ADR-018): conferir a permissão do endpoint ao mover o controle.
 
-**Fora do escopo:** as "Respostas rápidas do chamado" (`wa_templates`, Administração) são textos do sistema, **não** os templates da Meta, e ficam onde estão.
+**Fora do escopo:** as "Respostas rápidas do chamado" (`wa_templates`, Administração) são textos do sistema, **não** templates da Meta, e ficam onde estão.
 
-### 2. WhatsApp para alertas: template por tipo de alerta
+### 2. WhatsApp com dois provedores atrás do mesmo canal
 
-Em vez do template único, cada regra de alerta aponta para um **template aprovado na Meta com variáveis nomeadas por posição**, por exemplo:
+O canal continua sendo **um só** (`whatsapp`, uma linha em `channel_configs`), com o campo `provider`: **`evolution`** (padrão) ou **`meta`**. O `WhatsAppAdapter` deixa de falar HTTP diretamente e delega a um *driver* com o mesmo contrato:
 
-> `Alerta de TI: {{1}} ativo(s) com garantia vencendo em {{2}} dias. Detalhes: {{3}}`
+| Operação do driver | Evolution | Meta (código atual, movido sem mudar comportamento) |
+|---|---|---|
+| enviar texto | `POST /message/sendText/{instância}` | texto livre na janela de 24 h |
+| fora da janela | não existe (texto livre sempre) | template aprovado |
+| estado da conexão | `connectionState` da instância | consulta do Phone Number ID |
+| pareamento | QR code na tela do canal | token + Phone Number ID |
+| entrada (mensagens recebidas) | webhook da Evolution, na rede interna | webhook com HMAC (já existe) |
 
-A configuração do canal guarda, por código de template do sistema (por exemplo `asset.warranty_expiring`), `{nome na Meta, idioma, parâmetros em ordem}`. O texto genérico atual permanece como **reserva** para eventos sem template próprio. O sistema traz os modelos prontos (texto sugerido para cadastrar na Meta, categoria *Utility*, `pt_BR`) para garantia vencendo, estoque baixo e falha de backup.
+Configuração por provedor (segredos continuam cifrados com Fernet):
 
-**Contrato novo (muda o backend, por isso fica no C2):** hoje o adapter recebe só `Message` (`title`, `body_text`, `link`, `priority`) e não consegue obter "quantidade, prazo, link". `Message` ganha dois campos opcionais, retrocompatíveis: `template_code` e `params: dict[str, str]`, preenchidos pelo `render()` (`templates.py`), gravados na entrega e lidos pelo adapter para montar as variáveis `{{n}}`. Toca `fanout`, `outbox` e `dispatcher`.
+Os endpoints da Evolution citados aqui (envio de texto, estado da conexão, QR code, webhook com cabeçalho customizado) e a necessidade ou não de Redis **não foram verificados contra uma versão real**; o C2 começa conferindo isso na documentação da versão escolhida.
 
-**Versões de template:** o corpo aprovado na Meta é fixo e independente do `render()`; só as variáveis mudam. Mudar a estrutura exige uma nova versão (`nome_v2`) e trocar o mapa no canal **sem apagar a v1**, para não deixar alertas sem rota durante a análise; a reserva genérica cobre o intervalo.
+- **Evolution:** `config = {provider, base_url, instance_name, display_phone, app_base_url}`, `secrets = {api_key, webhook_secret}`.
+- **Meta:** como hoje (`phone_number_id`, `graph_version`, `template_name`, `template_language` · `access_token`, `app_secret`, `verify_token`).
 
-### 3. Testar e conferir antes de depender
+Trocar de provedor é editar o canal e (para a Meta) cadastrar os templates; as regras, os vínculos e o histórico não mudam, porque ficam acima do driver. As mensagens são as mesmas: título, corpo e link, formatados para leitura no WhatsApp (negrito com `*…*`, uma informação por linha).
 
-- Botão **Enviar teste** para um número informado (usa o template escolhido).
-- Consulta à Graph API (`message_templates`) para mostrar **Aprovado / Em análise / Rejeitado** de cada template configurado. Exige um campo novo na configuração do canal, o **WhatsApp Business Account ID** (`whatsapp_business_account_id`), hoje inexistente.
-- A conta de **teste da Meta** (número de teste, até 5 destinatários, sem custo) é o caminho recomendado para validar antes do número da empresa.
+**Classificação de erros (contrato do driver):** cada driver traduz a resposta do provedor para `ok / retryable / permanent`, que é o que o hub usa para retentativa e circuito. Na Evolution: sessão desconectada, instância indisponível, erro de rede ou 5xx = `retryable`; número sem WhatsApp, destinatário inválido ou 4xx de parâmetro = `permanent`; chave inválida = `retryable` com mensagem de configuração (como o token da Meta). A tabela exata de códigos é definida no C2 contra a versão escolhida. A janela de 24 h (`ConversationSession.last_interaction_at`) passa a ser decisão **do driver Meta**, não do adapter.
 
-### 4. Vínculo sem webhook público (opcional, fase própria)
+**Endereço da pessoa:** os vínculos (`UserChannelAddress`) guardam o telefone **normalizado** (só dígitos, DDI 55, regra do nono dígito), igual nos dois drivers; o JID da Evolution é convertido na entrada. Sem isso, trocar de provedor quebraria vínculos e o `ALREADY_LINKED_ELSEWHERE`.
 
-Além de "a pessoa envia `vincular CÓDIGO`", permitir o inverso: a pessoa informa o número em *Minhas preferências*, o sistema **envia um código por template** e ela o digita na tela. Assim o piloto recebe alertas sem expor o webhook. O webhook continua necessário para o menu conversacional (abrir/consultar chamado pelo WhatsApp).
+### 3. Evolution API: como rodar sem custo e reduzir o risco
 
-Requisitos: um **template de autenticação** (categoria *Authentication*, uma variável com o código, regras próprias da Meta) como primeira mensagem fora da janela; **endpoint novo** que valide o código digitado e grave o número informado (hoje `redeem_link_code` recebe o endereço do webhook); **limite de envios por usuário e por hora** (senão qualquer usuário dispararia mensagens para números arbitrários); e recusar número já vinculado a outra pessoa (reaproveitar `ALREADY_LINKED_ELSEWHERE`).
+A Evolution **não é oficial**: o número fica pareado por sessão (QR code), pode ser **banido pelo WhatsApp** e a sessão pode cair a cada atualização da plataforma. O custo é zero por mensagem; o único gasto é um **chip dedicado** (pré-pago). Mitigações, todas parte do desenho:
 
-### 5. Alerta chega a quem optou
+1. **Número dedicado**, nunca o WhatsApp pessoal de alguém nem o de atendimento a clientes.
+2. **Só quem optou recebe**: apenas pessoas que **vincularam o número** (opt-in), e a primeira conversa parte da pessoa (`vincular CÓDIGO` para o número da empresa). Sem lista fria, sem disparo em massa.
+3. **Volume baixo e ritmo humano**: alertas são poucos por dia; o adapter ganha intervalo mínimo entre envios (com variação aleatória) e limite por hora e por destinatário. A capacidade `rate_per_second` do canal cai de 10 para um valor conservador; hoje é um `ClassVar` fixo e o limite do `dispatcher` é **por canal**, não por destinatário, então "configurável", o limite por hora/destinatário e a variação aleatória são código novo do C3.
+4. **Estado visível**: a aba mostra "Conectado / Desconectado / Aguardando QR code" e o último erro. Sessão caída vira alerta ao administrador **por e-mail e in-app** (nunca pelo próprio WhatsApp).
+5. **E-mail em paralelo continua nas regras de alerta** (§6): se o WhatsApp cair ou o número for banido, ninguém fica sem aviso. A queda reaproveita o evento **`channel.degraded`** que já existe (regra para administradores por `in_app` e `email`, emitido em `dispatcher.py`); falta definir o gatilho da Evolution, hoje só detectável por `health()`.
+6. **Isolamento de rede:** a Evolution roda como serviço **opcional** do Compose (perfil `whatsapp`), com **tag de imagem fixa**, **sem porta publicada no host**: só o backend a alcança, pela rede interna. A `api_key` dela nunca vai ao navegador: o `GET` do canal devolve só máscara/indicador, como os outros segredos. A chave global da Evolution (`AUTHENTICATION_API_KEY`) tem poder sobre todas as instâncias; deve ser forte e vir do `.env` do servidor, e o `base_url` informado pelo administrador é restrito a host interno do Compose (allowlist), para o backend não virar cliente HTTP de qualquer endereço (SSRF).
+7. **Dados:** a Evolution usa o PostgreSQL do próprio Compose (banco/schema separado `evolution`, como previsto no ADR-013 §14) e guarda a sessão num volume. **Hoje o volume dela não entra no backup** (`scripts/backup.sh` cobre o dump do banco e os volumes de anexos/logo); incluí-lo, ou aceitar refazer o QR code, é decisão do C2. Perder a sessão exige novo pareamento, não perde dados do sistema. Se o schema `evolution` ficar no mesmo banco, conferir se o `pg_dump --clean` do backup e o restore devem incluí-lo. Versão, variáveis e se o cache dispensa Redis **devem ser conferidos na documentação da versão escolhida no momento da implementação** (o serviço foi removido do Compose na Fase G do ADR-013, e o histórico do Git tem a configuração antiga como ponto de partida).
 
-Só recebe por WhatsApp quem **vinculou o número** (opt-in explícito, exigência da Meta; é o que o ADR-013 §18 já diz do envio a partir do chamado). A escolha do canal por regra **já existe** (`rules.component.ts` lista os canais, inclusive `preferred`, validados em `admin_router.py`).
+### 4. Testar e conferir antes de depender
 
-**Plano B por e-mail:** as regras de garantia, estoque e backup já incluem `email` junto de `in_app` e `preferred`, então quem não vinculou o WhatsApp recebe por e-mail em paralelo (o `fanout` pula o canal externo sem endereço). Decisão: manter o **e-mail em paralelo como rede de segurança** nas regras de alerta e documentar isso. Criar uma entrega de e-mail só depois de o WhatsApp esgotar as tentativas exigiria encadeamento de entregas e nova chave de idempotência, e fica fora desta etapa.
+- Botão **Enviar teste** para um número informado, nos dois provedores.
+- Evolution: botão **Conectar** (mostra o QR code) e **Desconectar**; atualização do estado enquanto o QR está aberto.
+- Meta: consulta do status dos templates configurados (Aprovado / Em análise / Rejeitado), que exige o campo novo `whatsapp_business_account_id`. **Essa parte só é construída se/quando a migração para a Meta for decidida** (§7).
+
+### 5. Vínculo sem URL pública
+
+- **Caminho principal (Evolution):** a pessoa gera o código em *Minhas preferências* e envia `vincular CÓDIGO` ao número da empresa; a Evolution entrega a mensagem ao backend por **webhook interno** (rede do Docker, sem HTTPS público), autenticado por segredo (cabeçalho customizado, `compare_digest`, como o ADR-013 §250 já prevê; nunca em query string). Reaproveita `linking.py` e `ALREADY_LINKED_ELSEWHERE`.
+
+**"Interno" precisa ser imposto, não presumido:** o roteador da API está sob `/api/` e o Nginx encaminha esse prefixo da internet para o backend. A rota do webhook da Evolution usa um caminho próprio **bloqueado no Nginx** (negado fora da rede interna), além do segredo; o backend também valida que a `instance_name` do payload é a configurada e aplica o limite de taxa que já existe (`SenderRateLimiter`). O parser de entrada da Evolution é novo: `extract_messages` e a verificação de assinatura atuais são da Meta.
+- **Caminho alternativo (opcional):** a pessoa informa o número e o sistema envia o código; ela o digita na tela. Exige endpoint novo que valide o código e grave o número informado, e **limite de envios por usuário e por hora** (senão qualquer usuário dispararia mensagens para números arbitrários, o que também aumenta o risco de banimento). Na Evolution o código vai como texto comum; na Meta exigiria template de autenticação.
+
+O menu conversacional (abrir/consultar chamado pelo WhatsApp) passa a funcionar também no piloto, porque o webhook interno não depende de domínio público.
+
+### 6. Alerta chega a quem optou
+
+Só recebe por WhatsApp quem **vinculou o número**. A escolha do canal por regra **já existe** (`rules.component.ts` lista os canais, inclusive `preferred`, validados em `admin_router.py`).
+
+**Como o WhatsApp entra numa regra:** pelo canal `preferred`, que o `fanout` expande para todos os canais vinculados da pessoa. Garantia e estoque já têm `preferred` e `email`; **`backup.failed` hoje só tem `in_app` e `email`**, então o C3 precisa acrescentar `preferred` a ela. O seed só cria regras que ainda não existem (por código), então instalações já semeadas exigem **migration de dados ou edição na tela de regras**; o C3 trata isso.
+
+**Plano B por e-mail:** quem não vinculou o WhatsApp (ou quando o número cair) recebe por e-mail em paralelo; o `fanout` pula o canal externo sem endereço. Decisão: manter o **e-mail em paralelo** nas regras de alerta e documentar. Enviar o e-mail só depois de o WhatsApp esgotar as tentativas exigiria encadeamento de entregas e nova chave de idempotência, e fica fora desta etapa.
+
+### 7. Preparado para a Meta (construído só quando a migração for decidida)
+
+Para "ficar pronto para receber ambos" basta o driver (§2), que já mantém o código da Meta funcionando. O que a Meta exige a mais fica **documentado, não construído**:
+
+- **Template por tipo de alerta:** fora da janela de 24 h a Meta só aceita template aprovado, e o atual (uma variável com a mensagem inteira) tende a ser reprovado. A migração incluiria um template por alerta (garantia, estoque, backup) e o contrato novo `Message.template_code` + `params: dict[str, str]` (toca `render()`, `fanout`, `outbox` e `dispatcher`), mais versões `nome_v2` sem apagar a anterior.
+- **Status dos templates** na Graph API e o campo `whatsapp_business_account_id`.
+- **Template de autenticação** para o vínculo por código enviado.
+- **Conta Meta Business**, número fora do WhatsApp comum, token permanente, App Secret e URL HTTPS pública para o webhook; custo por mensagem de template (a confirmar na Meta na contratação).
+
+**Gatilhos para migrar** (sugestão, a decidir pelo dono): número banido mais de uma vez; mais de uma queda de sessão por mês; volume de alertas que torne o ritmo conservador inviável; exigência de cliente/empresa por canal oficial.
 
 ## Entrega em PRs
 
 | PR | Conteúdo | Depende de |
 |---|---|---|
 | **C1** | Página `/channels` com as 4 abas e guard por permissão; extrai o SMTP e a recuperação de senha de `admin.component` para um componente próprio e move os cards de WhatsApp/Telegram/Slack; redirecionamentos; sem mudança de backend (a extração do SMTP é a parte maior) | — |
-| **C2** | Contrato `Message.template_code`/`params` (fanout, outbox, dispatcher), mapa de templates no canal, modelos prontos, `whatsapp_business_account_id`, **Enviar teste** e status dos templates na Meta | C1 |
-| **C3** | Regras de alerta (garantia, estoque, backup) apontando para os templates, com e-mail em paralelo documentado como plano B; ajuste da tela de regras para mostrar qual template cada uma usa | C2 |
-| **C4** | Vínculo por código enviado (sem webhook público): template de autenticação, endpoint novo, limite por usuário/hora | C2 |
-| **C5** | Homologação com conta Meta real e reescrita do `docs/04` com o passo a passo | conta da empresa |
+| **C2** | Driver de WhatsApp (contrato + **driver Evolution** + driver Meta com o código atual movido sem mudar comportamento); campo `provider`; serviço `evolution` opcional no Compose (perfil `whatsapp`, tag fixa, sem porta publicada); estado da conexão e QR code; normalização do telefone; decisão sobre backup do volume e do schema | C1 |
+| **C3** | **Enviar teste**; ritmo anti-banimento (intervalo, limite por hora/destinatário); texto formatado dos alertas; alerta de sessão caída ao administrador por e-mail/in-app; regras de garantia, estoque e backup com WhatsApp + e-mail documentado como plano B (inclui `preferred` em `backup.failed` e a migração das regras já semeadas); gatilho de `channel.degraded` para a Evolution | C2 |
+| **C4** | Vínculo: webhook interno da Evolution (`vincular CÓDIGO`) com rota bloqueada no Nginx, parser próprio e segredo; opcionalmente, código enviado com limite por usuário/hora | C2 |
+| **C5** | Homologação com um chip dedicado real e reescrita do `docs/04` com o passo a passo (instalar, parear, vincular, testar, o que fazer se cair/banir) | chip e Compose no piloto |
+| *Futuro* | Itens do §7 (templates, status, autenticação), se a migração para a Meta for decidida | decisão do dono |
 
-Cada PR com testes (adapter com transporte falso, como hoje) e revisão independente. Cada PR de frontend e de backend gasta minutos do GitHub Actions (ver `CONTRIBUTING.md`): agrupar o trabalho de cada fase em um commit.
+Cada PR com testes (driver com transporte falso, como hoje) e revisão independente. Cada PR de frontend e de backend gasta minutos do GitHub Actions (ver `CONTRIBUTING.md`): agrupar o trabalho de cada fase em um commit.
 
 ## O que a empresa precisa providenciar (fora do código)
 
-1. Conta **Meta Business** e app com o produto WhatsApp (Cloud API).
-2. Um **número** que não esteja em uso no WhatsApp comum (ou o número de teste da Meta para começar).
-3. **Token permanente** (usuário do sistema) e **App Secret**.
-4. **Templates aprovados** (a aprovação leva de minutos a dias): um por tipo de alerta (garantia, estoque, backup) e, se o vínculo por código enviado for usado, um de autenticação.
-5. Para o menu conversacional: **URL HTTPS pública** para o webhook.
-
-Custos e limites (a confirmar na Meta no momento da contratação): mensagens de template são cobradas por mensagem e variam por categoria; contas novas têm limite de destinatários únicos por dia até a verificação do negócio.
+1. Um **chip dedicado** com WhatsApp (pessoal ou Business), que não seja usado por ninguém no dia a dia, e um celular para o pareamento inicial por QR code.
+2. O servidor do piloto com o Compose atualizado (o perfil `whatsapp` sobe a Evolution).
+3. Aceitar que o WhatsApp pode desconectar ou banir o número, mantendo o e-mail como rede de segurança.
 
 ## Consequências
 
-- O administrador ganha um só lugar para os quatro canais e consegue testar antes de ligar.
-- Alertas por WhatsApp passam a ter texto estruturado, mais chance de aprovação e mensagens mais legíveis.
-- Dependemos da aprovação de templates pela Meta: o prazo é externo ao projeto.
-- Mudar o texto de um alerta que já tem template aprovado exige nova aprovação.
+- Nenhum custo recorrente: sem cobrança por mensagem nem aprovação prévia de texto; o alerta pode mudar de texto a qualquer momento.
+- O administrador ganha um só lugar para os quatro canais e consegue testar e ver a conexão.
+- O vínculo e o menu conversacional passam a funcionar sem expor o sistema à internet.
+- **Risco aceito:** banimento do número e quedas de sessão; a Evolution é um projeto de terceiros sem SLA, e o WhatsApp pode quebrá-la a cada atualização. As mitigações do §3 reduzem, não eliminam.
+- Há um serviço a mais para operar (Evolution) e um volume a mais no backup.
+- O código da Meta continua testado e disponível; migrar é trocar `provider` e cumprir o §7.
 
 ## Alternativas descartadas
 
-- **Provedores não oficiais (Evolution, Baileys, QR Code):** já recusados no ADR-013 (risco de bloqueio do número e de termos de uso).
-- **Gateway de terceiros (Twilio, Z-API):** resolvem o cadastro com a Meta, mas somam custo e outro fornecedor; reavaliar só se a conta Meta direta for inviável para a empresa.
-- **Um template único com a mensagem inteira (como hoje):** simples, mas com alta chance de reprovação e texto ruim; fica só como reserva.
+- **Só a Meta Cloud API (proposta inicial deste ADR):** mais robusta e oficial, mas cobra por mensagem de template e exige conta, aprovação de templates e URL pública; contraria a decisão de não ter custos na partida.
+- **Outros provedores não oficiais (Baileys direto, wppconnect):** mesmo risco de banimento sem ganho; a Evolution já foi avaliada no ADR-013 e tem API HTTP estável.
+- **Gateway de terceiros pago (Twilio, Z-API):** somam custo e outro fornecedor.
+- **Um template único com a mensagem inteira (Meta):** simples, mas com alta chance de reprovação; só serviria como reserva numa futura migração.

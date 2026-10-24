@@ -458,6 +458,8 @@ Fora do escopo desta fase: WhatsApp (Fase D, substitui `wa_*`), Slack (E), autom
 
 Decisão do §14.1: **Meta Cloud API**. O adapter Evolution **não foi implementado** (o registro de canais permite acrescentá-lo depois como um arquivo, se a decisão mudar).
 
+> **Atualização (ADR-019, 2026-10-23):** o dono do produto decidiu começar pela **Evolution API** (sem custo) e manter a Meta pronta para entrar; o risco de banimento foi aceito explicitamente. O canal passa a ter dois drivers atrás do mesmo adapter.
+
 | Tema | Decidido | Feito |
 |---|---|---|
 | Canal | adapter `whatsapp` (Meta) | `channels/whatsapp.py`; config e segredos em `channel_configs` (token, App Secret, token de verificação do webhook) |
