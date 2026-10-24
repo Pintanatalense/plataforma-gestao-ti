@@ -18,7 +18,9 @@ Configuração em `channel_configs['whatsapp']` com provider='evolution':
   config = {provider, instance_name, display_phone, app_base_url}
 """
 import logging
+import random
 import re
+import time
 from typing import Any
 from urllib.parse import quote
 
@@ -31,6 +33,11 @@ for _noisy in ("httpx", "httpcore"):  # a URL carrega o nome da instância; o ca
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 
 DEFAULT_INSTANCE = "gestao-ti"
+# Ritmo "humano" contra banimento (ADR-019 §3): intervalo mínimo entre envios do canal (com variação aleatória) e
+# teto por destinatário. Alertas são poucos por dia; o objetivo é nunca parecer disparo em massa.
+DEFAULT_INTERVAL_SECONDS = 4
+DEFAULT_MAX_PER_HOUR = 10
+HOURLY_DEFER_SECONDS = 600
 INSTANCE_RE = re.compile(r"^[A-Za-z0-9_-]{1,40}$")
 MAX_TEXT = 4000
 CLOSED_HINTS = ("connection closed", "not connected", "instance is not", "does not exist", "not found", "timed out", "timeout")
@@ -39,6 +46,24 @@ CLOSED_HINTS = ("connection closed", "not connected", "instance is not", "does n
 def http_client(timeout: float = 15.0) -> httpx.AsyncClient:
     """Ponto único de criação do cliente (os testes o substituem por um transporte falso)."""
     return httpx.AsyncClient(timeout=timeout)
+
+
+class Pacer:
+    """Marca a vez de enviar: um envio por vez a cada `interval` a `interval * 1.75` segundos (sorteado)."""
+
+    def __init__(self, clock=time.monotonic, rng=random.uniform) -> None:
+        self._clock, self._rng = clock, rng
+        self._next = 0.0
+
+    def reserve(self, interval: float) -> float:
+        """0 se pode enviar agora (e já reserva a próxima vez); senão, quantos segundos esperar."""
+        if interval <= 0:
+            return 0.0
+        now = self._clock()
+        if now < self._next:
+            return self._next - now
+        self._next = now + self._rng(interval, interval * 1.75)
+        return 0.0
 
 
 def is_configured() -> bool:

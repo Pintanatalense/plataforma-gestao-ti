@@ -16,6 +16,7 @@ from app.notifications.dispatcher import BACKOFF_SECONDS, CIRCUIT_FAILURES, Disp
 from app.notifications.email_service import EmailService, SmtpConfigSchema
 from app.notifications.fanout import fan_out_batch
 from app.notifications.jobs import (
+    DEFAULT_JOBS,
     compute_next_run,
     ensure_default_jobs,
     job_backup,
@@ -479,7 +480,7 @@ async def test_compute_next_run_daily_uses_system_timezone():
 
 async def test_default_jobs_created_once():
     async with TestSessionLocal() as s:
-        assert await ensure_default_jobs(s) == 4
+        assert await ensure_default_jobs(s) == len(DEFAULT_JOBS)
         await s.commit()
     async with TestSessionLocal() as s:
         assert await ensure_default_jobs(s) == 0

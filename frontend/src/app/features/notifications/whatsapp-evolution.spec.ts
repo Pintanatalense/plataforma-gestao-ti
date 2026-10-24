@@ -6,7 +6,7 @@ import { WhatsAppConfigComponent, safeQr } from './admin/whatsapp-config.compone
 
 const QR = 'data:image/png;base64,QUJD';
 const CONFIG: WhatsAppConfig = {
-  enabled: false, provider: 'evolution', instance_name: 'gestao-ti', evolution_ready: true,
+  enabled: false, provider: 'evolution', instance_name: 'gestao-ti', evolution_ready: true, send_interval_seconds: 4, max_per_hour: 10,
   access_token: '', app_secret: '', phone_number_id: '', graph_version: 'v21.0', template_name: '',
   template_language: 'pt_BR', app_base_url: '', display_phone: null, verified_name: null,
   verify_token: null, webhook_path: '/api/v1/integrations/whatsapp/webhook'
@@ -54,7 +54,7 @@ describe('WhatsAppConfigComponent com Evolution', () => {
   });
 
   it('old servers without the provider field keep working as Meta', async () => {
-    const { provider: _p, instance_name: _i, evolution_ready: _e, ...legacy } = CONFIG;
+    const { provider: _p, instance_name: _i, evolution_ready: _e, send_interval_seconds: _s, max_per_hour: _m, ...legacy } = CONFIG;
     const api = { getWhatsAppConfig: vi.fn().mockReturnValue(of(legacy)), whatsAppStatus: vi.fn() };
     const f = await mount(api);
     expect(f.componentInstance.config()!.provider).toBe('meta');
@@ -136,5 +136,52 @@ describe('WhatsAppConfigComponent com Evolution', () => {
     expect(api.whatsAppDisconnect).toHaveBeenCalled();
     expect(f.componentInstance.status()!.display_phone).toBeNull();
     expect((q(f, 'wa-disconnect') as HTMLButtonElement).disabled).toBe(true);
+  });
+});
+
+describe('WhatsAppConfigComponent: ritmo e teste', () => {
+  it('saves the pacing next to the provider and shows the defaults for older servers', async () => {
+    const { send_interval_seconds: _s, max_per_hour: _m, ...old } = CONFIG;
+    const api = {
+      getWhatsAppConfig: vi.fn().mockReturnValue(of(old)), whatsAppStatus: vi.fn().mockReturnValue(of(STATUS)),
+      saveWhatsAppConfig: vi.fn().mockReturnValue(of(CONFIG))
+    };
+    const f = await mount(api);
+    expect((q(f, 'wa-interval') as HTMLInputElement).value).toBe('4');
+    expect((q(f, 'wa-per-hour') as HTMLInputElement).value).toBe('10');
+    f.componentInstance.config.update((c) => ({ ...c!, send_interval_seconds: 8, max_per_hour: 5 }));
+    f.componentInstance.save();
+    expect(api.saveWhatsAppConfig).toHaveBeenCalledWith(expect.objectContaining({ send_interval_seconds: 8, max_per_hour: 5 }));
+  });
+
+  it('offers the test only for an enabled channel, sends digits only and shows the result', async () => {
+    const api = {
+      getWhatsAppConfig: vi.fn().mockReturnValue(of(CONFIG)), whatsAppStatus: vi.fn().mockReturnValue(of(STATUS)),
+      whatsAppTest: vi.fn().mockReturnValue(of({ ok: true, detail: 'Mensagem enviada para o final 1234.' }))
+    };
+    const f = await mount(api);
+    expect(q(f, 'wa-test')).toBeNull(); // canal desabilitado
+    f.componentInstance.config.update((c) => ({ ...c!, enabled: true }));
+    f.detectChanges();
+    expect((q(f, 'wa-test-send') as HTMLButtonElement).disabled).toBe(true); // sem número
+    f.componentInstance.testTo = '+55 (85) 99999-1234';
+    f.componentInstance.sendTest();
+    f.detectChanges();
+    expect(api.whatsAppTest).toHaveBeenCalledWith('5585999991234');
+    expect(q(f, 'wa-test-result')?.textContent).toContain('final 1234');
+  });
+
+  it('shows the server refusal of the test instead of failing silently', async () => {
+    const err = { error: { error: { message: 'Limite de 5 testes por hora atingido. Tente mais tarde.' } } };
+    const api = {
+      getWhatsAppConfig: vi.fn().mockReturnValue(of({ ...CONFIG, enabled: true })), whatsAppStatus: vi.fn().mockReturnValue(of(STATUS)),
+      whatsAppTest: vi.fn().mockReturnValue(throwError(() => err))
+    };
+    const f = await mount(api);
+    f.componentInstance.testTo = '5585999991234';
+    f.componentInstance.sendTest();
+    f.detectChanges();
+    expect(q(f, 'wa-test-result')?.textContent).toContain('Limite de 5 testes');
+    expect(f.componentInstance.testing()).toBe(false);
   });
 });

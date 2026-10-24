@@ -4,6 +4,7 @@ MOD-11 — Canais externos: vínculo da conta (usuário) e configuração de Tel
 Vínculo: o usuário autenticado gera um código, envia ao bot e só então o chat/telefone passa a ser dele
 (ADR-013 §7.3). Configuração: tokens cifrados em `channel_configs`; nunca voltam pela API.
 """
+import re
 import secrets
 import uuid
 from datetime import datetime
@@ -13,7 +14,7 @@ from urllib.parse import quote
 from fastapi import APIRouter, Depends
 from pydantic import BaseModel, Field
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.audit.repository import AuditRepository
 from app.core.dependencies import get_current_user_id, require_permission
@@ -24,17 +25,20 @@ from app.notifications.channels.slack import SLACK_CHANNEL
 from app.notifications.channels.slack import api_call as slack_api_call
 from app.notifications.channels.telegram import TELEGRAM_CHANNEL, api_call
 from app.notifications.channels import whatsapp_evolution as evolution
+from app.notifications.channels.base import AdapterContext, Message, Recipient
 from app.notifications.channels.whatsapp import (
     DEFAULT_GRAPH_VERSION,
     PROVIDER_EVOLUTION,
     PROVIDER_META,
     WHATSAPP_CHANNEL,
     error_info,
+    WhatsAppAdapter,
     graph_call,
     provider_of,
 )
 from app.notifications.linking import create_link_code, unlink
 from app.notifications.models import UserChannelAddress
+from app.notifications.telegram_poller import SenderRateLimiter
 
 router = APIRouter(prefix="/notifications", tags=["Notificações — Canais"])
 
@@ -208,6 +212,9 @@ class WhatsAppConfigIn(BaseModel):
     # Sem o campo, mantém o provedor atual (ou `meta` numa instalação nova), como antes do ADR-019.
     provider: str | None = Field(None, pattern=r"^(evolution|meta)$")
     instance_name: str | None = Field(None, pattern=r"^[A-Za-z0-9_-]{1,40}$")  # só Evolution; vazio = manter/padrão
+    # Ritmo contra banimento (só Evolution); vazio = manter/padrão. 0 desliga o respectivo limite.
+    send_interval_seconds: int | None = Field(None, ge=0, le=60)
+    max_per_hour: int | None = Field(None, ge=0, le=100)
     access_token: str = Field("", max_length=1000)  # vazio ou mascarado = manter o atual
     app_secret: str = Field("", max_length=200)  # idem
     phone_number_id: str = Field("", max_length=50)
@@ -222,6 +229,8 @@ class WhatsAppConfigOut(BaseModel):
     provider: str
     instance_name: str
     evolution_ready: bool  # o servidor tem EVOLUTION_API_KEY (o serviço opcional `evolution` do Compose)
+    send_interval_seconds: int
+    max_per_hour: int
     access_token: str
     app_secret: str
     phone_number_id: str
@@ -243,6 +252,8 @@ def _whatsapp_out(stored: StoredChannel | None) -> WhatsAppConfigOut:
         provider=provider_of(stored) if stored else PROVIDER_META,
         instance_name=cfg.get("instance_name") or evolution.DEFAULT_INSTANCE,
         evolution_ready=evolution.is_configured(),
+        send_interval_seconds=cfg.get("send_interval_seconds", evolution.DEFAULT_INTERVAL_SECONDS),
+        max_per_hour=cfg.get("max_per_hour", evolution.DEFAULT_MAX_PER_HOUR),
         access_token=MASKED if secrets_.get("access_token") else "",
         app_secret=MASKED if secrets_.get("app_secret") else "",
         phone_number_id=cfg.get("phone_number_id", ""),
@@ -321,6 +332,9 @@ async def _save_evolution(body: WhatsAppConfigIn, current: StoredChannel | None,
         cfg.pop("display_phone", None)
         cfg.pop("verified_name", None)
     cfg.update(provider=PROVIDER_EVOLUTION, instance_name=instance_name, app_base_url=body.app_base_url.strip())
+    for key in ("send_interval_seconds", "max_per_hour"):
+        if getattr(body, key) is not None:
+            cfg[key] = getattr(body, key)
     # Os segredos da Meta ficam guardados: voltar ao provedor antigo não obriga a digitar tudo de novo.
     await save_channel(db, WHATSAPP_CHANNEL, body.enabled, cfg, dict(current.secrets) if current else {})
     await _audit_config(db, WHATSAPP_CHANNEL, body.enabled, user_id)
@@ -404,6 +418,51 @@ async def whatsapp_disconnect(db: DB, user_id: CurrentUser):
     )
     await db.commit()
     return WhatsAppStatus(provider=PROVIDER_EVOLUTION, state="close")
+
+
+class WhatsAppTestIn(BaseModel):
+    to: str = Field(..., max_length=30)
+
+
+class WhatsAppTestOut(BaseModel):
+    ok: bool
+    detail: str
+
+
+_test_limiter = SenderRateLimiter(limit=5, window=3600.0)  # por administrador: o teste não vira disparo para números arbitrários
+
+
+@router.post("/whatsapp/test", response_model=WhatsAppTestOut, dependencies=[Manage])
+async def whatsapp_test(body: WhatsAppTestIn, db: DB, user_id: CurrentUser):
+    """Envia uma mensagem de teste agora (fora da fila) e mostra o resultado."""
+    digits = re.sub(r"\D", "", body.to)
+    if not 10 <= len(digits) <= 15:
+        raise BusinessRuleException("Informe o número com DDI e DDD, só dígitos (ex.: 5585999990000).")
+    stored = await load_channel(db, WHATSAPP_CHANNEL)
+    if stored is None or not stored.enabled:
+        raise BusinessRuleException("Habilite e salve o canal WhatsApp antes de testar.")
+    if not _test_limiter.allow(str(user_id)):
+        raise BusinessRuleException("Limite de 5 testes por hora atingido. Tente mais tarde.")
+
+    message = Message(title="Teste do canal WhatsApp", body_text="Se você recebeu esta mensagem, o canal WhatsApp do sistema de Gestão de TI está funcionando.")
+    if provider_of(stored) == PROVIDER_EVOLUTION:
+        if not evolution.is_configured():
+            raise BusinessRuleException("A Evolution não está configurada neste servidor (EVOLUTION_API_KEY).")
+        instance = stored.config.get("instance_name") or evolution.DEFAULT_INSTANCE
+        result = await evolution.send_text(instance, digits, evolution.render_text(message, None))
+    else:
+        factory = async_sessionmaker(bind=db.bind, class_=AsyncSession, expire_on_commit=False)
+        result = await WhatsAppAdapter(AdapterContext(session_factory=factory)).send(Recipient(address=digits), message)
+
+    await AuditRepository(db).create(
+        event_type="notifications.whatsapp_test_sent", entity_type="notification",
+        entity_id=uuid.uuid5(uuid.NAMESPACE_OID, f"channel:{WHATSAPP_CHANNEL}"),
+        data={"outcome": result.outcome, "to_last4": digits[-4:]}, user_id=user_id,  # o número inteiro não vai para a auditoria
+    )
+    await db.commit()
+    if result.outcome == "ok":
+        return WhatsAppTestOut(ok=True, detail=f"Mensagem enviada para o final {digits[-4:]}.")
+    return WhatsAppTestOut(ok=False, detail=result.error or "Falha no envio.")
 
 
 # --- Slack (administração) ------------------------------------------------------------------------

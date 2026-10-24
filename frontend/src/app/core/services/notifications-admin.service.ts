@@ -110,6 +110,9 @@ export interface WhatsAppConfig {
   instance_name: string;
   /** O servidor tem a chave da Evolution (EVOLUTION_API_KEY): sem ela o provedor não funciona. */
   evolution_ready: boolean;
+  /** Ritmo contra banimento (só Evolution): intervalo mínimo entre envios e teto por destinatário por hora (0 = sem limite). */
+  send_interval_seconds: number;
+  max_per_hour: number;
   access_token: string;
   app_secret: string;
   phone_number_id: string;
@@ -143,6 +146,11 @@ export interface WhatsAppStatus {
   state: 'open' | 'connecting' | 'close' | 'unconfigured' | 'error' | 'not_applicable';
   detail: string;
   display_phone: string | null;
+}
+
+export interface WhatsAppTestResult {
+  ok: boolean;
+  detail: string;
 }
 
 export interface WhatsAppConnect extends WhatsAppStatus {
@@ -227,6 +235,10 @@ export class NotificationsAdminService {
   /** `refresh`: repetição automática para girar o QR (não gera nova linha de auditoria). */
   whatsAppConnect(refresh = false): Observable<WhatsAppConnect> {
     return this.http.post<WhatsAppConnect>('/api/v1/notifications/whatsapp/connect', {}, refresh ? { params: { refresh: 'true' } } : {});
+  }
+
+  whatsAppTest(to: string): Observable<WhatsAppTestResult> {
+    return this.http.post<WhatsAppTestResult>('/api/v1/notifications/whatsapp/test', { to });
   }
 
   whatsAppDisconnect(): Observable<WhatsAppStatus> {

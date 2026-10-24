@@ -62,7 +62,7 @@ DEFAULT_RULES: list[dict] = [
         "name": "Falha de backup → administradores",
         "event_type": "backup.failed",
         "audience": ["admins"],
-        "channels": ["in_app", "email"],
+        "channels": ["in_app", "email", "preferred"],
         "template_code": "backup.failed",
     },
     {

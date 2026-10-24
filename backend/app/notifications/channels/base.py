@@ -48,6 +48,9 @@ class DeliveryResult:
     provider_message_id: str | None = None
     error: str | None = None
     retry_after_seconds: int | None = None
+    # Adiada por ritmo/limite do próprio canal: volta à fila depois de `retry_after_seconds` SEM gastar tentativa
+    # nem contar para o circuito (não houve falha, só esperamos a vez).
+    deferred: bool = False
 
 
 @dataclass(frozen=True)
