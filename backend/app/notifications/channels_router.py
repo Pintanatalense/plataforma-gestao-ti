@@ -313,6 +313,8 @@ async def update_whatsapp_config(body: WhatsAppConfigIn, db: DB, user_id: Curren
     )
     secrets_ = {k: v for k, v in {"access_token": token, "app_secret": app_secret}.items() if v}
     secrets_["verify_token"] = old.get("verify_token") or secrets.token_urlsafe(24)
+    if old.get("webhook_secret"):  # segredo da entrada da Evolution: trocar o provedor e voltar não pode invalidá-lo
+        secrets_["webhook_secret"] = old["webhook_secret"]
     await save_channel(db, WHATSAPP_CHANNEL, body.enabled, cfg, secrets_)
     await _audit_config(db, WHATSAPP_CHANNEL, body.enabled, user_id)
     await db.commit()

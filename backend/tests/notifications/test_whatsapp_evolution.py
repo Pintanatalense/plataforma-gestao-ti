@@ -734,6 +734,15 @@ async def test_connect_registers_the_webhook_once_with_secret_and_the_qr_refresh
     assert secret not in config
 
 
+async def test_saving_the_meta_provider_keeps_the_evolution_webhook_secret(client: AsyncClient, db_session: AsyncSession, fake: FakeEvolution):
+    h = headers_for(await _admin(db_session))
+    await client.put(f"{BASE}/whatsapp/config", json={"enabled": False, "provider": "evolution"}, headers=h)
+    secret = (await load_channel(db_session, "whatsapp")).secrets["webhook_secret"]
+    await client.put(f"{BASE}/whatsapp/config", json={"enabled": False, "provider": "meta"}, headers=h)
+    await client.put(f"{BASE}/whatsapp/config", json={"enabled": False, "provider": "evolution"}, headers=h)
+    assert (await load_channel(db_session, "whatsapp")).secrets["webhook_secret"] == secret  # continua o que a Evolution tem registrado
+
+
 async def test_old_configs_without_a_webhook_secret_get_one_on_connect(client: AsyncClient, db_session: AsyncSession, fake: FakeEvolution):
     h = headers_for(await _admin(db_session))
     await _configure(db_session)  # salva sem segredo, como antes do C4
