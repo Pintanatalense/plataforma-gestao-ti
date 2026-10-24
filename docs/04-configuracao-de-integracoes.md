@@ -37,7 +37,26 @@ A plataforma implementa a política de privacidade **DEC-012**:
 
 ---
 
-## 2. WhatsApp — Meta Cloud API (oficial)
+## 2. WhatsApp
+
+O canal tem **dois provedores** (escolha na aba **Administração > Canais de comunicação > WhatsApp**; veja o [ADR-019](decisions/ADR-019-canais-de-comunicacao.md)):
+
+* **Evolution API** (sem custo por mensagem): seção 2.0 abaixo.
+* **Meta Cloud API** (oficial, cobra por mensagem de template): seções 2.1 a 2.6.
+
+### 2.0. Evolution API (opcional, não oficial)
+
+**Riscos que você aceita ao usar este provedor:** a Evolution controla o WhatsApp Web por trás dos panos. O WhatsApp pode **desconectar a sessão** a qualquer momento e pode **banir o número**. Por isso: use um **chip dedicado** (nunca o WhatsApp pessoal de alguém), mantenha o **e-mail** ligado nas regras de alerta e peça o vínculo só a quem quer receber.
+
+1. No `.env`, defina `EVOLUTION_API_KEY` (os instaladores já geram uma; em instalações antigas use `openssl rand -hex 24`). O serviço **recusa subir** sem uma chave de pelo menos 24 caracteres.
+2. Suba o serviço opcional: `docker compose --profile whatsapp up -d`. Ele não publica porta no host; só o backend e o worker o alcançam.
+3. Na aba **WhatsApp**, escolha **Evolution API**, mantenha o nome da instância, marque *Canal habilitado* e **Salvar**.
+4. Clique em **Conectar número** e, no celular do chip dedicado, abra *WhatsApp > Aparelhos conectados > Conectar um aparelho* e leia o QR code (ele troca sozinho). O estado muda para *Conectado*.
+5. **Se cair:** o estado volta para *Desconectado*. O sistema tenta reenviar por um tempo; o que esgotar as tentativas aparece como falha em *Notificações > Entregas e regras*. Leia o QR code de novo para reconectar.
+
+> Neste provedor não há janela de 24 h nem template: o texto vai livre. A sessão do número fica no PostgreSQL (schema `evolution_api`) e no volume `evolution_instances`. **Homologação pendente:** os formatos exatos de erro da Evolution e o comportamento de reinício ainda precisam ser confirmados com um chip real (ADR-019, fase C5).
+
+**Meta Cloud API (oficial)** — seções 2.1 a 2.6, abaixo.
 
 O canal WhatsApp faz parte do hub de notificações (ADR-013). Usa **somente a API oficial da Meta**: não há mais Evolution, QR Code, "anti-ban" nem fila própria — a Meta limita a taxa e o hub faz retentativa, circuito e painel de entregas.
 

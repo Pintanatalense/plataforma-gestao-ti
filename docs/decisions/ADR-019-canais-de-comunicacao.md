@@ -119,6 +119,22 @@ Para "ficar pronto para receber ambos" basta o driver (§2), que já mantém o c
 
 **Gatilhos para migrar** (sugestão, a decidir pelo dono): número banido mais de uma vez; mais de uma queda de sessão por mês; volume de alertas que torne o ritmo conservador inviável; exigência de cliente/empresa por canal oficial.
 
+## Registro de implementação — C2 (2026-10-24)
+
+Conferido no código da Evolution **v2.3.7** (imagem `evoapicloud/evolution-api:v2.3.7`; a tag `2.3.7` sem `v` não existe no Docker Hub):
+
+- Autenticação por cabeçalho `apikey` (chave global `AUTHENTICATION_API_KEY` ou token da instância). Rotas: `POST /instance/create`, `GET /instance/connect/{i}`, `GET /instance/connectionState/{i}`, `DELETE /instance/logout/{i}`, `GET /instance/fetchInstances`, `POST /message/sendText/{i}` (`number`, `text`, `linkPreview`, `delay`), `POST /webhook/set/{i}` (`webhook.{url, headers, events, enabled}`; o corpo enviado inclui `apikey`).
+- **Redis é opcional:** `CACHE_REDIS_ENABLED=false` com `CACHE_LOCAL_ENABLED=true` (o `.env.example` deles liga o Redis; usamos cache local para não somar um serviço).
+- **Chave padrão pública no código:** sem `AUTHENTICATION_API_KEY` a Evolution usa uma chave fixa (`BQYHJGJHJ`). Por isso o serviço do Compose **recusa subir** sem chave própria de ao menos 24 caracteres.
+- **Mensagens recebidas podem vir com `@lid`** em vez do telefone (há `remoteJidAlt`): o C4 precisa normalizar para o número antes de vincular.
+
+Decisões que mudam o texto acima:
+
+- **Endereço e chave ficam no servidor** (`EVOLUTION_BASE_URL`, `EVOLUTION_API_KEY` no ambiente do backend e do worker), não no cadastro do canal. É mais seguro que a allowlist prevista no §3 (o administrador não escolhe para onde o backend faz requisições, o que elimina o SSRF) e não deixa a chave global no banco nem na tela.
+- **O provedor é escolhido no cadastro do canal** (`provider`); uma configuração sem o campo é Meta, então nada muda para quem já usa a Meta. Os segredos da Meta são mantidos ao trocar de provedor.
+- **Dois pontos ficaram para os próximos PRs:** o intervalo/limite anti-banimento e o **Enviar teste** (C3), e o webhook de entrada (C4). Não há cartão de erro da Evolution homologado: a classificação de erros em `ok/retryable/permanent` foi escrita a partir do código e **precisa ser confirmada com um chip real (C5)**.
+- Neste PR **o container da Evolution não foi executado** (o Docker Desktop estava parado nesta máquina): o Compose foi validado só por `docker compose config`.
+
 ## Entrega em PRs
 
 | PR | Conteúdo | Depende de |

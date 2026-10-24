@@ -148,7 +148,8 @@ describe('TelegramConfigComponent', () => {
 
 describe('WhatsAppConfigComponent', () => {
   const CONFIG = {
-    enabled: false, access_token: '', app_secret: '', phone_number_id: '', graph_version: 'v21.0', template_name: '',
+    enabled: false, provider: 'meta', instance_name: 'gestao-ti', evolution_ready: false,
+    access_token: '', app_secret: '', phone_number_id: '', graph_version: 'v21.0', template_name: '',
     template_language: 'pt_BR', app_base_url: '', display_phone: null, verified_name: null,
     verify_token: 'tok-123', webhook_path: '/api/v1/integrations/whatsapp/webhook'
   };
@@ -180,7 +181,7 @@ describe('WhatsAppConfigComponent', () => {
     c.config.update((cfg) => ({ ...cfg!, enabled: true, phone_number_id: ' 1055 ', template_name: ' aviso_ti ' }));
     c.save();
     expect(api.saveWhatsAppConfig).toHaveBeenCalledWith({
-      enabled: true, access_token: '********', app_secret: '********', phone_number_id: '1055', graph_version: 'v21.0',
+      enabled: true, provider: 'meta', instance_name: 'gestao-ti', access_token: '********', app_secret: '********', phone_number_id: '1055', graph_version: 'v21.0',
       template_name: 'aviso_ti', template_language: 'pt_BR', app_base_url: ''
     });
   });

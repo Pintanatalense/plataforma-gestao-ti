@@ -102,8 +102,14 @@ export interface TelegramConfig {
   app_base_url: string;
 }
 
+export type WhatsAppProvider = 'evolution' | 'meta';
+
 export interface WhatsAppConfig {
   enabled: boolean;
+  provider: WhatsAppProvider;
+  instance_name: string;
+  /** O servidor tem a chave da Evolution (EVOLUTION_API_KEY): sem ela o provedor não funciona. */
+  evolution_ready: boolean;
   access_token: string;
   app_secret: string;
   phone_number_id: string;
@@ -129,7 +135,21 @@ export interface SlackConfig {
 
 export type SlackConfigInput = Pick<SlackConfig, 'enabled' | 'bot_token' | 'signing_secret' | 'app_base_url'>;
 
-export type WhatsAppConfigInput = Omit<WhatsAppConfig, 'display_phone' | 'verified_name' | 'verify_token' | 'webhook_path'>;
+export type WhatsAppConfigInput = Omit<WhatsAppConfig, 'display_phone' | 'verified_name' | 'verify_token' | 'webhook_path' | 'evolution_ready'>;
+
+/** Estado da conexão do número (Evolution). */
+export interface WhatsAppStatus {
+  provider: WhatsAppProvider;
+  state: 'open' | 'connecting' | 'close' | 'unconfigured' | 'error' | 'not_applicable';
+  detail: string;
+  display_phone: string | null;
+}
+
+export interface WhatsAppConnect extends WhatsAppStatus {
+  qr_base64: string | null;
+  pairing_code: string | null;
+  count: number | null;
+}
 
 @Injectable({ providedIn: 'root' })
 export class NotificationsAdminService {
@@ -198,6 +218,18 @@ export class NotificationsAdminService {
 
   saveWhatsAppConfig(config: WhatsAppConfigInput): Observable<WhatsAppConfig> {
     return this.http.put<WhatsAppConfig>('/api/v1/notifications/whatsapp/config', config);
+  }
+
+  whatsAppStatus(): Observable<WhatsAppStatus> {
+    return this.http.get<WhatsAppStatus>('/api/v1/notifications/whatsapp/status');
+  }
+
+  whatsAppConnect(): Observable<WhatsAppConnect> {
+    return this.http.post<WhatsAppConnect>('/api/v1/notifications/whatsapp/connect', {});
+  }
+
+  whatsAppDisconnect(): Observable<WhatsAppStatus> {
+    return this.http.post<WhatsAppStatus>('/api/v1/notifications/whatsapp/disconnect', {});
   }
 
   getSlackConfig(): Observable<SlackConfig> {

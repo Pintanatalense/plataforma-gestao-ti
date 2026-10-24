@@ -23,7 +23,16 @@ from app.notifications.channel_store import StoredChannel, load_channel, save_ch
 from app.notifications.channels.slack import SLACK_CHANNEL
 from app.notifications.channels.slack import api_call as slack_api_call
 from app.notifications.channels.telegram import TELEGRAM_CHANNEL, api_call
-from app.notifications.channels.whatsapp import DEFAULT_GRAPH_VERSION, WHATSAPP_CHANNEL, error_info, graph_call
+from app.notifications.channels import whatsapp_evolution as evolution
+from app.notifications.channels.whatsapp import (
+    DEFAULT_GRAPH_VERSION,
+    PROVIDER_EVOLUTION,
+    PROVIDER_META,
+    WHATSAPP_CHANNEL,
+    error_info,
+    graph_call,
+    provider_of,
+)
 from app.notifications.linking import create_link_code, unlink
 from app.notifications.models import UserChannelAddress
 
@@ -45,6 +54,8 @@ def is_ready(channel: str, stored: StoredChannel | None) -> bool:
         return bool(stored.secrets.get("bot_token"))
     if channel == SLACK_CHANNEL:
         return bool(stored.secrets.get("bot_token") and stored.secrets.get("signing_secret"))
+    if provider_of(stored) == PROVIDER_EVOLUTION:
+        return evolution.is_configured()
     return bool(
         stored.secrets.get("access_token") and stored.secrets.get("app_secret") and stored.config.get("phone_number_id")
     )
@@ -189,11 +200,14 @@ async def update_telegram_config(body: TelegramConfigIn, db: DB, user_id: Curren
     return _telegram_out(await load_channel(db, TELEGRAM_CHANNEL))
 
 
-# --- WhatsApp / Meta Cloud API (administração) ----------------------------------------------------
+# --- WhatsApp: Evolution API ou Meta Cloud API (administração) -----------------------------------
 
 
 class WhatsAppConfigIn(BaseModel):
     enabled: bool = False
+    # Sem o campo, mantém o provedor atual (ou `meta` numa instalação nova), como antes do ADR-019.
+    provider: str | None = Field(None, pattern=r"^(evolution|meta)$")
+    instance_name: str = Field(evolution.DEFAULT_INSTANCE, pattern=r"^[A-Za-z0-9_-]{1,40}$")  # só Evolution
     access_token: str = Field("", max_length=1000)  # vazio ou mascarado = manter o atual
     app_secret: str = Field("", max_length=200)  # idem
     phone_number_id: str = Field("", max_length=50)
@@ -205,6 +219,9 @@ class WhatsAppConfigIn(BaseModel):
 
 class WhatsAppConfigOut(BaseModel):
     enabled: bool
+    provider: str
+    instance_name: str
+    evolution_ready: bool  # o servidor tem EVOLUTION_API_KEY (o serviço opcional `evolution` do Compose)
     access_token: str
     app_secret: str
     phone_number_id: str
@@ -223,6 +240,9 @@ def _whatsapp_out(stored: StoredChannel | None) -> WhatsAppConfigOut:
     secrets_ = stored.secrets if stored else {}
     return WhatsAppConfigOut(
         enabled=bool(stored and stored.enabled),
+        provider=provider_of(stored) if stored else PROVIDER_META,
+        instance_name=cfg.get("instance_name") or evolution.DEFAULT_INSTANCE,
+        evolution_ready=evolution.is_configured(),
         access_token=MASKED if secrets_.get("access_token") else "",
         app_secret=MASKED if secrets_.get("app_secret") else "",
         phone_number_id=cfg.get("phone_number_id", ""),
@@ -245,6 +265,9 @@ async def get_whatsapp_config(db: DB):
 async def update_whatsapp_config(body: WhatsAppConfigIn, db: DB, user_id: CurrentUser):
     current = await load_channel(db, WHATSAPP_CHANNEL)
     old = current.secrets if current else {}
+    provider = body.provider or (provider_of(current) if current else PROVIDER_META)
+    if provider == PROVIDER_EVOLUTION:
+        return await _save_evolution(body, current, db, user_id)
 
     def keep(new: str, key: str) -> str:
         new = new.strip()
@@ -269,7 +292,7 @@ async def update_whatsapp_config(body: WhatsAppConfigIn, db: DB, user_id: Curren
         cfg["verified_name"] = resp.get("verified_name")
 
     cfg.update(
-        phone_number_id=phone_id, graph_version=body.graph_version, template_name=body.template_name.strip(),
+        provider=PROVIDER_META, phone_number_id=phone_id, graph_version=body.graph_version, template_name=body.template_name.strip(),
         template_language=body.template_language.strip() or "pt_BR", app_base_url=body.app_base_url.strip(),
     )
     secrets_ = {k: v for k, v in {"access_token": token, "app_secret": app_secret}.items() if v}
@@ -278,6 +301,100 @@ async def update_whatsapp_config(body: WhatsAppConfigIn, db: DB, user_id: Curren
     await _audit_config(db, WHATSAPP_CHANNEL, body.enabled, user_id)
     await db.commit()
     return _whatsapp_out(await load_channel(db, WHATSAPP_CHANNEL))
+
+
+async def _save_evolution(body: WhatsAppConfigIn, current: StoredChannel | None, db: AsyncSession, user_id: uuid.UUID):
+    if body.enabled and not evolution.is_configured():
+        raise BusinessRuleException(
+            "O serviço da Evolution não está configurado neste servidor: defina EVOLUTION_API_KEY no .env e suba o "
+            "Compose com o perfil whatsapp (docker compose --profile whatsapp up -d)."
+        )
+    cfg = dict(current.config) if current else {}
+    if cfg.get("instance_name") and cfg["instance_name"] != body.instance_name:
+        cfg.pop("display_phone", None)  # o número exibido era da instância anterior
+    cfg.update(provider=PROVIDER_EVOLUTION, instance_name=body.instance_name, app_base_url=body.app_base_url.strip())
+    # Os segredos da Meta ficam guardados: voltar ao provedor antigo não obriga a digitar tudo de novo.
+    await save_channel(db, WHATSAPP_CHANNEL, body.enabled, cfg, dict(current.secrets) if current else {})
+    await _audit_config(db, WHATSAPP_CHANNEL, body.enabled, user_id)
+    await db.commit()
+    return _whatsapp_out(await load_channel(db, WHATSAPP_CHANNEL))
+
+
+class WhatsAppStatus(BaseModel):
+    provider: str
+    state: str  # open | connecting | close | unconfigured | error | not_applicable
+    detail: str = ""
+    display_phone: str | None = None
+
+
+class WhatsAppConnectOut(WhatsAppStatus):
+    qr_base64: str | None = None
+    pairing_code: str | None = None
+    count: int | None = None
+
+
+async def _evolution_instance(db: AsyncSession) -> tuple[StoredChannel, str]:
+    stored = await load_channel(db, WHATSAPP_CHANNEL)
+    if stored is None or provider_of(stored) != PROVIDER_EVOLUTION:
+        raise BusinessRuleException("Esta ação vale só para o provedor Evolution. Salve a configuração com esse provedor antes.")
+    return stored, stored.config.get("instance_name") or evolution.DEFAULT_INSTANCE
+
+
+@router.get("/whatsapp/status", response_model=WhatsAppStatus, dependencies=[Manage])
+async def whatsapp_status(db: DB):
+    """Estado da conexão do número (Evolution). Para a Meta o estado vem do teste do canal."""
+    stored = await load_channel(db, WHATSAPP_CHANNEL)
+    if stored is None or provider_of(stored) != PROVIDER_EVOLUTION:
+        return WhatsAppStatus(provider=provider_of(stored), state="not_applicable")
+    instance = stored.config.get("instance_name") or evolution.DEFAULT_INSTANCE
+    state, detail = await evolution.connection_state(instance)
+    if state == "missing":
+        state = "close"
+    phone = stored.config.get("display_phone")
+    if state == "open" and not phone:
+        phone = await _remember_phone(db, stored, instance)
+    return WhatsAppStatus(provider=PROVIDER_EVOLUTION, state=state, detail=detail, display_phone=phone)
+
+
+async def _remember_phone(db: AsyncSession, stored: StoredChannel, instance: str) -> str | None:
+    """Guarda o telefone pareado (usado no link wa.me do vínculo) na primeira vez que a sessão aparece aberta."""
+    phone = await evolution.owner_phone(instance)
+    if phone:
+        await save_channel(db, WHATSAPP_CHANNEL, stored.enabled, {**stored.config, "display_phone": phone}, dict(stored.secrets))
+        await db.commit()
+    return phone
+
+
+@router.post("/whatsapp/connect", response_model=WhatsAppConnectOut, dependencies=[Manage])
+async def whatsapp_connect(db: DB, user_id: CurrentUser):
+    """Cria a instância se preciso e devolve o QR code para parear o número (a imagem nunca é gravada)."""
+    stored, instance = await _evolution_instance(db)
+    result = await evolution.connect(instance)
+    await AuditRepository(db).create(
+        event_type="notifications.whatsapp_connect_requested", entity_type="notification",
+        entity_id=uuid.uuid5(uuid.NAMESPACE_OID, f"channel:{WHATSAPP_CHANNEL}"), data={"state": result["state"]}, user_id=user_id,
+    )
+    await db.commit()
+    phone = stored.config.get("display_phone")
+    if result["state"] == "open" and not phone:
+        phone = await _remember_phone(db, stored, instance)
+    return WhatsAppConnectOut(provider=PROVIDER_EVOLUTION, display_phone=phone, **result)
+
+
+@router.post("/whatsapp/disconnect", response_model=WhatsAppStatus, dependencies=[Manage])
+async def whatsapp_disconnect(db: DB, user_id: CurrentUser):
+    """Desconecta o número (o WhatsApp do celular deixa de listar este aparelho)."""
+    stored, instance = await _evolution_instance(db)
+    ok, error = await evolution.logout(instance)
+    if not ok:
+        raise BusinessRuleException(f"A Evolution não conseguiu desconectar: {error}")
+    await save_channel(db, WHATSAPP_CHANNEL, stored.enabled, {k: v for k, v in stored.config.items() if k != "display_phone"}, dict(stored.secrets))
+    await AuditRepository(db).create(
+        event_type="notifications.whatsapp_disconnected", entity_type="notification",
+        entity_id=uuid.uuid5(uuid.NAMESPACE_OID, f"channel:{WHATSAPP_CHANNEL}"), data={}, user_id=user_id,
+    )
+    await db.commit()
+    return WhatsAppStatus(provider=PROVIDER_EVOLUTION, state="close")
 
 
 # --- Slack (administração) ------------------------------------------------------------------------

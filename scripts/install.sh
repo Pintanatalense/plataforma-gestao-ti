@@ -338,6 +338,7 @@ else
   set_env POSTGRES_PASSWORD "$(random_hex 16)"
   set_env SECRET_KEY "$(random_hex 32)"
   set_env APP_ENCRYPTION_KEY "$(fernet_key)"
+  set_env EVOLUTION_API_KEY "$(random_hex 24)"
   chmod 600 .env 2>/dev/null || true
   GENERATED=1
 fi
