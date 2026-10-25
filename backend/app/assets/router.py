@@ -42,7 +42,7 @@ async def list_categories(
     return await service.list_categories()
 
 
-@router.post("/categories", response_model=AssetCategoryResponse, dependencies=[Depends(require_permission("assets.write"))])
+@router.post("/categories", response_model=AssetCategoryResponse, dependencies=[Depends(require_permission("assets.categories.manage"))])
 async def create_category(
     schema: AssetCategoryCreate,
     service: AssetService = Depends(get_asset_service),
@@ -50,7 +50,7 @@ async def create_category(
     return await service.create_category(schema)
 
 
-@router.put("/categories/{category_id}", response_model=AssetCategoryResponse, dependencies=[Depends(require_permission("assets.write"))])
+@router.put("/categories/{category_id}", response_model=AssetCategoryResponse, dependencies=[Depends(require_permission("assets.categories.manage"))])
 async def update_category(
     category_id: uuid.UUID,
     schema: AssetCategoryUpdate,
@@ -59,7 +59,7 @@ async def update_category(
     return await service.update_category(category_id, schema)
 
 
-@router.delete("/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("assets.write"))])
+@router.delete("/categories/{category_id}", status_code=status.HTTP_204_NO_CONTENT, dependencies=[Depends(require_permission("assets.categories.manage"))])
 async def delete_category(
     category_id: uuid.UUID,
     service: AssetService = Depends(get_asset_service),
@@ -159,7 +159,7 @@ async def list_my_assets(
     "/glpi-import/analyze",
     response_model=GlpiImportAnalyzeResponse,
     summary="Analisa arquivos de inventário XML do GLPI Agent e indica ativos novos/já cadastrados",
-    dependencies=[Depends(require_permission("assets.write"))],
+    dependencies=[Depends(require_permission("assets.import"))],
 )
 async def analyze_glpi_import(
     files: list[UploadFile] = File(...),
@@ -172,7 +172,7 @@ async def analyze_glpi_import(
     "/glpi-import/execute",
     response_model=GlpiImportExecuteResponse,
     summary="Executa a importação/atualização dos ativos a partir do inventário GLPI já analisado",
-    dependencies=[Depends(require_permission("assets.write"))],
+    dependencies=[Depends(require_permission("assets.import"))],
 )
 async def execute_glpi_import(
     files: list[UploadFile] = File(...),

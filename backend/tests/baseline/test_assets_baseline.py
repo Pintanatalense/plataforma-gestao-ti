@@ -207,13 +207,14 @@ async def test_read_permission_allows_read_but_not_write(client: AsyncClient, db
     assert (await client.post(ASSETS, json=_payload(env), headers=h)).status_code == 403
 
 
-async def test_movement_permission_uses_asset_write(client: AsyncClient, db_session: AsyncSession):
-    """Movimentações usam 'assets.write' consistentemente com o restante do módulo."""
+async def test_movement_permission_uses_assets_movements_write(client: AsyncClient, db_session: AsyncSession):
+    """Movimentações exigem 'assets.movements.write' (desmembrada de 'assets.write' no PR 6 da Fase 0)."""
     env = await _env(db_session)
     asset = await make_asset(db_session, env["org"], env["cat"])
     writer = await make_user(db_session, None)
     body = {"asset_id": str(asset.id), "movement_type": "TRANSFER"}
-    assert (await client.post(MOVEMENTS, json=body, headers=headers_for(writer, "assets.write"))).status_code == 200
+    assert (await client.post(MOVEMENTS, json=body, headers=headers_for(writer, "assets.write"))).status_code == 403
+    assert (await client.post(MOVEMENTS, json=body, headers=headers_for(writer, "assets.movements.write"))).status_code == 200
 
 
 # ---------------------------------------------------------------------------

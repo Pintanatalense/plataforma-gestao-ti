@@ -210,14 +210,14 @@ export class SidebarComponent implements OnInit {
       items: [
         { icon: 'forum', label: 'Chamados', route: '/service-desk' },
         { icon: 'add_circle', label: 'Abrir Chamado', route: '/service-desk/new' },
-        { icon: 'category', label: 'Categorias de Chamados', route: '/service-desk/categories', permission: 'service_desk.tickets.manage' }
+        { icon: 'category', label: 'Categorias de Chamados', route: '/service-desk/categories', permission: 'service_desk.categories.manage' }
       ]
     },
     {
       title: 'Operações & Físico',
       items: [
         { icon: 'devices', label: 'Patrimônio & Ativos', route: '/assets', permission: 'assets.read' },
-        { icon: 'upload_file', label: 'Importar Inventário (GLPI)', route: '/assets/import-glpi', permission: 'assets.write' },
+        { icon: 'upload_file', label: 'Importar Inventário (GLPI)', route: '/assets/import-glpi', permission: 'assets.import' },
         { icon: 'category', label: 'Categorias de Ativos', route: '/assets/categories', permission: 'assets.read' },
         { icon: 'inventory_2', label: 'Estoque & Insumos', route: '/stock', permission: 'stock.read' },
         { icon: 'category', label: 'Categorias de Estoque', route: '/stock/categories', permission: 'stock.read' },

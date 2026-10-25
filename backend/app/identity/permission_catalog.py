@@ -79,7 +79,15 @@ CATALOG: tuple[PermissionSpec, ...] = (
     ),
     # Patrimônio e ativos
     PermissionSpec("assets.read", "Ver patrimônio", "Ler patrimônio e ativos", "leitura"),
-    PermissionSpec("assets.write", "Gerenciar patrimônio", "Criar/editar ativos e movimentações", "alteracao"),
+    PermissionSpec("assets.write", "Cadastrar e editar ativos", "Criar e editar ativos e seus anexos", "alteracao"),
+    PermissionSpec("assets.categories.manage", "Gerenciar categorias de ativos", "Criar, editar e excluir categorias de ativos", "alteracao"),
+    PermissionSpec(
+        "assets.movements.write",
+        "Movimentar ativos",
+        "Reservar, entregar, devolver, inspecionar e cancelar reserva de ativos",
+        "alteracao",
+    ),
+    PermissionSpec("assets.import", "Importar inventário (GLPI)", "Analisar e executar a importação de ativos do GLPI", "execucao"),
     PermissionSpec("assets.read_own", "Ver os próprios ativos", "Visualizar próprios ativos e equipamentos vinculados", "leitura"),
     # Estoque
     PermissionSpec("stock.read", "Ver estoque", "Ler estoque e insumos", "leitura"),
@@ -91,6 +99,14 @@ CATALOG: tuple[PermissionSpec, ...] = (
     PermissionSpec("audit.read", "Ver auditoria", "Visualizar logs de auditoria e trilha de conformidade", "leitura"),
     # Chamados
     PermissionSpec("service_desk.tickets.manage", "Atender chamados", "Atender e gerenciar chamados (técnico/setorial)", "alteracao"),
+    PermissionSpec(
+        "service_desk.categories.manage",
+        "Gerenciar categorias de chamados",
+        "Criar e editar categorias de chamados e o setor padrão de cada uma",
+        "alteracao",
+    ),
+    # Hoje informativas: abrir e ver os próprios chamados depende só do vínculo com um colaborador (teste em
+    # tests/access_control). Exigi-las é decisão à parte, porque tiraria o acesso de quem não tem perfil.
     PermissionSpec("service_desk.tickets.create", "Abrir chamados", "Abrir novos chamados de suporte", "alteracao"),
     PermissionSpec("service_desk.tickets.read", "Ver os próprios chamados", "Visualizar próprios chamados", "leitura"),
     PermissionSpec("service_desk.tickets.read_all", "Ver todos os chamados", "Visualizar todos os chamados da organização (Gestão)", "leitura"),
@@ -107,8 +123,22 @@ CATALOG: tuple[PermissionSpec, ...] = (
     ),
     PermissionSpec(
         "system.backup.manage",
-        "Gerenciar backups e dados de demonstração",
-        "Gerar, verificar e excluir backups; carregar, limpar e zerar dados de demonstração",
+        "Gerenciar backups",
+        "Gerar, listar, verificar e excluir backups",
+        "execucao",
+        critical=True,
+    ),
+    PermissionSpec(
+        "system.demo.manage",
+        "Dados de demonstração e de QA",
+        "Carregar e limpar dados de demonstração e a carga de QA",
+        "execucao",
+        critical=True,
+    ),
+    PermissionSpec(
+        "system.data.reset",
+        "Zerar a base",
+        "Apagar todos os dados de trabalho, mantendo usuários, perfis e configurações",
         "execucao",
         critical=True,
     ),

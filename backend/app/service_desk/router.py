@@ -8,7 +8,7 @@ from typing import Sequence
 from fastapi import APIRouter, Depends, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user_id, get_db, get_token_payload
+from app.core.dependencies import get_current_user_id, get_db, get_token_payload, require_permission
 from app.identity.repository import IdentityRepository
 from app.organization.models import Employee
 from app.service_desk.schemas import (
@@ -88,16 +88,13 @@ async def list_categories(
     "/categories",
     response_model=TicketCategoryResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Cria uma nova categoria de chamado"
+    summary="Cria uma nova categoria de chamado",
+    dependencies=[Depends(require_permission("service_desk.categories.manage"))],
 )
 async def create_category(
     schema: TicketCategoryCreate,
-    ctx: dict = Depends(get_user_context),
     session: AsyncSession = Depends(get_db)
 ) -> TicketCategoryResponse:
-    if not ctx["is_technician"]:
-        from app.core.exceptions import ForbiddenException
-        raise ForbiddenException("Apenas técnicos ou gestores podem criar categorias.")
     service = ServiceDeskService(session)
     cat = await service.create_category(schema)
     await session.commit()
@@ -106,17 +103,14 @@ async def create_category(
 @router.patch(
     "/categories/{category_id}",
     response_model=TicketCategoryResponse,
-    summary="Atualiza uma categoria existente"
+    summary="Atualiza uma categoria existente",
+    dependencies=[Depends(require_permission("service_desk.categories.manage"))],
 )
 async def update_category(
     category_id: uuid.UUID,
     schema: TicketCategoryUpdate,
-    ctx: dict = Depends(get_user_context),
     session: AsyncSession = Depends(get_db)
 ) -> TicketCategoryResponse:
-    if not ctx["is_technician"]:
-        from app.core.exceptions import ForbiddenException
-        raise ForbiddenException("Apenas técnicos ou gestores podem atualizar categorias.")
     service = ServiceDeskService(session)
     cat = await service.update_category(category_id, schema)
     await session.commit()

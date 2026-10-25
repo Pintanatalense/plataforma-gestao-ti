@@ -107,7 +107,7 @@ export const routes: Routes = [
       },
       {
         path: 'service-desk/categories',
-        canActivate: [permissionGuard('service_desk.tickets.manage')],
+        canActivate: [permissionGuard('service_desk.categories.manage')],
         loadComponent: () => import('./features/service-desk/category-list/category-list.component').then(m => m.CategoryListComponent)
       },
       {
@@ -135,7 +135,7 @@ export const routes: Routes = [
       },
       {
         path: 'assets/import-glpi',
-        canActivate: [permissionGuard('assets.write')],
+        canActivate: [permissionGuard('assets.import')],
         loadComponent: () => import('./features/assets/asset-glpi-import/asset-glpi-import.component').then(m => m.AssetGlpiImportComponent)
       },
       {
