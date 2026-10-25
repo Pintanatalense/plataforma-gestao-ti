@@ -7,6 +7,8 @@ Centraliza dependências reutilizáveis como:
 - Parâmetros de paginação
 """
 
+import ipaddress
+from functools import lru_cache
 from uuid import UUID
 
 from fastapi import Depends, Header, Request
@@ -103,20 +105,44 @@ async def get_current_user_id(
         raise UnauthorizedException("Identificação de usuário inválida no token") from exc
 
 
-async def get_current_user_ip(
-    x_forwarded_for: str | None = Header(None),
-    x_real_ip: str | None = Header(None),
-) -> str:
-    """
-    Extrai o IP do cliente da request.
+@lru_cache
+def _trusted_proxies() -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    raw = get_settings().TRUSTED_PROXIES
+    return tuple(ipaddress.ip_network(item.strip(), strict=False) for item in raw.split(",") if item.strip())
 
-    Considera headers de proxy reverso (Nginx).
+
+def _valid_ip(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        return str(ipaddress.ip_address(value.strip()))
+    except ValueError:
+        return None
+
+
+def client_ip(request: Request) -> str:
     """
-    if x_forwarded_for:
-        return x_forwarded_for.split(",")[0].strip()
-    if x_real_ip:
-        return x_real_ip
-    return "unknown"
+    IP de quem fez a requisição, para auditoria, limites e logs.
+
+    Os cabeçalhos de proxy só valem quando a conexão vem de um proxy confiável (``TRUSTED_PROXIES``, o Nginx do
+    Compose). O Nginx sobrescreve ``X-Real-IP`` e ``X-Forwarded-For`` com o IP que ele viu; por isso o cliente não
+    escolhe o próprio IP. Conexão direta de fora dessas redes: vale o IP da conexão e os cabeçalhos são ignorados.
+
+    Proxy confiável sem cabeçalho válido devolve ``"unknown"``, nunca o IP do proxy: senão todos os clientes
+    dividiriam o mesmo "IP" nos limites por IP (``"unknown"`` não conta como um IP).
+    """
+    peer = _valid_ip(request.client.host) if request.client else None
+    if peer is None:
+        return "unknown"
+    if not any(ipaddress.ip_address(peer) in network for network in _trusted_proxies()):
+        return peer
+    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0]
+    return _valid_ip(request.headers.get("x-real-ip")) or _valid_ip(forwarded) or "unknown"
+
+
+async def get_current_user_ip(request: Request) -> str:
+    """Dependência FastAPI de ``client_ip``."""
+    return client_ip(request)
 
 
 def require_any_permission(*required_permissions: str):

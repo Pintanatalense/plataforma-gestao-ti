@@ -13,7 +13,8 @@
 #   3. rota pública que lê o banco (/api/v1/organization/company/public) responde JSON;
 #   4. o frontend é servido (index com <app-root>) e uma rota do SPA cai no index;
 #   5. o caminho interno da Evolution continua bloqueado no Nginx (404);
-#   6. rota protegida sem token responde 401.
+#   6. rota protegida sem token responde 401;
+#   7. IP forjado no X-Forwarded-For não é gravado (setup inicial pelo Nginx; consulta no banco descartável).
 #
 # Segurança: projeto Compose próprio (`gti-smoke`), segredos gerados na hora e descartados, porta só em
 # 127.0.0.1, e tudo (contêineres e volumes do projeto) é apagado ao final. Não toca em gti-dev nem em produção.
@@ -108,6 +109,17 @@ status_of() { curl -s -o /dev/null -w '%{http_code}' -X "$1" "$BASE$2"; }
 check "caminho interno da Evolution bloqueado no Nginx (404)" \
   test "$(status_of POST /api/v1/integrations/whatsapp/evolution/webhook)" = "404"
 check "rota protegida sem token responde 401" test "$(status_of GET /api/v1/tickets)" = "401"
+
+# --- 7. IP real: o cliente não escolhe o IP gravado (setup inicial passa pelo bloco geral /api/ do Nginx) -----
+forged="203.0.113.77"
+setup_status="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/identity/setup" \
+  -H 'Content-Type: application/json' -H "X-Forwarded-For: $forged" -H "X-Real-IP: $forged" \
+  -d "{\"email\":\"smoke@example.com\",\"password\":\"Smoke-$(rand_hex 8)-Aa1!\",\"setup_mode\":\"CLEAN\"}")"
+saved_ip="$("${COMPOSE[@]}" exec -T postgres psql -U postgres -d gestao_ti -tAc \
+  "select last_login_ip from user_accounts where email = 'smoke@example.com'" 2>/dev/null | tr -d '[:space:]')"
+echo "setup: HTTP $setup_status, IP gravado: ${saved_ip:-<vazio>}"
+check "IP forjado no X-Forwarded-For não chega à auditoria" \
+  test "$setup_status" = "201" -a -n "$saved_ip" -a "$saved_ip" != "$forged"
 
 if [ "$failures" -gt 0 ]; then
   echo "RESULTADO: $failures verificação(ões) falharam"

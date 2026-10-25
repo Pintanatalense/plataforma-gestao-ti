@@ -18,6 +18,7 @@ from fastapi import APIRouter, Depends, Request, Response
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies import client_ip
 from app.database import get_db
 from app.notifications.channel_store import load_channel
 from app.notifications.channels.slack import SLACK_CHANNEL
@@ -73,7 +74,7 @@ async def receive_event(request: Request, db: Annotated[AsyncSession, Depends(ge
         request.headers.get("X-Slack-Signature"),
         raw,
     ):
-        logger.warning("Slack webhook com assinatura inválida ou expirada de %s", request.client.host if request.client else "?")
+        logger.warning("Slack webhook com assinatura inválida ou expirada de %s", client_ip(request))
         return Response(status_code=401)
 
     try:
