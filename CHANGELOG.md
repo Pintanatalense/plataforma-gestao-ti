@@ -15,6 +15,8 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 ### Segurança
 
 - **IP do cliente não pode mais ser forjado** na auditoria e nos limites por IP. O bloco geral `/api/` do Nginx repassava o `X-Forwarded-For` enviado pelo cliente, e o backend usava o primeiro IP dele: qualquer pessoa escolhia o IP gravado (por exemplo, no setup inicial). Agora todo bloco do Nginx sobrescreve `X-Real-IP` e `X-Forwarded-For` com o IP que ele viu, e o backend só aceita esses cabeçalhos vindos de um proxy confiável (`TRUSTED_PROXIES`, padrão: redes privadas e loopback); fora disso, vale o IP da conexão. Logs de webhook recusado passam a mostrar o IP real. Atrás de outro proxy/balanceador, configure o módulo `real_ip` do Nginx.
+- **Documentação interativa da API desligada por padrão** (`ENABLE_API_DOCS=false`): `/api/v1/docs`, `/redoc` e `openapi.json` respondem 404 numa instalação nova ou que não definiu a variável. O `docker-compose.dev.yml` liga em desenvolvimento; para ligar em outro ambiente, defina `ENABLE_API_DOCS=true` no `.env`.
+- O **worker** passa a enxergar os volumes de anexos e da logo, **só leitura** (preparação do backup completo); quem grava continua sendo o backend.
 
 ### Processo
 
