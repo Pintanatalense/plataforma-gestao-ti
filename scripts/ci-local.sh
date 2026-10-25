@@ -7,11 +7,15 @@
 #   scripts/ci-local.sh --all           # tudo, como a execução semanal
 #   scripts/ci-local.sh --only backend,frontend
 #   scripts/ci-local.sh --no-docker     # pula o build das imagens (mais rápido; o CI ainda o fará)
+#   scripts/ci-local.sh --pg-real       # força a suíte inteira em PostgreSQL real (~2× mais lenta). Sem a opção,
+#                                       # ela roda sozinha quando o CI também rodaria (ver abaixo)
 #   scripts/ci-local.sh --base origin/main
 #   make ci-local / make ci-local-full  # atalhos (Linux/WSL); no Windows: bash scripts/ci-local.sh
 #
 # Áreas e o que roda (mesma regra do .github/workflows/ci.yml):
-#   backend  (backend/)                          ruff, alembic upgrade + check, pytest (PostgreSQL descartável)
+#   backend  (backend/)                          ruff, alembic upgrade + check, pytest (PostgreSQL descartável);
+#            suíte inteira em PostgreSQL real se mudou migrations/models/repositórios/database.py/conftest.py
+#            (com --all: SQLite e PostgreSQL real, como a execução semanal)
 #   frontend (frontend/)                         npm ci, lint --quiet, test, build
 #   docker   (backend/ nginx/ frontend/ compose) build das imagens do backend e do nginx (sem publicar)
 #   scripts  (scripts/)                          shellcheck
@@ -35,14 +39,16 @@ base="origin/main"
 mode="changed"
 only=""
 with_docker=true
+pg_real=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
     --all) mode="all" ;;
     --only) only="${2:-}"; mode="only"; shift ;;
     --no-docker) with_docker=false ;;
+    --pg-real) pg_real=true ;;
     --base) base="${2:-}"; shift ;;
-    -h|--help) sed -n '2,26p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
     *) echo "Opção desconhecida: $1 (use --help)" >&2; exit 2 ;;
   esac
   shift
@@ -70,7 +76,7 @@ changed_files() {
 declare -A run=([backend]=false [frontend]=false [docker]=false [scripts]=false [audit]=false)
 files=""
 case "$mode" in
-  all) for a in "${!run[@]}"; do run[$a]=true; done ;;
+  all) for a in "${!run[@]}"; do run[$a]=true; done; pg_real=true ;;
   only)
     IFS=',' read -r -a wanted <<< "$only"
     for a in "${wanted[@]}"; do
@@ -82,12 +88,14 @@ case "$mode" in
     matches() { printf '%s\n' "$files" | grep -Eq "$1"; }
     if matches '^\.github/workflows/'; then
       for a in "${!run[@]}"; do run[$a]=true; done
+      pg_real=true
     else
       matches '^backend/' && run[backend]=true
       matches '^frontend/' && run[frontend]=true
       matches '^(backend|nginx|frontend)/|^docker-compose' && run[docker]=true
       matches '^scripts/' && run[scripts]=true
       matches '(uv\.lock|package-lock\.json)$' && run[audit]=true
+      matches '^backend/(alembic/|app/database\.py$|app/.*/(models|repository)\.py$|tests/conftest\.py$)' && pg_real=true
     fi ;;
 esac
 [ "$with_docker" = true ] || run[docker]=false
@@ -129,7 +137,14 @@ if [ "${run[backend]}" = true ]; then
   step "backend: ruff" in_backend_db "/venv/bin/ruff check app tests alembic"
   step "backend: alembic upgrade head" in_backend_db "/venv/bin/alembic upgrade head"
   step "backend: alembic check" in_backend_db "/venv/bin/alembic check"
-  step "backend: pytest" in_backend_db "/venv/bin/python -m pytest -q -p no:cacheprovider"
+  # Mesma regra do CI: SQLite (+ testes pg/migrations) por padrão; PostgreSQL real nas mudanças críticas;
+  # os dois na execução completa.
+  if [ "$pg_real" = false ] || [ "$mode" = all ]; then
+    step "backend: pytest" in_backend_db "/venv/bin/python -m pytest -q -p no:cacheprovider"
+  fi
+  if [ "$pg_real" = true ]; then
+    step "backend: pytest (PostgreSQL real)" in_backend_db "USE_PG_TEST=true /venv/bin/python -m pytest -q -p no:cacheprovider"
+  fi
 fi
 
 if [ "${run[frontend]}" = true ]; then

@@ -309,7 +309,10 @@ async def test_email_transient_failure_backs_off_then_succeeds(client: AsyncClie
         await _process_all()
     delivery = (await _deliveries(channel="email", recipient_user_id=world.requester.id))[0]
     assert (delivery.status, delivery.attempts, delivery.last_error) == ("PENDING", 1, "timeout")
-    assert delivery.next_attempt_at > datetime.now(timezone.utc).replace(tzinfo=None) or delivery.next_attempt_at.tzinfo
+    next_attempt = delivery.next_attempt_at
+    if next_attempt.tzinfo is None:  # o SQLite devolve sem fuso; o PostgreSQL, com fuso (UTC)
+        next_attempt = next_attempt.replace(tzinfo=timezone.utc)
+    assert next_attempt > datetime.now(timezone.utc)
 
     async with TestSessionLocal() as s:
         await s.execute(update(Delivery).values(next_attempt_at=datetime.now(timezone.utc) - timedelta(seconds=1)))
