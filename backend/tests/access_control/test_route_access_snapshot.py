@@ -11,8 +11,9 @@ e o diff do JSON entrar na revisão do PR. Rotas novas também aparecem no diff.
 Legenda de cada rota (pode haver mais de uma, separadas por " + "):
   sem token            nenhuma dependência de autenticação JWT (públicas, webhooks com segredo próprio, health)
   token                JWT válido de usuário ativo, sem permissão específica na dependência
-  perm:X               ``require_permission("X")`` (administrador sempre passa)
+  perm:X               ``require_permission("X")`` (administrador passa, exceto nas críticas)
   qualquer:X|Y         ``require_any_permission("X", "Y")`` (administrador sempre passa)
+  (crítica)            permissão crítica: o administrador só passa com concessão individual
   regras no handler    a decisão também depende de código dentro da rota/serviço (perfil técnico, setor,
                        solicitante, dono do ativo); coberta pelos testes de comportamento deste pacote
 """
@@ -23,6 +24,7 @@ from pathlib import Path
 
 from fastapi.routing import APIRoute, APIWebSocketRoute
 
+from app.identity.permission_catalog import is_critical
 from app.main import app
 
 SNAPSHOT = Path(__file__).with_name("route_access_snapshot.json")
@@ -69,6 +71,12 @@ def _iter_routes(routes, prefix: str = ""):
             yield prefix + getattr(route, "path", ""), route
 
 
+def _mark_critical(guard: str) -> str:
+    """Crítica: o administrador não passa sem concessão individual (PR 5)."""
+    kind, codes = guard.split(":", 1)
+    return kind + ":" + "|".join(f"{c} (crítica)" if is_critical(c) else c for c in codes.split("|"))
+
+
 def route_access_map() -> dict[str, str]:
     result: dict[str, str] = {}
     for path, route in _iter_routes(app.routes):
@@ -82,7 +90,7 @@ def route_access_map() -> dict[str, str]:
         _guards(route.dependant, found)
         if methods == ["WS"]:
             found.add("regras no handler")  # o WebSocket valida o ticket de curta duração dentro da rota
-        perms = sorted(g for g in found if g.startswith(("perm:", "qualquer:")))
+        perms = sorted(_mark_critical(g) for g in found if g.startswith(("perm:", "qualquer:")))
         parts = perms or (["token"] if "token" in found else ["sem token"])
         if "regras no handler" in found:
             parts.append("regras no handler")

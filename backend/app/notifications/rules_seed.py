@@ -91,6 +91,15 @@ DEFAULT_RULES: list[dict] = [
         "template_code": "asset.warranty_expiring",
     },
     {
+        "code": "identity.critical_changed",
+        "name": "Permissão crítica concedida ou revogada → administradores",
+        "event_type": "identity.critical_changed",
+        "condition": {"exclude_actor": False},
+        "audience": ["admins"],
+        "channels": ["in_app", "email"],
+        "template_code": "identity.critical_changed",
+    },
+    {
         "code": "channel.degraded",
         "name": "Canal degradado → administradores",
         "event_type": "channel.degraded",

@@ -26,7 +26,7 @@ Estratégia operacional de proteção de dados da **Plataforma de Gestão de TI*
 Administração → **Backups do Banco de Dados** → **Gerar Backup Agora**. A tabela lista os arquivos, com download e exclusão.
 
 ### 2.2. Pela API
-Permissão `system.backup.manage` (gerar, listar, verificar, excluir); o download exige `system.backup.download`:
+Permissão `system.backup.manage` (gerar, listar, verificar, excluir); o download exige `system.backup.download`. As duas são **críticas**: valem só por concessão individual, mesmo para administradores (ver `docs/09`, seção 2):
 
 ```bash
 curl -X POST "http://localhost/api/v1/system/backups/generate" -H "Authorization: Bearer <TOKEN>"

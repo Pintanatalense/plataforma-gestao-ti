@@ -11,7 +11,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.dependencies import get_current_user_id, get_current_user_ip, get_token_payload, require_permission
 from app.database import get_db
 from app.identity.password_reset import PasswordResetService, deliver_reset_email
+from app.identity.critical import GRANT_PERMISSION, CriticalGrantService
+from app.identity.permission_catalog import BY_CODE
 from app.identity.schemas import (
+    CriticalGrantIn,
+    CriticalGrantOut,
+    CriticalRevokeIn,
     PasswordResetAcceptedOut,
     PasswordResetConfirmIn,
     PasswordResetRequestIn,
@@ -133,6 +138,67 @@ async def change_own_password(
 async def list_permissions(db: AsyncSession = Depends(get_db)):
     service = IdentityService(db)
     return await service.list_permissions()
+
+
+# ==============================================================================
+# Permissões críticas (concessão individual, S5/A2)
+# ==============================================================================
+
+def _grant_out(grant) -> CriticalGrantOut:
+    code = grant.permission.code
+    return CriticalGrantOut(
+        permission=code,
+        label=BY_CODE[code].label if code in BY_CODE else code,
+        granted_via=grant.granted_via,
+        granted_at=grant.granted_at,
+        granted_by_user_id=grant.granted_by_user_id,
+        reason=grant.reason,
+    )
+
+
+@router.get(
+    "/users/{user_id}/critical-permissions",
+    response_model=list[CriticalGrantOut],
+    dependencies=[Depends(require_permission("identity.users.read"))],
+)
+async def list_critical_permissions(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    return [_grant_out(g) for g in await CriticalGrantService(db).list_for_user(user_id)]
+
+
+@router.post(
+    "/users/{user_id}/critical-permissions",
+    response_model=list[CriticalGrantOut],
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(require_permission(GRANT_PERMISSION))],
+)
+async def grant_critical_permission(
+    user_id: uuid.UUID,
+    schema: CriticalGrantIn,
+    actor_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    service = CriticalGrantService(db)
+    await service.grant(user_id, schema.permission, via="api", actor_id=actor_id, reason=schema.reason)
+    await db.commit()
+    return [_grant_out(g) for g in await service.list_for_user(user_id)]
+
+
+@router.delete(
+    "/users/{user_id}/critical-permissions/{permission}",
+    response_model=list[CriticalGrantOut],
+    dependencies=[Depends(require_permission(GRANT_PERMISSION))],
+)
+async def revoke_critical_permission(
+    user_id: uuid.UUID,
+    permission: str,
+    schema: CriticalRevokeIn,
+    actor_id: uuid.UUID = Depends(get_current_user_id),
+    db: AsyncSession = Depends(get_db),
+):
+    service = CriticalGrantService(db)
+    await service.revoke(user_id, permission, actor_id=actor_id, reason=schema.reason)
+    await db.commit()
+    return [_grant_out(g) for g in await service.list_for_user(user_id)]
 
 
 # ==============================================================================

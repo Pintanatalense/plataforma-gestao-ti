@@ -80,6 +80,8 @@ class IdentityRepository:
         return result.scalars().all()
 
     async def create_user(self, user: UserAccount) -> UserAccount:
+        if "critical_grants" not in user.__dict__:
+            user.critical_grants = []  # conta nova nasce sem críticas; evita carga preguiçosa na resposta
         self.session.add(user)
         await self.session.flush()
         return user
