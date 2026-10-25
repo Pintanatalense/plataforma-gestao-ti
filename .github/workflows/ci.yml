@@ -141,19 +141,52 @@ jobs:
         USE_PG_TEST: "true"
       run: uv run pytest
 
-  # As imagens que vão para produção precisam construir (sem publicar).
+  # As imagens que vão para produção precisam construir E funcionar (sem publicar).
+  # - Roda quando muda backend/, nginx/, frontend/ ou docker-compose*: mudança de código também muda a imagem.
+  # - Espera os testes: se backend-tests ou frontend-tests FALHARAM, não gasta minutos construindo. Se foram
+  #   PULADOS (PR que não mexe naquela área), roda mesmo assim: `!cancelled()` evita o skip em cadeia que um
+  #   `needs` comum causaria.
+  # - Cache de camadas no GitHub (type=gha), por imagem: camada só é reaproveitada se o que entra nela é idêntico
+  #   (o BuildKit compara o conteúdo copiado). Na execução semanal, sem cache e com pull das imagens base, para
+  #   pegar correções de segurança de python/node/nginx que mantêm a mesma tag.
+  # - Teste de fumaça (scripts/smoke-test.sh): sobe postgres + backend + worker + nginx com as imagens recém
+  #   construídas e confere health com banco e worker saudáveis, versão, migrations, seed, frontend e bloqueios.
   docker-build:
-    needs: changes
-    if: needs.changes.outputs.docker == 'true'
+    needs: [changes, backend-tests, frontend-tests]
+    if: ${{ !cancelled() && needs.changes.outputs.docker == 'true' && !contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+    - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
     - name: Build backend image
-      run: docker build -t gti-backend:ci ./backend
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: ./backend
+        tags: gti-backend:ci-local
+        load: true
+        push: false
+        pull: ${{ github.event_name == 'schedule' }}
+        no-cache: ${{ github.event_name == 'schedule' }}
+        cache-from: type=gha,scope=backend
+        cache-to: type=gha,mode=max,scope=backend
 
     - name: Build nginx image (compila o frontend Angular)
-      run: docker build -f nginx/Dockerfile -t gti-nginx:ci .
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: .
+        file: nginx/Dockerfile
+        tags: gti-nginx:ci-local
+        load: true
+        push: false
+        pull: ${{ github.event_name == 'schedule' }}
+        no-cache: ${{ github.event_name == 'schedule' }}
+        cache-from: type=gha,scope=nginx
+        cache-to: type=gha,mode=max,scope=nginx
+
+    - name: Teste de fumaça (pilha real com as imagens construídas)
+      run: scripts/smoke-test.sh
 
   # Scripts de operação (instalação, backup, restauração) são código que mexe em dados: precisam passar no shellcheck.
   shellcheck:

@@ -1,0 +1,14 @@
+# =============================================================================
+# Teste de fumaça — usado SOMENTE por scripts/smoke-test.sh, sobreposto ao docker-compose.yml.
+# Usa as imagens já construídas (CI: job docker-build; local: scripts/ci-local.sh) em vez de construir de novo.
+# =============================================================================
+services:
+  backend:
+    image: ${SMOKE_BACKEND_IMAGE:-gti-backend:ci-local}
+    pull_policy: never
+  worker:
+    image: ${SMOKE_BACKEND_IMAGE:-gti-backend:ci-local}
+    pull_policy: never
+  nginx:
+    image: ${SMOKE_NGINX_IMAGE:-gti-nginx:ci-local}
+    pull_policy: never

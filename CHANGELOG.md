@@ -16,6 +16,7 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 
 - **CI local** (`make ci-local` / `bash scripts/ci-local.sh`): as mesmas verificações do GitHub Actions, em contêineres Linux, só nas áreas alteradas, com PostgreSQL descartável em memória e o código montado só leitura. Resumo em `.ci-local/ultimo-resultado.txt`.
 - **CI do backend num job só** (`backend-tests`): lint, migrations, `alembic check` e testes sem repetir instalação e banco. A suíte inteira em PostgreSQL real passou a funcionar (o modo `USE_PG_TEST` falhava do 2º teste em diante) e roda semanalmente e nos PRs que mexem em migrations, models, repositórios ou no banco.
+- **Imagens Docker testadas de verdade** (`scripts/smoke-test.sh`, também no CI local): a pilha sobe com as imagens recém-construídas e o teste confere health com banco e worker saudáveis, versão, migrations, seed, frontend e bloqueios do Nginx. No CI, cache de camadas por imagem e build semanal sem cache; o build espera os testes. O CI local valida o próprio workflow com o actionlint.
 - **Relatório de consumo do Actions** (`scripts/ci_usage.py`, só leitura) e linha de base medida em `docs/ci-consumo.md`.
 
 ## [0.1.1] — 2026-10-23

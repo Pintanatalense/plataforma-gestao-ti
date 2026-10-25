@@ -50,7 +50,7 @@ Execução completa de um PR: **~10 a 13 min faturados**; PR só de backend: ~9 
 
 1. O antigo job `backend-postgres` **não rodava a suíte em PostgreSQL**: o `conftest.py` só usa PostgreSQL quando `USE_PG_TEST=true`, e o CI definia apenas `TEST_DATABASE_URL`. A suíte principal rodava em SQLite em memória; o PostgreSQL só servia aos testes marcados `pg`/`migrations` e ao `alembic upgrade/check`. **Corrigido no PR-C** (ver abaixo).
 2. Na execução semanal a suíte SQLite rodava **duas vezes** (`backend-tests` e `backend-postgres`). **Corrigido no PR-C**: os dois jobs viraram um só (`backend-tests`).
-3. O frontend é compilado duas vezes (`frontend-tests` e dentro da imagem nginx); a imagem é construída mas nunca iniciada. Tratado no PR-E.
+3. A imagem era construída mas nunca iniciada. **Corrigido no PR-E**: teste de fumaça com a pilha real; cache de camadas por imagem (`type=gha`), sem cache e com pull das imagens base na execução semanal; o job espera os testes e não roda se algum falhou. O frontend continua compilado duas vezes (`frontend-tests` e dentro da imagem nginx): reaproveitar o build exigiria mudar o `nginx/Dockerfile` para receber o `dist/` pronto, e a imagem deixaria de ser reproduzível sozinha. Com o cache, a compilação dentro da imagem só se repete quando o frontend muda.
 
 ## Suíte inteira em PostgreSQL real (medição de 25/10/2026, CI local, 587 testes)
 
