@@ -244,7 +244,7 @@ POST /integrations/<canal>/webhook --> InboundMessage --> ConversationEngine -->
 
 | Canal | Mecanismo | Verificação |
 |---|---|---|
-| Telegram | `secret_token` definido em `setWebhook` | cabeçalho `X-Telegram-Bot-Api-Secret-Token` com `hmac.compare_digest` |
+| Telegram | **hoje: nenhum webhook** (long polling dentro do worker, `telegram_poller.py`; ver §14.6). Só se o modo webhook for adotado: `secret_token` definido em `setWebhook` | cabeçalho `X-Telegram-Bot-Api-Secret-Token` com `hmac.compare_digest` (não implementado) |
 | Slack | Signing Secret | HMAC-SHA256 de `v0:timestamp:body` + janela de 5 min contra replay |
 | WhatsApp Meta | App Secret | `X-Hub-Signature-256` (HMAC do corpo bruto) + verificação `hub.verify_token` no GET |
 | WhatsApp Evolution | segredo configurado no webhook da instância (cabeçalho customizado) | `compare_digest` com o segredo do canal |

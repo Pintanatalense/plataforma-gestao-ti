@@ -1,7 +1,7 @@
 # Como contribuir
 
 Documentação em português; código (variáveis, funções, tabelas, endpoints) em inglês.
-O plano de evolução está em [`docs/plans/plano-diretor.md`](docs/plans/plano-diretor.md); as decisões de arquitetura,
+O plano de evolução está em [`docs/plans/plano-evolucao.md`](docs/plans/plano-evolucao.md) (o anterior, concluído, em [`plano-diretor.md`](docs/plans/plano-diretor.md)); as decisões de arquitetura,
 em [`docs/decisions/`](docs/decisions/).
 
 ## Fluxo
