@@ -78,3 +78,6 @@ pre-restore-*
 
 # Cópia dos volumes de anexos/logo gerada por scripts/backup.sh (pode conter anexos reais)
 arquivos_*.tar.gz
+
+# Resultados e logs do CI local (scripts/ci-local.sh)
+.ci-local/

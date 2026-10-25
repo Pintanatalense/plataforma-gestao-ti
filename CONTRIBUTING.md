@@ -63,7 +63,9 @@ e procura mudança de comportamento escondida em PRs "mecânicos". Achado sério
 
 O plano gratuito dá 2.000 minutos por mês (e o aviso chega aos 90%). Uma execução completa do CI custa cerca de 10 a 13 minutos faturados (medição de 24/10/2026 em [docs/ci-consumo.md](docs/ci-consumo.md), que também ensina a medir o consumo com `scripts/ci_usage.py`), por isso:
 
-- **Rode tudo localmente antes de subir** (`uv run ruff check`, `uv run pytest`, `npm run lint`, `npm test`, `shellcheck`). O CI confirma; não é para descobrir erro.
+- **Rode o CI local antes de subir**: `make ci-local` (Linux/WSL) ou `bash scripts/ci-local.sh` (Git Bash no Windows). Ele roda as mesmas verificações do CI, só nas áreas que mudaram, em contêineres Linux (Python 3.12, Node 22, PostgreSQL 16 descartável), e grava o resumo em `.ci-local/ultimo-resultado.txt` para colar no PR. `--all` roda tudo; `--no-docker` pula o build das imagens. O CI confirma; não é para descobrir erro.
+  - Precisa só do Docker ligado. O banco é criado em memória, numa rede interna sem porta, e apagado ao final; o código é montado só leitura. Nunca aponta para o banco de desenvolvimento ou de produção.
+  - Diferenças que ainda podem existir: o runner do GitHub (Ubuntu) e a versão do `uv` instalada pelo CI. Verde local reduz, mas não elimina, a chance de falha no CI.
 - **Um PR, poucos commits.** Cada `push` num PR reexecuta o que mudou. Junte as correções de revisão em um único commit em vez de um commit por achado.
 - **O CI só roda o que o PR tocou** (job `changes`): só documentação não roda nada pesado; só frontend não roda o backend. Mudar `.github/workflows/` roda tudo.
 - **Não há execução em `push` na `main`** (o PR já rodou o mesmo código). A suíte completa, inclusive SQLite e auditoria de dependências, roda toda segunda-feira e sob demanda (aba *Actions* → *CI* → *Run workflow*).

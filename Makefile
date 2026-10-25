@@ -16,12 +16,14 @@
 #   make backup        - Backup do banco (.sql.gz) + anexos e logomarca (.tar.gz) em ./backups
 #   make restore       - Restaura (FILE="banco.sql.gz" [FILES="arquivos.tar.gz"]) com backend e worker parados
 #   make verify-backup - Prova que um backup restaura, num banco temporário (FILE="banco.sql.gz")
+#   make ci-local      - Mesmas verificações do CI, em contêineres, só nas áreas alteradas (antes de publicar)
+#   make ci-local-full - Todas as verificações do CI (como a execução semanal)
 # =============================================================================
 
 install:
 	@scripts/install.sh
 
-.PHONY: install up down logs migrate migration seed test lint shell db-shell backup restore verify-backup
+.PHONY: install up down logs migrate migration seed test lint shell db-shell backup restore verify-backup ci-local ci-local-full
 
 # --- Docker ---
 up:
@@ -119,3 +121,10 @@ fe-dev:
 
 fe-build:
 	cd frontend && npm run build
+
+# --- CI local (ver scripts/ci-local.sh; no Windows sem make: bash scripts/ci-local.sh) ---
+ci-local:
+	@scripts/ci-local.sh
+
+ci-local-full:
+	@scripts/ci-local.sh --all

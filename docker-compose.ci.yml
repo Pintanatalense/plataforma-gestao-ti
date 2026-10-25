@@ -1,0 +1,87 @@
+# =============================================================================
+# CI local — usado SOMENTE por scripts/ci-local.sh (projeto `gti-ci-local`).
+#
+# Roda as mesmas verificações do GitHub Actions em contêineres Linux, para que Windows/WSL/Linux deem o
+# mesmo resultado. Segurança:
+#   - o banco é descartável: vive em memória (tmpfs), numa rede interna sem porta publicada, e o nome
+#     termina em `_test` (exigência de backend/tests/_guard.py). Nada aqui alcança o banco de dev/teste/produção;
+#   - o repositório é montado SOMENTE LEITURA: as verificações não alteram arquivos do projeto;
+#   - os únicos volumes persistentes são caches (uv, npm, venv), para as próximas execuções serem rápidas.
+# =============================================================================
+name: gti-ci-local
+
+services:
+  ci-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: gti_ci_test
+    command: ["postgres", "-c", "fsync=off", "-c", "synchronous_commit=off", "-c", "full_page_writes=off"]
+    tmpfs:
+      - /var/lib/postgresql/data
+    networks: [ci-internal]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d gti_ci_test"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  # Instala dependências e roda a auditoria: precisa de internet, NÃO enxerga o banco.
+  ci-backend:
+    build:
+      context: scripts/ci
+      dockerfile: backend.Dockerfile
+    image: gti-ci-local/backend:py3.12
+    volumes:
+      - ./backend:/src/backend:ro
+      - venv:/venv
+      - uv-cache:/cache/uv
+    networks: [ci-egress]
+
+  # Lint, migrations e testes: compartilha a rede do banco descartável (ele aparece como localhost, o único
+  # host que o guarda dos testes aceita) e não tem saída para a internet.
+  ci-backend-db:
+    image: gti-ci-local/backend:py3.12
+    depends_on:
+      ci-db:
+        condition: service_healthy
+    network_mode: "service:ci-db"
+    environment:
+      # Mesmos valores do .github/workflows/ci.yml (chaves só de CI, sem uso real).
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/gti_ci_test
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/gti_ci_test
+      SECRET_KEY: ci-only-secret-key-0123456789abcdef0123456789
+      APP_ENCRYPTION_KEY: j7aZmoHBs-fLFKl4myK4N7BqySPuIpD8OjzqKQmxKtA=
+      PYTHONPATH: /src/backend
+    volumes:
+      - ./backend:/src/backend:ro
+      - ./nginx:/src/nginx:ro   # há testes que conferem a configuração do Nginx
+      - venv:/venv:ro
+
+  ci-frontend:
+    image: node:22-alpine
+    working_dir: /work
+    environment:
+      npm_config_cache: /cache/npm
+      CI: "true"
+    volumes:
+      - ./frontend:/src/frontend:ro
+      - npm-cache:/cache/npm
+    networks: [ci-egress]
+
+  ci-shellcheck:
+    image: koalaman/shellcheck-alpine:v0.10.0
+    working_dir: /src
+    volumes:
+      - ./scripts:/src/scripts:ro
+    network_mode: none
+
+networks:
+  ci-internal:
+    internal: true   # sem saída para a internet e sem porta no host
+  ci-egress: {}       # só para baixar dependências (uv, npm)
+
+volumes:
+  venv: {}
+  uv-cache: {}
+  npm-cache: {}
