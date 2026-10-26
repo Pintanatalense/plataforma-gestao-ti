@@ -36,6 +36,7 @@
   "GET /api/v1/identity/users": "perm:identity.users.read",
   "GET /api/v1/identity/users/{user_id}": "perm:identity.users.read",
   "GET /api/v1/identity/users/{user_id}/critical-permissions": "perm:identity.users.read",
+  "GET /api/v1/identity/users/{user_id}/effective-access": "perm:identity.users.read",
   "GET /api/v1/integrations/whatsapp/templates": "qualquer:integrations.whatsapp.manage|service_desk.tickets.manage",
   "GET /api/v1/integrations/whatsapp/webhook": "sem token",
   "GET /api/v1/inventory": "perm:inventory.read",

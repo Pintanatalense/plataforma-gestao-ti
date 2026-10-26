@@ -29,7 +29,7 @@
         <th mat-header-cell *matHeaderCellDef> Permissões </th>
         <td mat-cell *matCellDef="let element">
           <span *ngFor="let perm of element.permissions; let last = last">
-            {{perm.code}}{{last ? '' : ', '}}
+            {{perm.label || perm.code}}{{last ? '' : ', '}}
           </span>
           <span *ngIf="!element.permissions || element.permissions.length === 0" class="text-muted">-</span>
         </td>

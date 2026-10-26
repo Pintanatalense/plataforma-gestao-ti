@@ -12,10 +12,11 @@ from app.core.dependencies import get_current_user_id, get_current_user_ip, get_
 from app.database import get_db
 from app.identity.password_reset import PasswordResetService, deliver_reset_email
 from app.identity.critical import GRANT_PERMISSION, CriticalGrantService
-from app.identity.permission_catalog import BY_CODE
+from app.identity.permission_catalog import BY_CODE, effective_access
 from app.identity.schemas import (
     CriticalGrantIn,
     CriticalGrantOut,
+    EffectivePermissionOut,
     CriticalRevokeIn,
     PasswordResetAcceptedOut,
     PasswordResetConfirmIn,
@@ -163,6 +164,17 @@ def _grant_out(grant) -> CriticalGrantOut:
 )
 async def list_critical_permissions(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
     return [_grant_out(g) for g in await CriticalGrantService(db).list_for_user(user_id)]
+
+
+@router.get(
+    "/users/{user_id}/effective-access",
+    response_model=list[EffectivePermissionOut],
+    dependencies=[Depends(require_permission("identity.users.read"))],
+)
+async def get_effective_access(user_id: uuid.UUID, db: AsyncSession = Depends(get_db)):
+    """Acesso efetivo da conta: cada permissão que ela tem e por quê (perfil, concessão individual, administrador)."""
+    user = await IdentityService(db).get_user(user_id, include_inactive=True)
+    return effective_access(user)
 
 
 @router.post(

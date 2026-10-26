@@ -6,6 +6,7 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 
 ### Funcionalidades
 
+- **Perfis e acesso em português**: o editor de perfis agrupa as permissões por módulo, com nome, descrição e risco; na tela de usuários, o botão *Acesso* mostra o acesso efetivo da conta (cada permissão e de onde vem: perfil, administrador ou concessão individual) e permite conceder e revogar permissões críticas a quem tem `identity.critical.grant`.
 - **Página Canais de comunicação** (`/channels`, menu Administração & Sistema), com uma aba por canal: E-mail, WhatsApp, Telegram e Slack. O SMTP e a recuperação de senha saíram do Painel Administrativo para a aba E-mail.
 - **WhatsApp pela Evolution API (sem custo por mensagem)** como novo provedor do canal, ao lado da Meta Cloud API, que continua disponível. A Evolution **não é oficial**: pode desconectar ou ter o número banido; use um chip dedicado. É um serviço opcional do Compose (`docker compose --profile whatsapp up -d`), sem porta publicada, e o pareamento é feito pelo QR code na própria aba WhatsApp. Instalações já configuradas com a Meta seguem como estavam.
 - **WhatsApp: teste, ritmo e vigilância.** Botão *Enviar teste* na aba WhatsApp; ritmo contra banimento (intervalo entre envios e teto por pessoa por hora, que adia a mensagem sem gastar tentativas); aviso aos administradores quando a sessão da Evolution cai (checagem a cada 5 minutos); a regra de falha de backup passa a incluir o WhatsApp de quem o vinculou (migration de dados que preserva regras editadas).
