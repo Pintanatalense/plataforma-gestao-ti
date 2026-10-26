@@ -24,7 +24,8 @@ from app.notifications.direct import enqueue_direct_message
 from app.notifications.linking import load_addresses
 from app.organization.models import Company
 from app.service_desk.models import Ticket, TicketInteraction
-from app.service_desk.router import get_user_context
+from app.core.access import AccessContext
+from app.core.dependencies import get_access_context
 from app.service_desk.services import ServiceDeskService
 from app.whatsapp.models import WhatsAppTemplate
 from app.whatsapp.schemas import (
@@ -179,7 +180,7 @@ async def preview_template(
 async def send_whatsapp_ticket_message(
     ticket_id: uuid.UUID,
     body: WhatsAppSendTicketRequest,
-    ctx: Annotated[dict, Depends(get_user_context)],
+    ctx: Annotated[AccessContext, Depends(get_access_context)],
     session: Annotated[AsyncSession, Depends(get_db)],
 ):
     """
@@ -189,11 +190,11 @@ async def send_whatsapp_ticket_message(
     # Mesma regra de visibilidade da API de chamados (setor responsável / atribuído / gestão).
     ticket = await ServiceDeskService(session).get_ticket_for_user(
         ticket_id=ticket_id,
-        user_employee_id=ctx["employee_id"],
-        is_technician=ctx["is_technician"],
-        can_read_all=ctx["can_read_all"],
-        user_id=ctx["user_id"],
-        sector_id=ctx["sector_id"],
+        user_employee_id=ctx.employee_id,
+        is_technician=ctx.is_technician,
+        can_read_all=ctx.can_read_all,
+        user_id=ctx.user_id,
+        sector_id=ctx.sector_id,
     )
 
     if not is_ready(WHATSAPP_CHANNEL, await load_channel(session, WHATSAPP_CHANNEL)):
@@ -232,7 +233,7 @@ async def send_whatsapp_ticket_message(
         address=address,
         recipient_user_id=requester_user.id,
         text=final_message,
-        actor_user_id=ctx["user_id"],
+        actor_user_id=ctx.user_id,
         entity_type="ticket",
         entity_id=ticket.id,
         priority=PRIORITY_BY_NUMBER[body.priority],
@@ -241,7 +242,7 @@ async def send_whatsapp_ticket_message(
     session.add(
         TicketInteraction(
             ticket_id=ticket.id,
-            author_id=ctx["user_id"],
+            author_id=ctx.user_id,
             message=f"📱 [WhatsApp enviado]\n\n{final_message}",
             is_internal=False,
         )

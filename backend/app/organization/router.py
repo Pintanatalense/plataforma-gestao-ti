@@ -11,7 +11,8 @@ import time
 import aiofiles
 
 from app.audit.repository import AuditRepository
-from app.core.dependencies import get_current_user_id, require_permission, get_token_payload
+from app.core.access import AccessContext
+from app.core.dependencies import get_access_context, get_current_user_id, require_permission
 from app.config import get_settings
 from app.core.exceptions import ValidationException
 from app.database import get_db
@@ -197,18 +198,14 @@ async def delete_sector(sector_id: uuid.UUID, db: AsyncSession = Depends(get_db)
 
 @router.get("/employees/me/details", response_model=EmployeeOut, summary="Busca o colaborador do usuário logado")
 async def get_my_employee(
-    payload: dict = Depends(get_token_payload), 
+    access: AccessContext = Depends(get_access_context),
     db: AsyncSession = Depends(get_db)
 ):
-    user_id = uuid.UUID(payload["sub"])
-    from app.identity.repository import IdentityRepository
-    repo = IdentityRepository(db)
-    user = await repo.get_user(user_id)
-    if not user or not user.employee_id:
+    if not access.employee_id:
         from app.core.exceptions import NotFoundException
-        raise NotFoundException("Employee", user_id)
+        raise NotFoundException("Employee", access.user_id)
     service = OrganizationService(db)
-    return await service.get_employee(user.employee_id, include_inactive=True)
+    return await service.get_employee(access.employee_id, include_inactive=True)
 
 
 @router.get("/employees", response_model=list[EmployeeOut], dependencies=[Depends(require_permission("organization.employees.read"))])

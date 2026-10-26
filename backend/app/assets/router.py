@@ -19,7 +19,9 @@ from app.assets.services import AssetService
 from app.assets.statement_template import BLOCK_FIELDS, DEFAULT_TEMPLATE, INLINE_FIELDS, unknown_fields
 from app.audit.repository import AuditRepository
 from app.core.exceptions import ValidationException
-from app.core.dependencies import require_permission, get_current_user_id, get_token_payload
+from app.core.access import AccessContext
+from app.core.dependencies import require_permission, get_access_context, get_current_user_id
+from app.core.exceptions import ForbiddenException
 from app.database import get_db
 from app.movements.repository import AssetMovementRepository
 
@@ -194,25 +196,14 @@ async def execute_glpi_import(
 async def get_asset(
     asset_id: uuid.UUID,
     service: AssetService = Depends(get_asset_service),
-    payload: dict = Depends(get_token_payload),
-    current_user_id: uuid.UUID = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_db),
+    access: AccessContext = Depends(get_access_context),
 ):
-    permissions = payload.get("permissions", [])
-    is_admin = payload.get("is_admin", False)
-    if is_admin or "assets.read" in permissions:
-        return await service.get_asset(asset_id)
-
-    if "assets.read_own" in permissions:
-        from app.identity.repository import IdentityRepository
-        repo = IdentityRepository(session)
-        user = await repo.get_user(current_user_id)
-        asset = await service.get_asset(asset_id)
-        if user and user.employee_id and asset.employee_id == user.employee_id:
-            return asset
-
-    from app.core.exceptions import ForbiddenException
-    raise ForbiddenException("Permissão insuficiente para visualizar este ativo.")
+    if not (access.has("assets.read") or access.has("assets.read_own")):
+        raise ForbiddenException("Permissão insuficiente para visualizar este ativo.")
+    asset = await service.get_asset(asset_id)
+    if not access.can_read_asset(asset):
+        raise ForbiddenException("Permissão insuficiente para visualizar este ativo.")
+    return asset
 
 
 @router.post("", response_model=AssetResponse, dependencies=[Depends(require_permission("assets.write"))])
@@ -242,24 +233,13 @@ async def update_asset(
 async def get_responsibility_statement(
     asset_id: uuid.UUID,
     service: AssetService = Depends(get_asset_service),
-    payload: dict = Depends(get_token_payload),
-    current_user_id: uuid.UUID = Depends(get_current_user_id),
-    session: AsyncSession = Depends(get_db),
+    access: AccessContext = Depends(get_access_context),
 ):
-    permissions = payload.get("permissions", [])
-    is_admin = payload.get("is_admin", False)
-    if not (is_admin or "assets.read" in permissions):
-        if "assets.read_own" in permissions:
-            from app.identity.repository import IdentityRepository
-            repo = IdentityRepository(session)
-            user = await repo.get_user(current_user_id)
-            asset = await service.get_asset(asset_id)
-            if not (user and user.employee_id and asset.employee_id == user.employee_id):
-                from app.core.exceptions import ForbiddenException
-                raise ForbiddenException("Permissão insuficiente para gerar termo deste ativo.")
-        else:
-            from app.core.exceptions import ForbiddenException
+    if not access.has("assets.read"):
+        if not access.has("assets.read_own"):
             raise ForbiddenException("Permissão insuficiente.")
+        if not access.owns_asset(await service.get_asset(asset_id)):
+            raise ForbiddenException("Permissão insuficiente para gerar termo deste ativo.")
 
     html_content = await service.generate_responsibility_statement(asset_id)
     return HTMLResponse(content=html_content)
@@ -272,27 +252,19 @@ async def get_responsibility_statement(
 async def list_asset_tickets(
     asset_id: uuid.UUID,
     session: AsyncSession = Depends(get_db),
-    payload: dict = Depends(get_token_payload),
-    current_user_id: uuid.UUID = Depends(get_current_user_id),
+    service: AssetService = Depends(get_asset_service),
+    access: AccessContext = Depends(get_access_context),
 ):
     from app.service_desk.services import ServiceDeskService
     from app.service_desk.schemas import TicketResponse
 
-    permissions = payload.get("permissions", [])
-    is_admin = payload.get("is_admin", False)
-    if not (is_admin or "assets.read" in permissions or "service_desk.tickets.read" in permissions):
-        if "assets.read_own" in permissions:
-            from app.identity.repository import IdentityRepository
-            from app.assets.repository import AssetRepository
-            from app.movements.repository import AssetMovementRepository
-            user = await IdentityRepository(session).get_user(current_user_id)
-            asset = await AssetService(AssetRepository(session), AssetMovementRepository(session)).get_asset(asset_id)
-            if not (user and user.employee_id and asset.employee_id == user.employee_id):
-                from app.core.exceptions import ForbiddenException
-                raise ForbiddenException("Permissão insuficiente para visualizar chamados deste ativo.")
-        else:
-            from app.core.exceptions import ForbiddenException
+    # Comportamento atual congelado (tests/access_control): service_desk.tickets.read lista os chamados do ativo
+    # sem filtro de setor. Revisar quando o escopo por setor chegar aos ativos.
+    if not (access.has("assets.read") or access.has("service_desk.tickets.read")):
+        if not access.has("assets.read_own"):
             raise ForbiddenException("Permissão insuficiente.")
+        if not access.owns_asset(await service.get_asset(asset_id)):
+            raise ForbiddenException("Permissão insuficiente para visualizar chamados deste ativo.")
 
     sd_service = ServiceDeskService(session)
     tickets = await sd_service.list_tickets_by_asset(asset_id)

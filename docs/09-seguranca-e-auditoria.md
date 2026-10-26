@@ -24,7 +24,7 @@ Este documento consolida os controles de segurança técnica, mecanismos de prot
   * **Recuperação (acesso ao servidor):** `docker compose exec backend python -m app.cli grant-critical --email <conta> --reason "<motivo>"` concede todas à conta ativa; `python -m app.cli list-critical` lista quem tem. A pessoa precisa entrar de novo.
   * **Atualização de uma instalação existente:** quem já tinha uma crítica (administrador ou perfil) recebe a concessão equivalente, registrada na auditoria; nada muda no acesso.
 * **Anti-escalada de privilégio (gestão de usuários e perfis):** só administradores concedem ou retiram o papel de administrador; quem não é administrador só atribui perfis (e só cria perfis) com permissões que ele mesmo possui, não altera contas de administrador nem de quem tem mais permissões do que ele (incluindo redefinir a senha), e ninguém consegue desativar, excluir ou rebaixar o **último administrador ativo** (erro 409).
-* **Isolamento de Escopo Setorial:**
+* **Isolamento de Escopo Setorial** (regras num só lugar: `AccessContext`, em `backend/app/core/access.py`):
   * Solicitantes só visualizam e interagem com os chamados abertos por eles próprios.
   * Técnicos atendem chamados atribuídos a si ou ao seu setor responsável.
   * Apenas administradores e coordenadores possuem acesso irrestrito a configurações globais.

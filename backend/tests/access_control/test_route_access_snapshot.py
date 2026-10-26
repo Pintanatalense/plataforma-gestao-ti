@@ -30,7 +30,7 @@ from app.main import app
 SNAPSHOT = Path(__file__).with_name("route_access_snapshot.json")
 
 # Dependências que levam a decisão para dentro da rota.
-_HANDLER_RULES = {"get_user_context", "get_token_payload"}
+_HANDLER_RULES = {"get_access_context", "get_token_payload"}
 
 
 def _closure_value(call, name: str):

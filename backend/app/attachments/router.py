@@ -9,7 +9,8 @@ from app.attachments.access import AttachmentAction, ensure_attachment_access
 from app.attachments.repository import AttachmentRepository
 from app.attachments.schemas import AttachmentOut
 from app.attachments.service import AttachmentEntityType, AttachmentService
-from app.core.dependencies import get_current_user_id, get_token_payload
+from app.core.access import AccessContext
+from app.core.dependencies import get_access_context
 from app.database import get_db
 
 router = APIRouter(prefix="/attachments", tags=["Anexos"])
@@ -25,15 +26,14 @@ async def upload_attachment(
     entity_type: AttachmentEntityType = Form(...),
     entity_id: uuid.UUID = Form(...),
     service: AttachmentService = Depends(get_attachment_service),
-    payload: dict = Depends(get_token_payload),
-    current_user_id: uuid.UUID = Depends(get_current_user_id),
+    access: AccessContext = Depends(get_access_context),
     db: AsyncSession = Depends(get_db),
 ):
     await ensure_attachment_access(
-        db=db, payload=payload, user_id=current_user_id,
+        db=db, access=access,
         entity_type=entity_type, entity_id=entity_id, action=AttachmentAction.WRITE,
     )
-    return await service.upload_file(file, entity_type, entity_id, current_user_id)
+    return await service.upload_file(file, entity_type, entity_id, access.user_id)
 
 
 @router.get("", response_model=List[AttachmentOut])
@@ -41,12 +41,11 @@ async def list_attachments(
     entity_type: AttachmentEntityType,
     entity_id: uuid.UUID,
     service: AttachmentService = Depends(get_attachment_service),
-    payload: dict = Depends(get_token_payload),
-    current_user_id: uuid.UUID = Depends(get_current_user_id),
+    access: AccessContext = Depends(get_access_context),
     db: AsyncSession = Depends(get_db),
 ):
     await ensure_attachment_access(
-        db=db, payload=payload, user_id=current_user_id,
+        db=db, access=access,
         entity_type=entity_type, entity_id=entity_id, action=AttachmentAction.READ,
     )
     return await service.list_attachments(entity_type.value, entity_id)
@@ -56,13 +55,12 @@ async def list_attachments(
 async def download_attachment(
     attachment_id: uuid.UUID,
     service: AttachmentService = Depends(get_attachment_service),
-    payload: dict = Depends(get_token_payload),
-    current_user_id: uuid.UUID = Depends(get_current_user_id),
+    access: AccessContext = Depends(get_access_context),
     db: AsyncSession = Depends(get_db),
 ):
     attachment = await service.get_attachment(attachment_id)
     await ensure_attachment_access(
-        db=db, payload=payload, user_id=current_user_id,
+        db=db, access=access,
         entity_type=AttachmentEntityType(attachment.entity_type), entity_id=attachment.entity_id,
         action=AttachmentAction.READ, attachment=attachment,
     )
@@ -83,13 +81,12 @@ async def download_attachment(
 async def delete_attachment(
     attachment_id: uuid.UUID,
     service: AttachmentService = Depends(get_attachment_service),
-    payload: dict = Depends(get_token_payload),
-    current_user_id: uuid.UUID = Depends(get_current_user_id),
+    access: AccessContext = Depends(get_access_context),
     db: AsyncSession = Depends(get_db),
 ):
     attachment = await service.get_attachment(attachment_id)
     await ensure_attachment_access(
-        db=db, payload=payload, user_id=current_user_id,
+        db=db, access=access,
         entity_type=AttachmentEntityType(attachment.entity_type), entity_id=attachment.entity_id,
         action=AttachmentAction.DELETE, attachment=attachment,
     )

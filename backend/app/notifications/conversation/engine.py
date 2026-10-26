@@ -10,18 +10,16 @@ número/chat existe.
 """
 import logging
 import uuid
-from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm.attributes import flag_modified
 
+from app.core.access import AccessContext, load_access_context
 from app.core.exceptions import AppException
-from app.identity.models import Permission, Role, UserAccount
 from app.notifications.linking import LinkResult, redeem_link_code, unlink
 from app.notifications.models import ConversationSession, UserChannelAddress
-from app.organization.models import Employee
 from app.service_desk.models import Ticket, TicketCategory
 from app.service_desk.schemas import TicketCreate, TicketInteractionCreate
 from app.service_desk.services import ServiceDeskService
@@ -44,47 +42,9 @@ INVALID_CODE_REPLY = "Código inválido ou expirado. Gere um novo no sistema e t
 LOCKED_REPLY = "Muitas tentativas incorretas. Aguarde alguns minutos e tente novamente."
 
 
-@dataclass
-class UserCtx:
-    user_id: uuid.UUID
-    employee_id: uuid.UUID | None
-    unit_id: uuid.UUID | None
-    sector_id: uuid.UUID | None
-    name: str
-    is_admin: bool
-    permissions: set[str] = field(default_factory=set)
-
-    @property
-    def is_technician(self) -> bool:
-        return self.is_admin or "service_desk.tickets.manage" in self.permissions
-
-    @property
-    def can_read_all(self) -> bool:
-        return self.is_admin or "service_desk.tickets.read_all" in self.permissions
-
-
-async def load_user_ctx(session: AsyncSession, user_id: uuid.UUID) -> UserCtx | None:
-    """Permissões ATUAIS do usuário (banco), não as de um token antigo. Usuário inativo => None."""
-    user = (await session.execute(select(UserAccount).where(UserAccount.id == user_id))).scalar_one_or_none()
-    if user is None or not user.is_active:
-        return None
-    codes = (
-        await session.execute(
-            select(Permission.code).join(Permission.roles).join(Role.users).where(UserAccount.id == user_id)
-        )
-    ).scalars()
-    employee = None
-    if user.employee_id:
-        employee = (await session.execute(select(Employee).where(Employee.id == user.employee_id))).scalar_one_or_none()
-    return UserCtx(
-        user_id=user.id,
-        employee_id=employee.id if employee else None,
-        unit_id=employee.unit_id if employee else None,
-        sector_id=employee.sector_id if employee else None,
-        name=(employee.name if employee else user.email.split("@")[0]),
-        is_admin=bool(user.is_admin),
-        permissions=set(codes),
-    )
+# Atendimento por chat usa o mesmo contexto de acesso da API (PR 7), montado do banco (não há token).
+UserCtx = AccessContext
+load_user_ctx = load_access_context
 
 
 class ConversationEngine:
