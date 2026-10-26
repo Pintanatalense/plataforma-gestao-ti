@@ -222,39 +222,5 @@ JOBS: dict[str, Callable[[SessionFactory], Awaitable[None]]] = {
 }
 
 
-async def run_due_jobs(session_factory: SessionFactory) -> int:
-    """Executa os jobs vencidos. A próxima execução é gravada antes de rodar (não repete se travar)."""
-    now = datetime.now(timezone.utc)
-    async with session_factory() as session:
-        due = list(
-            (
-                await session.execute(
-                    select(ScheduledJob)
-                    .where(ScheduledJob.enabled.is_(True), ScheduledJob.next_run_at <= now)
-                    .with_for_update(skip_locked=True)
-                )
-            ).scalars()
-        )
-        for job in due:
-            job.next_run_at = compute_next_run(job.schedule, now)
-        names = [job.name for job in due]
-        await session.commit()
-
-    for name in names:
-        func = JOBS.get(name)
-        status, error = "ok", None
-        if func is None:
-            status, error = "error", "Job sem função registrada."
-        else:
-            try:
-                await func(session_factory)
-            except Exception as exc:
-                logger.exception("Job %s falhou", name)
-                status, error = "error", str(exc)[:1000]
-        async with session_factory() as session:
-            job = (await session.execute(select(ScheduledJob).where(ScheduledJob.name == name))).scalar_one()
-            job.last_run_at = datetime.now(timezone.utc)
-            job.last_status = status
-            job.last_error = error
-            await session.commit()
-    return len(names)
+# Execução (concessão, subprocesso, tempo máximo, nova tentativa): app/notifications/job_runner.py
+from app.notifications.job_runner import run_due_jobs  # noqa: E402, F401

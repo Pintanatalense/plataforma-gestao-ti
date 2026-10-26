@@ -106,6 +106,8 @@ services:
 
   # Worker de notificações: expande eventos em entregas, envia (in-app/e-mail), roda a agenda
   # (backup diário) e publica heartbeat. UMA réplica por desenho (ADR-013 §4.5).
+  # Dois laços independentes (ADR-024): entregas e agenda; jobs pesados rodam em subprocesso com tempo máximo.
+  # WORKER_ROLE=all (padrão) roda os dois; delivery/jobs permitem separá-los em dois contêineres.
   worker:
     build:
       context: ./backend
@@ -118,6 +120,7 @@ services:
       SECRET_KEY: ${SECRET_KEY:?Defina SECRET_KEY no .env (openssl rand -hex 32)}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?Defina APP_ENCRYPTION_KEY no .env (veja .env.example)}
       APP_TIMEZONE: ${APP_TIMEZONE:-America/Fortaleza}
+      WORKER_ROLE: ${WORKER_ROLE:-all}
       EVOLUTION_BASE_URL: http://evolution:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
       BACKUP_STORAGE_PATH: /data/backups

@@ -28,6 +28,7 @@ from app.notifications.models import (
     DeliveryAttempt,
     DomainEvent,
     NotificationRule,
+    JobRun,
     ScheduledJob,
     WorkerHeartbeat,
 )
@@ -460,6 +461,7 @@ async def list_jobs(db: DB):
                 "last_run_at": j.last_run_at,
                 "last_status": j.last_status,
                 "last_error": j.last_error,
+                "retry_attempt": j.retry_attempt,
             }
             for j in jobs
         ]
@@ -485,6 +487,30 @@ async def patch_job(name: str, body: JobPatch, db: DB, user_id: CurrentUser):
     await _audit(db, "notifications.job_updated", None, {"job": name, "enabled": job.enabled}, user_id)
     await db.commit()
     return {"name": job.name, "enabled": job.enabled}
+
+
+@router.get("/jobs/{name}/runs")
+async def list_job_runs(name: str, db: DB, limit: int = Query(20, ge=1, le=100)):
+    """Histórico das execuções (mais recentes primeiro): status, tentativa, duração e erro."""
+    await _get_job(db, name)
+    runs = (
+        await db.execute(select(JobRun).where(JobRun.job_name == name).order_by(JobRun.started_at.desc()).limit(limit))
+    ).scalars()
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "status": r.status,
+                "attempt": r.attempt,
+                "isolated": r.isolated,
+                "started_at": r.started_at,
+                "finished_at": r.finished_at,
+                "duration_ms": r.duration_ms,
+                "error": r.error,
+            }
+            for r in runs
+        ]
+    }
 
 
 @router.post("/jobs/{name}/run")

@@ -60,14 +60,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Aplicação encerrada")
 
 
-async def _worker_status(session) -> str:
-    """`healthy` se o worker de notificações publicou heartbeat há menos de 60 s (não afeta o status geral)."""
+async def _worker_status(session, name: str = "notifier") -> str:
+    """`healthy` se o laço do worker (`notifier` = entregas, `scheduler` = agenda) publicou heartbeat há menos de
+    60 s (não afeta o status geral)."""
     from sqlalchemy import select
 
     from app.notifications.models import WorkerHeartbeat
 
     try:
-        beat_at = (await session.execute(select(WorkerHeartbeat.beat_at).where(WorkerHeartbeat.name == "notifier"))).scalar_one_or_none()
+        beat_at = (await session.execute(select(WorkerHeartbeat.beat_at).where(WorkerHeartbeat.name == name))).scalar_one_or_none()
     except Exception:
         return "unknown"
     if beat_at is None:
@@ -133,11 +134,12 @@ def _mount_routers(app: FastAPI) -> None:
     async def healthcheck() -> dict:
         """Retorna status de saúde da aplicação e conexão com o banco."""
         db_status = "healthy"
-        worker_status = "unknown"
+        worker_status = scheduler_status = "unknown"
         try:
             async with AsyncSessionLocal() as session:
                 await session.execute(text("SELECT 1"))
                 worker_status = await _worker_status(session)
+                scheduler_status = await _worker_status(session, "scheduler")
         except Exception:
             db_status = "unhealthy"
 
@@ -148,6 +150,7 @@ def _mount_routers(app: FastAPI) -> None:
             "components": {
                 "database": db_status,
                 "worker": worker_status,
+                "scheduler": scheduler_status,
             },
         }
 

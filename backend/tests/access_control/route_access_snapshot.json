@@ -48,6 +48,7 @@
   "GET /api/v1/notifications/admin/deliveries": "perm:notifications.manage",
   "GET /api/v1/notifications/admin/deliveries/{delivery_id}": "perm:notifications.manage",
   "GET /api/v1/notifications/admin/jobs": "perm:notifications.manage",
+  "GET /api/v1/notifications/admin/jobs/{name}/runs": "perm:notifications.manage",
   "GET /api/v1/notifications/admin/rules": "perm:notifications.manage",
   "GET /api/v1/notifications/channels": "token",
   "GET /api/v1/notifications/email/config": "qualquer:notifications.manage|system.backup.manage (crítica)",

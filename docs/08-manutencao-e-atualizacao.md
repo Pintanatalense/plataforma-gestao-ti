@@ -117,6 +117,8 @@ O `db-init` ignora papel igual ao superusuário. Para voltar aos papéis separad
 
 ## 4. Comandos de Manutenção Rotineira
 
+* **Agenda do worker** ([ADR-024](decisions/ADR-024-worker-agenda.md)): cada execução de job fica em `job_runs` (status, tentativa, duração, erro). Pela API: `GET /api/v1/notifications/admin/jobs` (inclui `retry_attempt`) e `GET /api/v1/notifications/admin/jobs/<nome>/runs`. `timeout` = passou do tempo máximo e foi encerrado; `interrupted` = o worker caiu no meio (a execução é retomada sozinha, com nova tentativa). Para separar entregas e agenda em dois contêineres, rode um com `WORKER_ROLE=delivery` e outro com `WORKER_ROLE=jobs` (cada um com o seu heartbeat: `components.worker` e `components.scheduler` no `/api/v1/health`).
+
 * **Monitoramento de Logs em Tempo Real:**
   ```bash
   docker compose logs -f --tail=100 backend
