@@ -75,7 +75,11 @@ class Delivery(Base):
     """Uma mensagem para um destinatário por um canal, com estado de envio e retentativas."""
 
     __tablename__ = "deliveries"
-    __table_args__ = (Index("ix_deliveries_dispatch", "status", "next_attempt_at"),)
+    __table_args__ = (
+        Index("ix_deliveries_dispatch", "status", "next_attempt_at"),
+        # teto por pessoa por hora do WhatsApp (contagem de enviadas por canal, endereço e hora do envio)
+        Index("ix_deliveries_channel_address_sent", "channel", "address", "sent_at"),
+    )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     event_id: Mapped[uuid.UUID] = mapped_column(

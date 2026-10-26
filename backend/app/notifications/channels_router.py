@@ -379,7 +379,9 @@ async def whatsapp_status(db: DB):
         state = "close"
     phone = stored.config.get("display_phone")
     if state == "open" and not phone:
-        phone = await _remember_phone(db, stored, instance)
+        # Só leitura: consultar o estado não grava (a tela repete esta chamada; gravar aqui disputava com quem salva
+        # a configuração). Quem guarda o número é o "Conectar" e a checagem periódica do worker.
+        phone = await evolution.owner_phone(instance)
     return WhatsAppStatus(provider=PROVIDER_EVOLUTION, state=state, detail=detail, display_phone=phone)
 
 
