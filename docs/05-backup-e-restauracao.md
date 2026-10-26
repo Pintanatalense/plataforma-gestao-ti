@@ -16,7 +16,8 @@ Estratégia operacional de proteção de dados da **Plataforma de Gestão de TI*
 | Catálogo | tabela `db_backups` (arquivo, tamanho, SHA-256, status, quem gerou) |
 | Agendamento | job `backup.daily` do worker, **todo dia às 02:00** (não é cron); o resultado avisa os administradores (falha = prioridade crítica) |
 | Retenção | por quantidade: mantém os `BACKUP_MAX_KEEP=15` mais recentes com sucesso e apaga os demais ao gerar um novo. `BACKUP_RETENTION_DAYS` existe em `config.py`, mas **não é usado** (retenção por dias não está implementada) |
-| Escopo | **somente o banco de dados** (ver seção 7) |
+| Escopo | **somente o banco de dados** (ver seção 7), incluindo o schema `evolution_api` |
+| Papel do banco | o `pg_dump` roda com o papel da **aplicação** (`gestao_app`), que lê todas as tabelas, inclusive o schema da Evolution (só leitura); ver [ADR-022](decisions/ADR-022-papeis-de-banco.md) |
 
 ---
 
@@ -77,8 +78,8 @@ O segundo arquivo (anexos e logomarca) é opcional; sem ele só o banco é resta
 O que o script faz, em ordem (**nada é alterado antes do passo 3**):
 1. valida os arquivos (`gzip -t` / `tar -t`) e recusa um tar com caminhos fora de `data/attachments` e `app/static` (ou com `..`);
 2. grava cópias de segurança **no diretório atual** e confere que estão completas: `pre-restore-<data>.sql.gz` (banco) e, se for restaurar arquivos, `pre-restore-arquivos-<data>.tar.gz` (anexos e logo **atuais**). Se alguma falhar, **para antes de mexer em qualquer coisa**;
-3. para o `backend` **e o `worker`**;
-4. restaura o banco em transação única (`ON_ERROR_STOP`): se falhar, nada é aplicado e os serviços voltam;
+3. cria/atualiza os papéis de banco (o dump cita o papel dono e o da Evolution; ADR-022) e para o `backend` **e o `worker`**;
+4. restaura o banco em transação única (`ON_ERROR_STOP`): se falhar, nada é aplicado e os serviços voltam. Em seguida roda o `db-init`: devolve a posse das tabelas ao papel dono, reaplica as permissões da aplicação e aplica as migrations que faltarem (um backup de versão anterior sobe para a versão atual);
 5. sobe o `backend` e, se houver o segundo arquivo, extrai numa pasta temporária e **só então** troca o conteúdo de anexos/logomarca (inclusive arquivos ocultos); se a extração falhar, os arquivos atuais continuam intactos;
 6. sobe o `worker`.
 

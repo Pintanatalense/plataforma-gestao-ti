@@ -15,7 +15,9 @@
 #   5. o caminho interno da Evolution continua bloqueado no Nginx (404);
 #   6. rota protegida sem token responde 401;
 #   7. IP forjado no X-Forwarded-For não é gravado (setup inicial pelo Nginx; consulta no banco descartável);
-#   8. documentação da API desligada por padrão; worker enxerga anexos e logo, sem poder gravar.
+#   8. documentação da API desligada por padrão; worker enxerga anexos e logo, sem poder gravar;
+#   9. papéis de banco (ADR-022): backend e worker sem superusuário nem DDL, tabelas do papel dono, Evolution
+#      isolada no próprio schema, e o backup pela tela (pg_dump com o papel da aplicação) funcionando.
 #
 # Segurança: projeto Compose próprio (`gti-smoke`), segredos gerados na hora e descartados, porta só em
 # 127.0.0.1, e tudo (contêineres e volumes do projeto) é apagado ao final. Não toca em gti-dev nem em produção.
@@ -39,7 +41,7 @@ rand_hex() { "$PY" -c "import secrets; print(secrets.token_hex($1))"; }
 
 cleanup() {
   "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1
-  rm -f "$ENV_FILE"
+  rm -f "$ENV_FILE" .ci-local/smoke-setup.json
 }
 trap cleanup EXIT
 
@@ -50,6 +52,9 @@ check() { # check "descrição" condição(ões)...
 
 {
   echo "POSTGRES_PASSWORD=$(rand_hex 16)"
+  echo "DB_OWNER_PASSWORD=$(rand_hex 16)"
+  echo "DB_APP_PASSWORD=$(rand_hex 16)"
+  echo "DB_EVOLUTION_PASSWORD=$(rand_hex 16)"
   echo "SECRET_KEY=$(rand_hex 32)"
   echo "APP_ENCRYPTION_KEY=$("$PY" -c 'import base64, os; print(base64.urlsafe_b64encode(os.urandom(32)).decode())')"
   echo "HTTP_PORT=127.0.0.1:${PORT}"
@@ -113,7 +118,8 @@ check "rota protegida sem token responde 401" test "$(status_of GET /api/v1/tick
 
 # --- 7. IP real: o cliente não escolhe o IP gravado (setup inicial passa pelo bloco geral /api/ do Nginx) -----
 forged="203.0.113.77"
-setup_status="$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/api/v1/identity/setup" \
+setup_body=".ci-local/smoke-setup.json"
+setup_status="$(curl -s -o "$setup_body" -w '%{http_code}' -X POST "$BASE/api/v1/identity/setup" \
   -H 'Content-Type: application/json' -H "X-Forwarded-For: $forged" -H "X-Real-IP: $forged" \
   -d "{\"email\":\"smoke@example.com\",\"password\":\"Smoke-$(rand_hex 8)-Aa1!\",\"setup_mode\":\"CLEAN\"}")"
 saved_ip="$("${COMPOSE[@]}" exec -T postgres psql -U postgres -d gestao_ti -tAc \
@@ -129,6 +135,25 @@ worker_volumes_ro() {
     'test -d /data/attachments && test -d /app/static && ! touch /data/attachments/.w 2>/dev/null && ! touch /app/static/.w 2>/dev/null'
 }
 check "worker lê anexos e logo, só leitura" worker_volumes_ro
+
+# --- 9. papéis de banco separados (ADR-022) ------------------------------------------------------------
+db_query() { "${COMPOSE[@]}" exec -T postgres psql -U postgres -d gestao_ti -tAc "$1" 2>/dev/null | tr -d '[:space:]'; }
+app_sessions="$(db_query "select string_agg(distinct a.usename || ':' || r.rolsuper::text, ',') from pg_stat_activity a
+  join pg_roles r on r.rolname = a.usename where a.datname = 'gestao_ti' and a.usename <> current_user")"
+echo "conexões ao banco (papel:superusuário): ${app_sessions:-<nenhuma>}"
+check "backend e worker conectados só com o papel da aplicação (sem superusuário)" test "$app_sessions" = "gestao_app:false"
+privileges="$(db_query "select has_schema_privilege('gestao_app', 'public', 'CREATE')::text
+  || '|' || (select count(*) from pg_tables where schemaname = 'public' and tableowner <> 'gestao_owner')
+  || '|' || has_table_privilege('gestao_app', 'public.alembic_version', 'UPDATE')::text
+  || '|' || has_table_privilege('gestao_evolution', 'public.user_accounts', 'SELECT')::text
+  || '|' || (select pg_get_userbyid(nspowner) from pg_namespace where nspname = 'evolution_api')")"
+echo "privilégios (DDL app | tabelas de outro dono | app grava alembic_version | Evolution lê public | dono evolution_api): $privileges"
+check "aplicação sem DDL, tabelas do dono e Evolution isolada" test "$privileges" = "false|0|false|false|gestao_evolution"
+token="$("$PY" -c 'import json, sys; print(json.load(open(sys.argv[1])).get("access_token", ""))' "$setup_body" 2>/dev/null)"
+backup_status="$(curl -s -X POST "$BASE/api/v1/system/backups/generate" -H "Authorization: Bearer $token" \
+  | "$PY" -c 'import json, sys; print(json.load(sys.stdin).get("status"))' 2>/dev/null)"
+echo "backup pela tela: ${backup_status:-<sem resposta>}"
+check "backup pela tela (pg_dump com o papel da aplicação) concluído" test "$backup_status" = "SUCCESS"
 
 if [ "$failures" -gt 0 ]; then
   echo "RESULTADO: $failures verificação(ões) falharam"

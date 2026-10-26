@@ -3,6 +3,9 @@
 # Usa as imagens já construídas (CI: job docker-build; local: scripts/ci-local.sh) em vez de construir de novo.
 # =============================================================================
 services:
+  db-init:
+    image: ${SMOKE_BACKEND_IMAGE:-gti-backend:ci-local}
+    pull_policy: never
   backend:
     image: ${SMOKE_BACKEND_IMAGE:-gti-backend:ci-local}
     pull_policy: never

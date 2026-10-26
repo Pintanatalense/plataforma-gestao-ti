@@ -17,6 +17,8 @@ Este documento consolida os controles de segurança técnica, mecanismos de prot
 
 ## 2. Princípio do Menor Privilégio e Segregação de Funções
 
+* **Papéis de banco separados** ([ADR-022](decisions/ADR-022-papeis-de-banco.md)): backend e worker conectam com `gestao_app`, que lê e grava dados mas **não altera estrutura**, não usa `TRUNCATE` e só lê `alembic_version`; as tabelas pertencem a `gestao_owner`, usado só pelo serviço `db-init` para as migrations; a Evolution usa `gestao_evolution`, dona apenas do schema `evolution_api`, sem acesso às tabelas do sistema. A senha do superusuário do PostgreSQL só chega ao `db-init`. Verificado por `backend/tests/core/test_database_roles.py` e pelo teste de fumaça (item 9).
+
 * **Controle Granular por Permissões (RBAC):** Cada endpoint da API exige uma permissão explícita (ex: `system.backup.manage`, `service_desk.tickets.manage`, `integrations.whatsapp.manage`). O catálogo único (código, módulo, rótulo, descrição e risco) fica em `backend/app/identity/permission_catalog.py`; o mapa de qual permissão protege cada rota é testado em `backend/tests/access_control/`.
 * **Permissões críticas** (`system.backup.manage`, `system.backup.download`, `system.demo.manage`, `system.data.reset`, `system.data.import` e `identity.critical.grant`): valem **só por concessão individual**, nunca por perfil e nunca pelo simples "administrador". Perfis não aceitam críticas (o sistema recusa e tira as que encontrar).
   * **Concessão inicial:** quem conclui o assistente de instalação recebe todas.
