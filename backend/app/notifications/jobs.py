@@ -29,6 +29,8 @@ DEFAULT_JOBS: dict[str, str] = {
     "assets.warranty_check": "daily:08:00",
     "whatsapp.health_check": "every:5",
     "audit.retention": "daily:04:00",
+    "audit.seal": "every:1",
+    "audit.verify": "daily:04:30",
 }
 
 
@@ -130,6 +132,46 @@ async def job_audit_retention(session_factory: SessionFactory) -> None:
         logger.info("Retenção da auditoria: %s", removed)
 
 
+async def job_audit_seal(session_factory: SessionFactory) -> None:
+    """Sela os registros novos na cadeia de hash da auditoria (ADR-023)."""
+    from app.audit.chain import seal_pending
+
+    async with session_factory() as session:
+        await seal_pending(session)
+
+
+async def job_audit_verify(session_factory: SessionFactory) -> None:
+    """Recalcula a cadeia da auditoria; se quebrou, registra na própria auditoria e avisa os administradores.
+
+    O fim de cada cadeia (posição e hash) vai para o log todos os dias: guardado fora do servidor, serve de âncora
+    contra quem tivesse acesso de superusuário ao banco.
+    """
+    import uuid
+
+    from app.audit.chain import seal_pending, verify_chain
+    from app.audit.repository import AuditRepository
+
+    async with session_factory() as session:
+        await seal_pending(session)
+        statuses = await verify_chain(session)
+        broken = [s for s in statuses if s.problem]
+        for status in statuses:
+            logger.info("Cadeia da auditoria %s: %d verificados, fim %d (%s)%s", status.category, status.checked,
+                        status.last_pos, status.last_hash, f" PROBLEMA: {status.problem}" if status.problem else "")
+        if not broken:
+            return
+        problems = [{"category": s.category, "problem": s.problem} for s in broken]
+        logger.error("Cadeia da auditoria quebrada: %s", problems)
+        await AuditRepository(session).create(
+            "audit.integrity_failed", "audit_chain", uuid.uuid5(uuid.NAMESPACE_URL, "gti:audit-chain"), {"problems": problems}
+        )
+        await emit_event(
+            session, event_type="audit.integrity_failed", entity_type="audit_chain", entity_id=None,
+            payload={"problems": problems}, priority="critical",
+        )
+        await session.commit()
+
+
 async def job_whatsapp_health(session_factory: SessionFactory) -> None:
     """Avisa os administradores quando a sessão do WhatsApp (Evolution) cai, mesmo sem tráfego de mensagens.
 
@@ -175,6 +217,8 @@ JOBS: dict[str, Callable[[SessionFactory], Awaitable[None]]] = {
     "assets.warranty_check": job_warranty_check,
     "whatsapp.health_check": job_whatsapp_health,
     "audit.retention": job_audit_retention,
+    "audit.seal": job_audit_seal,
+    "audit.verify": job_audit_verify,
 }
 
 

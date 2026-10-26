@@ -11,6 +11,8 @@ Papéis:
 * **dono** (``DB_OWNER_USER``): dono das tabelas do schema ``public``; só ele roda migrations (DDL).
 * **aplicação** (``DB_APP_USER``): backend e worker. SELECT/INSERT/UPDATE/DELETE nas tabelas, sem DDL, sem
   TRUNCATE, só leitura em ``alembic_version`` e leitura no schema da Evolution (para o backup pela tela).
+  Auditoria (ADR-023): só SELECT/INSERT em ``audit_logs``; selo e retenção pelas funções ``audit_seal`` e
+  ``audit_purge`` (do dono), únicas com EXECUTE para ela.
 * **Evolution** (``DB_EVOLUTION_USER``): dono do schema ``evolution_api`` e de nada mais.
 
 Idempotente: cria ou atualiza os papéis (senha e atributos), transfere para o dono certo o que ainda pertence a
@@ -38,7 +40,10 @@ _NAME = re.compile(r"^[a-z_][a-z0-9_]{0,62}$")
 _PASSWORD = re.compile(r"^[A-Za-z0-9._~-]{16,128}$")
 _LOCK_KEY = 0x6774695F726F6C  # "gti_rol": serializa execuções simultâneas do db-init
 
-_RELKIND_KEYWORD = {"r": "TABLE", "p": "TABLE", "v": "VIEW", "m": "MATERIALIZED VIEW", "f": "FOREIGN TABLE", "S": "SEQUENCE"}
+_AUDIT_REVOKES = (("audit_logs", "UPDATE, DELETE"), ("audit_chain_state", "INSERT, UPDATE, DELETE"))
+_AUDIT_FUNCTIONS = ("audit_seal(integer)", "audit_purge(text, integer, bigint)")
+
+_RELKIND_KEYWORD ={"r": "TABLE", "p": "TABLE", "v": "VIEW", "m": "MATERIALIZED VIEW", "f": "FOREIGN TABLE", "S": "SEQUENCE"}
 
 
 class RolesConfigError(ValueError):
@@ -195,6 +200,13 @@ async def apply_roles(conn: asyncpg.Connection, spec: RolesSpec) -> dict:
             )
             if await conn.fetchval("SELECT to_regclass('public.alembic_version') IS NOT NULL"):
                 await _exec_formatted(conn, "REVOKE INSERT, UPDATE, DELETE ON %I.alembic_version FROM %I", APP_SCHEMA, app)
+            # auditoria só de inserção (ADR-023): selo e retenção apenas pelas funções do dono
+            for table, revoked in _AUDIT_REVOKES:
+                if await conn.fetchval("SELECT to_regclass($1) IS NOT NULL", f"{APP_SCHEMA}.{table}"):
+                    await _exec_formatted(conn, f"REVOKE {revoked} ON %I.%I FROM %I", APP_SCHEMA, table, app)
+            for function in _AUDIT_FUNCTIONS:
+                if await conn.fetchval("SELECT to_regprocedure($1) IS NOT NULL", f"{APP_SCHEMA}.{function}"):
+                    await _exec_formatted(conn, "GRANT EXECUTE ON FUNCTION %s TO %I", f"{APP_SCHEMA}.{function}", app)
 
             # leitura do schema da Evolution: o backup pela tela (pg_dump com o papel da aplicação) continua completo
             if await conn.fetchval("SELECT 1 FROM pg_namespace WHERE nspname = $1", EVOLUTION_SCHEMA):

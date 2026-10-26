@@ -100,6 +100,14 @@ DEFAULT_RULES: list[dict] = [
         "template_code": "identity.critical_changed",
     },
     {
+        "code": "audit.integrity_failed",
+        "name": "Trilha de auditoria alterada (cadeia de hash não confere) → administradores",
+        "event_type": "audit.integrity_failed",
+        "audience": ["admins"],
+        "channels": ["in_app", "email"],
+        "template_code": "audit.integrity_failed",
+    },
+    {
         "code": "channel.degraded",
         "name": "Canal degradado → administradores",
         "event_type": "channel.degraded",
