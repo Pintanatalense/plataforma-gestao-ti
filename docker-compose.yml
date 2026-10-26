@@ -89,6 +89,8 @@ services:
       ATTACHMENT_STORAGE_PATH: /data/attachments
       ATTACHMENT_MAX_SIZE_MB: ${ATTACHMENT_MAX_SIZE_MB:-100}
       BACKUP_STORAGE_PATH: /data/backups
+      BACKUP_INCLUDE_FILES: ${BACKUP_INCLUDE_FILES:-true}
+      BACKUP_FILES_MAX_KEEP: ${BACKUP_FILES_MAX_KEEP:-3}
       CORS_ORIGINS: ${CORS_ORIGINS:-["http://localhost"]}
     volumes:
       - attachments_data:/data/attachments
@@ -124,6 +126,8 @@ services:
       EVOLUTION_BASE_URL: http://evolution:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
       BACKUP_STORAGE_PATH: /data/backups
+      BACKUP_INCLUDE_FILES: ${BACKUP_INCLUDE_FILES:-true}
+      BACKUP_FILES_MAX_KEEP: ${BACKUP_FILES_MAX_KEEP:-3}
       ATTACHMENT_STORAGE_PATH: /data/attachments
       # Retenção da auditoria (job audit.retention, que arquiva em /data/backups/audit-archive antes de apagar)
       AUDIT_RETENTION_SECURITY_DAYS: ${AUDIT_RETENTION_SECURITY_DAYS:-1825}

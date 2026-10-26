@@ -18,7 +18,9 @@
 #   8. documentação da API desligada por padrão; worker enxerga anexos e logo, sem poder gravar;
 #   9. papéis de banco (ADR-022): backend e worker sem superusuário nem DDL, tabelas do papel dono, Evolution
 #      isolada no próprio schema, e o backup pela tela (pg_dump com o papel da aplicação) funcionando;
-#  10. auditoria imutável (ADR-023): a aplicação não apaga a trilha e o worker a sela numa cadeia íntegra.
+#  10. auditoria imutável (ADR-023): a aplicação não apaga a trilha e o worker a sela numa cadeia íntegra;
+#  11. backup completo (S10): o backup pela tela leva anexos e logomarca, RESTAURA num banco temporário (tabelas,
+#      cadeia da auditoria, anexos) e a cópia cifrada do .env abre idêntica.
 #
 # Segurança: projeto Compose próprio (`gti-smoke`), segredos gerados na hora e descartados, porta só em
 # 127.0.0.1, e tudo (contêineres e volumes do projeto) é apagado ao final. Não toca em gti-dev nem em produção.
@@ -42,7 +44,8 @@ rand_hex() { "$PY" -c "import secrets; print(secrets.token_hex($1))"; }
 
 cleanup() {
   "${COMPOSE[@]}" down -v --remove-orphans >/dev/null 2>&1
-  rm -f "$ENV_FILE" .ci-local/smoke-setup.json
+  rm -rf "$ENV_FILE" .ci-local/smoke-setup.json .ci-local/smoke-backup.json .ci-local/smoke-db.sql.gz \
+    .ci-local/smoke-files.tar.gz .ci-local/smoke-segredos
 }
 trap cleanup EXIT
 
@@ -152,10 +155,32 @@ privileges="$(db_query "select has_schema_privilege('gestao_app', 'public', 'CRE
 echo "privilégios (DDL app | tabelas de outro dono | app grava alembic_version | Evolution lê public | dono evolution_api): $privileges"
 check "aplicação sem DDL, tabelas do dono e Evolution isolada" test "$privileges" = "false|0|false|false|gestao_evolution"
 token="$("$PY" -c 'import json, sys; print(json.load(open(sys.argv[1])).get("access_token", ""))' "$setup_body" 2>/dev/null)"
-backup_status="$(curl -s -X POST "$BASE/api/v1/system/backups/generate" -H "Authorization: Bearer $token" \
-  | "$PY" -c 'import json, sys; print(json.load(sys.stdin).get("status"))' 2>/dev/null)"
+# um anexo de prova no volume (o item 11 confere que ele vai no pacote de arquivos do backup)
+"${COMPOSE[@]}" exec -T backend sh -c 'mkdir -p /data/attachments/smoke && echo prova > /data/attachments/smoke/prova.txt'
+curl -s -X POST "$BASE/api/v1/system/backups/generate" -H "Authorization: Bearer $token" -o .ci-local/smoke-backup.json
+backup_field() { "$PY" -c 'import json, sys; print(json.load(open(sys.argv[1])).get(sys.argv[2]) or "")' .ci-local/smoke-backup.json "$1" 2>/dev/null; }
+backup_status="$(backup_field status)"
 echo "backup pela tela: ${backup_status:-<sem resposta>}"
 check "backup pela tela (pg_dump com o papel da aplicação) concluído" test "$backup_status" = "SUCCESS"
+
+# --- 11. backup completo e restauração testada (S10) ---------------------------------------------------
+backup_id="$(backup_field id)"
+curl -fsS -H "Authorization: Bearer $token" "$BASE/api/v1/system/backups/$backup_id/download" -o .ci-local/smoke-db.sql.gz
+curl -fsS -H "Authorization: Bearer $token" "$BASE/api/v1/system/backups/$backup_id/download-files" -o .ci-local/smoke-files.tar.gz
+files_have_proof() { tar -tzf .ci-local/smoke-files.tar.gz 2>/dev/null | grep -qx 'data/attachments/smoke/prova.txt'; }
+check "backup leva anexos e logomarca (pacote .tar.gz no formato do restore-backup.sh)" files_have_proof
+verify_restore() {
+  COMPOSE_PROJECT_NAME="$PROJECT" COMPOSE_FILE="docker-compose.yml:docker-compose.smoke.yml" COMPOSE_PATH_SEPARATOR=":" \
+    COMPOSE_ENV_FILES="$ENV_FILE" sh scripts/verify-backup.sh .ci-local/smoke-db.sql.gz .ci-local/smoke-files.tar.gz
+}
+check "backup restaura num banco temporário (tabelas, cadeia da auditoria e anexos)" verify_restore
+secrets_roundtrip() {
+  BACKUP_SECRETS_PASSPHRASE="$(rand_hex 12)" && export BACKUP_SECRETS_PASSPHRASE
+  ENV_FILE="$ENV_FILE" sh scripts/backup-secrets.sh .ci-local/smoke-segredos > /dev/null \
+    && openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in .ci-local/smoke-segredos/segredos_gestao_ti_*.env.enc \
+         -pass env:BACKUP_SECRETS_PASSPHRASE | cmp -s - "$ENV_FILE"
+}
+check "cópia cifrada do .env abre idêntica com a senha" secrets_roundtrip
 
 # --- 10. auditoria imutável (o job audit.seal roda a cada minuto) ---------------------------------------
 audit_state=""

@@ -44,6 +44,8 @@ Thumbs.db
 
 # --- Backups ---
 backups/
+backups-segredos/
+*.env.enc
 
 # --- Pytest ---
 .pytest_cache/

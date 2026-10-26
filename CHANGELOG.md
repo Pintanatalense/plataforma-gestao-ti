@@ -15,6 +15,7 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 
 ### Confiabilidade
 
+- **Backup completo e restauração testada.** O backup da tela e o diário (02:00) passam a gerar também `arquivos_gestao_ti_*.tar.gz` com os anexos e a logomarca (no formato do `restore-backup.sh`; só nos 3 backups mais recentes, `BACKUP_FILES_MAX_KEEP`), com SHA-256 conferido no "Verificar integridade" e download próprio na tela. Nova cópia **cifrada** do `.env` à parte (`make backup-secrets`). `verify-backup.sh` passa a conferir a cadeia da auditoria e se todo anexo do banco está no pacote; o teste de fumaça gera, baixa e restaura um backup a cada mudança.
 - **Worker: job lento ou preso não atrasa mais notificações** ([ADR-024](docs/decisions/ADR-024-worker-agenda.md)). Entregas e agenda viraram laços independentes (`WORKER_ROLE=all|delivery|jobs`, cada um com heartbeat; `/api/v1/health` mostra `scheduler`). Cada execução fica em `job_runs` com concessão renovada: nunca roda em dobro e, se o worker cair no meio, a execução vira `interrupted` e é retomada. Backup, retenção e verificação da auditoria e limpeza rodam em subprocesso com tempo máximo e são encerrados (com o `pg_dump`) se passarem dele. Falhas ganham nova tentativa em 1 e 2 minutos (até 3 tentativas). Histórico em `GET /notifications/admin/jobs/<nome>/runs`.
 
 ### Segurança

@@ -19,3 +19,7 @@ class DatabaseBackupResponse(BaseModel):
     created_at: datetime
     created_by_id: uuid.UUID | None = None
     created_by_email: str | None = None
+    files_filename: str | None = None
+    files_size_bytes: int | None = None
+    files_checksum_sha256: str | None = None
+    files_count: int | None = None

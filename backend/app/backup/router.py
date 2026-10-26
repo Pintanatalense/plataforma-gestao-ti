@@ -77,6 +77,31 @@ async def download_backup(
 
 
 @router.get(
+    "/{backup_id}/download-files",
+    summary="Download protegido do pacote de anexos e logomarca do backup (.tar.gz)",
+    dependencies=[Depends(require_permission("system.backup.download"))]
+)
+async def download_backup_files(
+    backup_id: uuid.UUID,
+    session: Annotated[AsyncSession, Depends(get_db)]
+):
+    service = BackupService(session)
+    backup = await service.get_backup(backup_id)
+    file_path = service.storage_dir / backup.files_filename if backup.files_filename else None
+    if file_path is None or not file_path.exists():
+        raise HTTPException(status_code=404, detail="Este backup não tem pacote de anexos e logomarca (só os mais recentes guardam).")
+    return FileResponse(
+        path=str(file_path),
+        filename=backup.files_filename,
+        media_type="application/gzip",
+        headers={
+            "X-Checksum-SHA256": backup.files_checksum_sha256 or "",
+            "Access-Control-Expose-Headers": "Content-Disposition, X-Checksum-SHA256"
+        }
+    )
+
+
+@router.get(
     "/{backup_id}/verify",
     summary="Valida a integridade física do arquivo e o hash SHA-256 do backup",
     dependencies=[Depends(require_permission("system.backup.manage"))]
