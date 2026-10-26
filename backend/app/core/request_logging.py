@@ -60,6 +60,13 @@ class RequestIdMiddleware:
         incoming = dict(scope.get("headers") or []).get(REQUEST_ID_HEADER.encode(), b"").decode("latin-1")
         request_id = incoming if _SAFE_ID.fullmatch(incoming) else uuid.uuid4().hex
         token = _request_id.set(request_id)
+        # IP confiável (regra do proxy) para a auditoria gravada durante esta requisição.
+        from starlette.requests import Request
+
+        from app.audit.models import current_client_ip
+        from app.core.dependencies import client_ip
+
+        ip_token = current_client_ip.set(client_ip(Request(scope)))
 
         async def send_with_id(message: Message) -> None:
             if message["type"] == "http.response.start":
@@ -71,4 +78,5 @@ class RequestIdMiddleware:
         try:
             await self.app(scope, receive, send_with_id)
         finally:
+            current_client_ip.reset(ip_token)
             _request_id.reset(token)

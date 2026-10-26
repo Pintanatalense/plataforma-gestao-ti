@@ -53,7 +53,8 @@ async def clean_test_database(session: AsyncSession) -> None:
     for model in (DeliveryAttempt, Delivery, DomainEvent, InboundMessage, ConversationSession):
         await session.execute(delete(model))
     await session.execute(delete(Notification))
-    await session.execute(delete(AuditLog))
+    # só a trilha operacional; a de segurança nunca é apagada pela carga de QA (S4)
+    await session.execute(delete(AuditLog).where(AuditLog.category == "operational"))
     await session.execute(delete(Attachment))
     await session.execute(delete(InventoryAuditItem))
     await session.execute(delete(InventoryAudit))

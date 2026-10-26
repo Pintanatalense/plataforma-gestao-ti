@@ -3,7 +3,7 @@ MOD-12 — Auditoria (Router)
 """
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -26,6 +26,7 @@ async def list_audit_logs(
     event_type: str | None = Query(None, max_length=100),
     entity_type: str | None = Query(None, max_length=50),
     user: str | None = Query(None, max_length=100, description="Trecho do e-mail do usuário"),
+    category: Literal["security", "operational"] | None = Query(None, description="Segurança ou operacional"),
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     limit: int = Query(50, ge=1, le=200),
@@ -35,7 +36,7 @@ async def list_audit_logs(
     """Lista a trilha de auditoria (mais recentes primeiro), com filtros. O total vem em `X-Total-Count`."""
     items, total = await service.search(
         event_type=event_type, entity_type=entity_type, user=user,
-        date_from=date_from, date_to=date_to, limit=limit, offset=offset,
+        date_from=date_from, date_to=date_to, category=category, limit=limit, offset=offset,
     )
     response.headers["X-Total-Count"] = str(total)
     return items

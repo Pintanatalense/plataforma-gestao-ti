@@ -53,6 +53,13 @@ const EVENT_LABELS: Record<string, string> = {
             }
           </select>
         </label>
+        <label>Categoria
+          <select name="category" [(ngModel)]="filters.category" data-testid="filter-category">
+            <option value="">Todas</option>
+            <option value="security">Segurança</option>
+            <option value="operational">Operacional</option>
+          </select>
+        </label>
         <label>Usuário
           <input name="user" [(ngModel)]="filters.user" placeholder="trecho do e-mail" data-testid="filter-user" />
         </label>
@@ -70,13 +77,15 @@ const EVENT_LABELS: Record<string, string> = {
                       emptyText="Nenhum registro para esses filtros." loadingText="Carregando auditoria…" (retry)="load()">
         <div class="table-wrap">
           <table class="audit-table" data-testid="audit-table">
-            <thead><tr><th>Data/hora</th><th>Usuário</th><th>Evento</th><th>Entidade</th><th>Detalhes</th></tr></thead>
+            <thead><tr><th>Data/hora</th><th>Usuário</th><th>IP</th><th>Evento</th><th>Categoria</th><th>Entidade</th><th>Detalhes</th></tr></thead>
             <tbody>
               @for (e of entries; track e.id) {
                 <tr>
                   <td>{{ e.created_at | date: 'dd/MM/yyyy HH:mm:ss' }}</td>
                   <td>{{ e.user_email || 'Sistema / não identificado' }}</td>
+                  <td>{{ e.ip || '—' }}</td>
                   <td [title]="e.event_type">{{ label(e.event_type) }}</td>
+                  <td data-testid="audit-category">{{ e.category === 'security' ? 'Segurança' : 'Operacional' }}</td>
                   <td>{{ e.entity_type }}</td>
                   <td class="details">{{ details(e) }}</td>
                 </tr>
@@ -114,8 +123,8 @@ export class AuditComponent implements OnInit {
   private audit = inject(AuditService);
   private cdr = inject(ChangeDetectorRef);
 
-  filters: AuditFilters & { event_type: string; user: string; date_from: string; date_to: string } = {
-    event_type: '', user: '', date_from: '', date_to: ''
+  filters: AuditFilters & { event_type: string; category: string; user: string; date_from: string; date_to: string } = {
+    event_type: '', category: '', user: '', date_from: '', date_to: ''
   };
   eventTypes: string[] = [];
   entries: AuditLogEntry[] = [];
@@ -160,7 +169,7 @@ export class AuditComponent implements OnInit {
   }
 
   clear(): void {
-    this.filters = { event_type: '', user: '', date_from: '', date_to: '' };
+    this.filters = { event_type: '', category: '', user: '', date_from: '', date_to: '' };
     this.apply();
   }
 

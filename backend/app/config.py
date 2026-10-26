@@ -84,6 +84,10 @@ class Settings(BaseSettings):
     BACKUP_RETENTION_DAYS: int = 30
     BACKUP_MAX_KEEP: int = 15
 
+    # --- Auditoria (retenção por categoria; job audit.retention, que arquiva antes de apagar) ---
+    AUDIT_RETENTION_SECURITY_DAYS: int = 1825  # mínimo: 5 anos
+    AUDIT_RETENTION_OPERATIONAL_DAYS: int = 730
+
     # --- CORS ---
     CORS_ORIGINS: list[str] = ["http://localhost:4200"]
 
@@ -96,6 +100,20 @@ class Settings(BaseSettings):
                 "SECRET_KEY inválida: use um valor aleatório com pelo menos 32 caracteres "
                 "(ex.: openssl rand -hex 32) e sem o texto 'CHANGE-ME'."
             )
+        return value
+
+    @field_validator("AUDIT_RETENTION_SECURITY_DAYS")
+    @classmethod
+    def _security_audit_keeps_five_years(cls, value: int) -> int:
+        if value < 1825:
+            raise ValueError("AUDIT_RETENTION_SECURITY_DAYS: a trilha de segurança é guardada por pelo menos 1825 dias (5 anos).")
+        return value
+
+    @field_validator("AUDIT_RETENTION_OPERATIONAL_DAYS")
+    @classmethod
+    def _operational_audit_positive(cls, value: int) -> int:
+        if value < 30:
+            raise ValueError("AUDIT_RETENTION_OPERATIONAL_DAYS: mínimo de 30 dias.")
         return value
 
     @field_validator("APP_ENCRYPTION_KEY")

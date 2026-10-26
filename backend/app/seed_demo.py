@@ -105,9 +105,9 @@ async def clean_database(session: AsyncSession) -> None:
     for model in (DeliveryAttempt, Delivery, DomainEvent, InboundMessage, ConversationSession):
         await session.execute(delete(model))
 
-    # 2. Notificações e auditoria
+    # 2. Notificações e auditoria OPERACIONAL; a trilha de segurança nunca é apagada pela demonstração (S4)
     await session.execute(delete(Notification))
-    await session.execute(delete(AuditLog))
+    await session.execute(delete(AuditLog).where(AuditLog.category == "operational"))
 
     # 3. Anexos
     await session.execute(delete(Attachment))

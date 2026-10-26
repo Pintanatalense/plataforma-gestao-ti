@@ -12,10 +12,16 @@ export interface AuditLogEntry {
   user_email: string | null;
   user_name: string | null;
   created_at: string;
+  /** security (retenção de 5 anos, nunca apagada pela demonstração) ou operational */
+  category?: string;
+  actor_kind?: string;
+  ip?: string | null;
 }
 
 export interface AuditFilters {
   event_type?: string;
+  /** security | operational */
+  category?: string;
   user?: string;
   /** AAAA-MM-DD (início do dia) */
   date_from?: string;
@@ -36,6 +42,7 @@ export class AuditService {
   list(filters: AuditFilters, limit: number, offset: number): Observable<AuditPage> {
     let params = new HttpParams().set('limit', limit).set('offset', offset);
     if (filters.event_type) params = params.set('event_type', filters.event_type);
+    if (filters.category) params = params.set('category', filters.category);
     if (filters.user?.trim()) params = params.set('user', filters.user.trim());
     // datas locais do navegador convertidas para instantes UTC: o filtro cobre o dia inteiro do usuário
     if (filters.date_from) params = params.set('date_from', new Date(`${filters.date_from}T00:00:00`).toISOString());
