@@ -14,7 +14,8 @@ from sqlalchemy import case, select, update
 
 from app.notifications.channels import build_adapter
 from app.notifications.channels.base import AdapterContext, DeliveryResult, Message, Recipient, SessionFactory
-from app.notifications.models import Delivery, DeliveryAttempt
+from app.notifications.channel_store import rate_override
+from app.notifications.models import ChannelConfig, Delivery, DeliveryAttempt
 from app.notifications.outbox import emit_event
 
 logger = logging.getLogger(__name__)
@@ -33,6 +34,13 @@ def backoff_delay(attempts: int, retry_after: int | None = None) -> timedelta:
         return timedelta(seconds=retry_after)
     base = BACKOFF_SECONDS[min(max(attempts, 1), len(BACKOFF_SECONDS)) - 1]
     return timedelta(seconds=base * random.uniform(0.8, 1.2))
+
+
+def effective_rate(ceiling: float | None, override: float | None) -> float | None:
+    """Ritmo aplicado: o do administrador, nunca acima do teto do canal."""
+    if override is None:
+        return ceiling
+    return override if ceiling is None else min(ceiling, override)
 
 
 class ChannelCircuit:
@@ -69,6 +77,7 @@ class Dispatcher:
         self._ctx = AdapterContext(session_factory=session_factory)
         self._adapters: dict[str, object] = {}
         self._last_send: dict[str, float] = {}
+        self._rate_override: dict[str, float | None] = {}
         self.circuit = ChannelCircuit()
 
     def _adapter(self, channel: str):
@@ -107,6 +116,14 @@ class Dispatcher:
                 delivery.status = "SENDING"
                 delivery.locked_at = now
             await session.commit()
+            if batch:
+                # Limite do administrador (só para baixo do teto do canal), relido a cada lote: mudar na tela vale já.
+                configs = await session.execute(
+                    select(ChannelConfig.channel, ChannelConfig.config).where(
+                        ChannelConfig.channel.in_({d.channel for d in batch})
+                    )
+                )
+                self._rate_override = {channel: rate_override(config) for channel, config in configs.all()}
         return batch
 
     async def _throttle(self, channel: str, rate_per_second: float | None) -> None:
@@ -121,7 +138,8 @@ class Dispatcher:
         adapter = self._adapter(delivery.channel)
         if adapter is None:
             return DeliveryResult("permanent", error=f"Canal desconhecido: {delivery.channel}")
-        await self._throttle(delivery.channel, adapter.capabilities.rate_per_second)
+        rate = effective_rate(adapter.capabilities.rate_per_second, self._rate_override.get(delivery.channel))
+        await self._throttle(delivery.channel, rate)
         recipient = Recipient(
             address=delivery.address,
             user_id=str(delivery.recipient_user_id) if delivery.recipient_user_id else None,

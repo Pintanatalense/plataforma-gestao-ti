@@ -167,10 +167,46 @@ export interface WhatsAppConnect extends WhatsAppStatus {
   count: number | null;
 }
 
+/** O que a NOSSA integração com o canal faz hoje (ADR-025 §4). */
+export interface GatewayCapabilities {
+  rich_text: boolean;
+  inbound: boolean;
+  max_len: number | null;
+  rate_per_second: number | null;
+  formatting: 'plain' | 'html' | 'whatsapp' | 'slack';
+  attachments: boolean;
+  typing: boolean;
+  delivery_receipts: boolean;
+  read_receipts: boolean;
+}
+
+export interface Gateway {
+  channel: string;
+  enabled: boolean;
+  configured: boolean;
+  provider?: string;
+  capabilities: GatewayCapabilities;
+  limits: {
+    ceiling_rate_per_second: number | null;
+    rate_per_second: number | null;
+    effective_rate_per_second: number | null;
+    send_interval_seconds?: number;
+    max_per_hour_per_person?: number;
+  };
+}
+
 @Injectable({ providedIn: 'root' })
 export class NotificationsAdminService {
   private http = inject(HttpClient);
   private base = '/api/v1/notifications/admin';
+
+  listGateways(): Observable<{ items: Gateway[] }> {
+    return this.http.get<{ items: Gateway[] }>(`${this.base}/gateways`);
+  }
+
+  updateGatewayLimit(channel: string, ratePerSecond: number | null): Observable<Gateway> {
+    return this.http.put<Gateway>(`${this.base}/gateways/${channel}/limits`, { rate_per_second: ratePerSecond });
+  }
 
   listDeliveries(filters: DeliveryFilters = {}): Observable<{ total: number; items: DeliveryItem[] }> {
     let params = new HttpParams();

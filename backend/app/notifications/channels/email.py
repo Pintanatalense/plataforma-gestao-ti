@@ -15,7 +15,7 @@ from app.notifications.email_service import EmailService, send_smtp_raw
 
 class EmailAdapter:
     channel: ClassVar[str] = "email"
-    capabilities: ClassVar[Capabilities] = Capabilities(rich_text=True, rate_per_second=2.0)
+    capabilities: ClassVar[Capabilities] = Capabilities(rich_text=True, rate_per_second=2.0, formatting="html")
 
     def __init__(self, ctx: AdapterContext) -> None:
         self._session_factory = ctx.session_factory

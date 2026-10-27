@@ -186,6 +186,60 @@ async def job_sla_check(session_factory: SessionFactory) -> None:
 
 
 async def job_whatsapp_health(session_factory: SessionFactory) -> None:
+    """Vigia a saúde dos canais a cada 5 minutos. O nome continua o de quando só olhava o WhatsApp (a agenda e o
+    histórico de execuções já o conhecem); desde o ADR-025 M2 cobre também os outros canais habilitados."""
+    try:
+        await _watch_whatsapp(session_factory)
+    finally:
+        await _watch_other_channels(session_factory)
+
+
+# Canais vigiados pela checagem periódica (fora o WhatsApp, que tem a sua). A caixa de entrada é local e não cai.
+WATCHED_CHANNELS = ("email", "telegram", "slack", "webpush")
+
+
+async def _watch_other_channels(session_factory: SessionFactory) -> None:
+    """Mesma regra do WhatsApp: duas checagens seguidas com falha geram UM `channel.degraded` por queda; voltar a
+    funcionar rearma o aviso. Se o circuito do envio já abriu (e já avisou), não avisa de novo."""
+    from app.notifications.channel_store import load_channel
+    from app.notifications.channels import build_adapter
+    from app.notifications.channels.base import AdapterContext
+    from app.notifications.models import AutomationMark, WorkerHeartbeat
+
+    heartbeat = None
+    async with session_factory() as session:
+        heartbeat = (await session.execute(select(WorkerHeartbeat).where(WorkerHeartbeat.name == "notifier"))).scalar_one_or_none()
+    open_circuits = set(((heartbeat.info or {}) if heartbeat else {}).get("open_circuits", []))
+
+    for channel in WATCHED_CHANNELS:
+        seen_key, alerted_key = f"{channel}.down.seen", f"{channel}.down.alerted"
+        async with session_factory() as session:
+            stored = await load_channel(session, channel)
+            marks = set((await session.execute(select(AutomationMark.key).where(AutomationMark.key.in_((seen_key, alerted_key))))).scalars())
+            healthy, detail = True, ""
+            if stored is not None and stored.enabled:
+                try:
+                    health = await build_adapter(channel, AdapterContext(session_factory=session_factory)).health()
+                    healthy, detail = health.ok, health.detail
+                except Exception as exc:  # um canal com erro não impede a checagem dos outros
+                    healthy, detail = False, f"{type(exc).__name__}: {exc}"
+            if healthy:
+                if marks:
+                    await session.execute(delete(AutomationMark).where(AutomationMark.key.in_((seen_key, alerted_key))))
+            elif seen_key not in marks:
+                session.add(AutomationMark(key=seen_key))
+            elif alerted_key not in marks:
+                if channel not in open_circuits:
+                    await emit_event(
+                        session, event_type="channel.degraded", entity_type="channel", entity_id=None,
+                        payload={"channel": channel, "error": f"Checagem periódica falhou: {detail}"[:300]},
+                        priority="high",
+                    )
+                session.add(AutomationMark(key=alerted_key))
+            await session.commit()
+
+
+async def _watch_whatsapp(session_factory: SessionFactory) -> None:
     """Avisa os administradores quando a sessão do WhatsApp (Evolution) cai, mesmo sem tráfego de mensagens.
 
     Reaproveita o evento `channel.degraded` (regra para administradores por caixa de entrada e e-mail, nunca pelo

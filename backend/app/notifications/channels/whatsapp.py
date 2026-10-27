@@ -125,7 +125,10 @@ def _aware(value: datetime) -> datetime:
 
 class WhatsAppAdapter:
     channel: ClassVar[str] = WHATSAPP_CHANNEL
-    capabilities: ClassVar[Capabilities] = Capabilities(inbound=True, max_len=MAX_TEXT, rate_per_second=10.0)
+    capabilities: ClassVar[Capabilities] = Capabilities(
+        inbound=True, max_len=MAX_TEXT, rate_per_second=10.0, formatting="whatsapp",
+        delivery_receipts=True, read_receipts=True,  # Evolution (MESSAGES_UPDATE) e Meta (statuses), ADR-025 M1
+    )
 
     def __init__(self, ctx: AdapterContext) -> None:
         self._session_factory = ctx.session_factory
