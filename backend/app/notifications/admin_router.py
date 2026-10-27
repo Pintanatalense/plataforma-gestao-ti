@@ -70,10 +70,13 @@ def _like_escape(text: str) -> str:
     return text.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _origin_of(rule_id: object, event_type: str | None) -> str:
-    """De onde veio a entrega: regra, mensagem direta de uma pessoa, resposta do robô ou outra rotina do sistema."""
-    if rule_id is not None:
+def _origin_of(d: Delivery, event_type: str | None) -> str:
+    """De onde veio a entrega: regra, Central de Mensagens, mensagem direta de uma pessoa, resposta do robô ou outra
+    rotina do sistema."""
+    if d.rule_id is not None:
         return "rule"
+    if d.message_id is not None:
+        return "message"
     if event_type and event_type.endswith(".direct_message"):
         return "direct"
     if event_type == "conversation.reply":
@@ -84,12 +87,15 @@ def _origin_of(rule_id: object, event_type: str | None) -> str:
 def _origin_clause(origin: str):
     if origin == "rule":
         return Delivery.rule_id.is_not(None)
+    if origin == "message":
+        return and_(Delivery.rule_id.is_(None), Delivery.message_id.is_not(None))
+    unattached = and_(Delivery.rule_id.is_(None), Delivery.message_id.is_(None))
     if origin == "direct":
-        return and_(Delivery.rule_id.is_(None), DomainEvent.event_type.like("%.direct_message"))
+        return and_(unattached, DomainEvent.event_type.like("%.direct_message"))
     if origin == "conversation":
-        return and_(Delivery.rule_id.is_(None), DomainEvent.event_type == "conversation.reply")
+        return and_(unattached, DomainEvent.event_type == "conversation.reply")
     return and_(
-        Delivery.rule_id.is_(None),
+        unattached,
         DomainEvent.event_type.not_like("%.direct_message"),
         DomainEvent.event_type != "conversation.reply",
     )
@@ -114,7 +120,7 @@ def _delivery_out(d: Delivery, event_type: str | None, email: str | None) -> dic
         "sent_at": d.sent_at,
         "provider_status": d.provider_status,
         "provider_status_at": d.provider_status_at,
-        "origin": _origin_of(d.rule_id, event_type),
+        "origin": _origin_of(d, event_type),
     }
 
 
@@ -127,7 +133,7 @@ async def list_deliveries(
     recipient: str | None = Query(None, description="trecho do e-mail do destinatário"),
     date_from: date | None = None,
     date_to: date | None = None,
-    origin: Literal["rule", "direct", "conversation", "system"] | None = None,
+    origin: Literal["rule", "message", "direct", "conversation", "system"] | None = None,
     provider_status: Literal["accepted", "delivered", "read", "failed", "none"] | None = Query(
         None, description="confirmação do provedor; 'none' = sem confirmação"
     ),

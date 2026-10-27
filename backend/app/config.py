@@ -79,6 +79,10 @@ class Settings(BaseSettings):
     # --- Chamados ---
     TICKET_REOPEN_DAYS: int = 3
 
+    # --- Central de Mensagens (ADR-025): tetos contra disparo em massa (o WhatsApp tem ainda o teto por pessoa) ---
+    MESSAGES_MAX_RECIPIENTS: int = 50  # por envio
+    MESSAGES_MAX_PER_HOUR: int = 20  # envios por pessoa por hora (testes contam à parte: 10 por hora)
+
     # --- Backups ---
     BACKUP_STORAGE_PATH: str = "/data/backups"
     BACKUP_RETENTION_DAYS: int = 30

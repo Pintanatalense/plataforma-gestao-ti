@@ -26,6 +26,11 @@ def _html_card(heading: str, lines: list[str], quote: str | None = None, link: b
         if quote
         else ""
     )
+    return html_frame(heading, body + quote_html, link)
+
+
+def html_frame(heading: str, inner_html: str, link: bool = True) -> str:
+    """Moldura dos e-mails do sistema. `inner_html` já vem escapado por quem chama."""
     button = (
         '<p style="margin:20px 0 8px;"><a href="{{link}}" style="background:#2563eb;color:#fff;padding:10px 18px;'
         'text-decoration:none;border-radius:6px;font-weight:bold;font-size:14px;">Abrir no sistema</a></p>'
@@ -35,7 +40,7 @@ def _html_card(heading: str, lines: list[str], quote: str | None = None, link: b
     return (
         '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:640px;margin:0 auto;'
         'padding:24px;border:1px solid #e2e8f0;border-radius:8px;">'
-        f'<h2 style="color:#1e293b;margin:0 0 12px;font-size:19px;">{escape(heading)}</h2>{body}{quote_html}{button}'
+        f'<h2 style="color:#1e293b;margin:0 0 12px;font-size:19px;">{escape(heading)}</h2>{inner_html}{button}'
         '<hr style="border:0;border-top:1px solid #f1f5f9;margin:20px 0 10px;">'
         '<p style="font-size:12px;color:#94a3b8;margin:0;">Mensagem automática da Plataforma de Gestão de TI. '
         "Não responda a este e-mail.</p></div>"

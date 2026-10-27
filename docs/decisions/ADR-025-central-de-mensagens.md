@@ -196,3 +196,27 @@ seção "Validação".
   novo. Tempo máximo do job: 60 → 120 s. O e-mail não abre conexão SMTP na checagem (só confere a configuração).
 - Tela: aba **Gateways** em *Notificações — administração*.
 - Mapa de acesso: duas rotas novas com `perm:notifications.manage`.
+
+### M3 — envio manual, modelos e prévia (2026-10-27)
+
+- Migration `e2f3a4b5c6d7e`: `message_templates`, `outbound_messages`, `deliveries.message_id` (nulo no que já
+  existia) e as permissões `notifications.messages.send` e `notifications.messages.read`, concedidas só aos perfis que
+  já tinham `notifications.manage` (o Administrador as recebe pelo seed). Downgrade remove tudo isso e não toca nas
+  entregas. `notifications.messages.schedule` fica para o M4, junto com o recurso.
+- `notifications/messages.py`: marcação neutra (`**negrito**`, `- item`, links) → texto do canal (`*negrito*` no
+  WhatsApp e no Slack; sem marcas no texto simples) ou HTML escapado no e-mail (moldura `html_frame`, extraída de
+  `templates._html_card` sem mudar a saída dos e-mails atuais). Variáveis `{{nome}}`, `{{email}}`, `{{empresa}}`,
+  `{{data}}`, `{{hora}}` são preenchidas por destinatário; as demais o remetente informa, e faltar alguma é 422.
+- Alcance: com só `send`, pessoas do próprio setor (sem setor, só a si); com `notifications.manage` ou
+  `service_desk.tickets.read_all`, qualquer pessoa ativa. Cada destinatário recebe um resultado na prévia e no
+  histórico: `queued`, `no_address` (não vinculou o canal), `out_of_scope`, `inactive`, `unknown`.
+- API `/notifications/messages`: `GET /recipients` (canais verificados, nunca o endereço), `POST /preview` (não grava;
+  texto pelas funções `render_text` dos próprios adapters), `POST` com `Idempotency-Key` obrigatória (repetir devolve
+  o mesmo envio, 200), `POST /test` (só para si; 10 por hora, à parte), `GET`, `GET /{id}`, `POST /{id}/cancel` (só o
+  autor ou quem administra; cancela as PENDING), CRUD de `/templates` (só `notifications.manage`). Tetos:
+  `MESSAGES_MAX_RECIPIENTS` (50) e `MESSAGES_MAX_PER_HOUR` (20) por pessoa. Envio, cancelamento e modelos auditados.
+- Painel de entregas: origem nova `message` (entregas da Central).
+- Tela `/notifications/messages` (menu Notificações > Central de mensagens): Nova mensagem (só envia depois da prévia;
+  qualquer mudança a invalida; a chave de idempotência vale até o envio dar certo), Histórico e Modelos.
+- Não unificado: as respostas rápidas do chamado (`wa_templates`, `whatsapp/template_service.py`) mantêm a própria
+  substituição de variáveis, que é específica de chamado.
