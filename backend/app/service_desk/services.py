@@ -51,20 +51,47 @@ class ServiceDeskService:
     async def list_categories(self) -> Sequence[TicketCategory]:
         return await self.repo.list_categories()
 
-    async def create_category(self, schema: TicketCategoryCreate) -> TicketCategory:
+    async def _check_sla_policy(self, policy_id: uuid.UUID | None, can_manage_sla: bool) -> None:
+        if not can_manage_sla:
+            raise ForbiddenException("Escolher o SLA da categoria exige a permissão Gerenciar SLA.")
+        if policy_id is not None:
+            from app.sla.models import SlaPolicy
+
+            if await self.session.get(SlaPolicy, policy_id) is None:
+                raise ValidationException("Política de SLA não encontrada")
+
+    async def create_category(self, schema: TicketCategoryCreate, can_manage_sla: bool = False) -> TicketCategory:
+        if schema.sla_policy_id is not None:
+            await self._check_sla_policy(schema.sla_policy_id, can_manage_sla)
         cat = TicketCategory(
             name=schema.name,
             description=schema.description,
             is_active=schema.is_active,
             default_sector_id=schema.default_sector_id,
-            form_schema=schema.form_schema or []
+            form_schema=schema.form_schema or [],
+            sla_policy_id=schema.sla_policy_id,
         )
         return await self.repo.create_category(cat)
 
-    async def update_category(self, category_id: uuid.UUID, schema: TicketCategoryUpdate) -> TicketCategory:
+    async def update_category(
+        self, category_id: uuid.UUID, schema: TicketCategoryUpdate, can_manage_sla: bool = False,
+        user_id: uuid.UUID | None = None,
+    ) -> TicketCategory:
         cat = await self.repo.get_category(category_id)
         if not cat:
             raise NotFoundException("TicketCategory", category_id)
+        # Só vale para chamados novos: os abertos guardaram a cópia da política no ciclo (ADR-017).
+        if "sla_policy_id" in schema.model_fields_set and schema.sla_policy_id != cat.sla_policy_id:
+            await self._check_sla_policy(schema.sla_policy_id, can_manage_sla)
+            from app.audit.repository import AuditRepository
+
+            await AuditRepository(self.session).create(
+                "ticket_category.sla_changed", "ticket_category", cat.id,
+                {"from": str(cat.sla_policy_id) if cat.sla_policy_id else None,
+                 "to": str(schema.sla_policy_id) if schema.sla_policy_id else None},
+                user_id=user_id,
+            )
+            cat.sla_policy_id = schema.sla_policy_id
 
         if schema.name is not None:
             cat.name = schema.name
@@ -964,7 +991,7 @@ class ServiceDeskService:
         return mapping.get(status, status)
 
     async def _ensure_reopen_window(self, ticket: Ticket) -> None:
-        """Reabrir só vale por `TICKET_REOPEN_DAYS` dias depois de resolvido (administradores podem além disso)."""
+        """Reabrir só vale por `TICKET_REOPEN_DAYS` dias depois de resolvido (quem tem Gerenciar SLA pode além disso)."""
         days = get_settings().TICKET_REOPEN_DAYS
         resolved_at = await SlaService(self.session).resolved_at(ticket)
         if resolved_at is not None and sla_now() - resolved_at > timedelta(days=days):

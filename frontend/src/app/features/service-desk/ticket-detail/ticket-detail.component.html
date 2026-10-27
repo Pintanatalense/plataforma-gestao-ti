@@ -20,6 +20,7 @@
         <span class="meta-badge priority">
           Prioridade: {{ ticket.priority }}
         </span>
+        <app-sla-badge [sla]="ticket.sla"></app-sla-badge>
         <span class="meta-badge requester" *ngIf="ticket.requester_name">
           <mat-icon>person</mat-icon> {{ ticket.requester_name }}
         </span>

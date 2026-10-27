@@ -223,6 +223,9 @@ def _mount_routers(app: FastAPI) -> None:
     from app.notifications.email_router import router as email_router
     app.include_router(email_router, prefix=prefix)
 
+    from app.sla.router import router as sla_router
+    app.include_router(sla_router, prefix=prefix)
+
 
 # Instância da aplicação
 app = create_app()
