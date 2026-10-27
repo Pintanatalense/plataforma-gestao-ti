@@ -69,6 +69,10 @@ class NotificationRule(Base, TimestampMixin):
     audience: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     channels: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     template_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    # ADR-025 M5. {"after_minutes", "until", "audience", "channels"}; vazio = sem escalonamento (só chamados)
+    escalation: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # Entrega que falhou de vez (DEAD) é refeita por este canal, uma vez
+    fallback_channel: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
 
 class Delivery(Base):
@@ -112,6 +116,12 @@ class Delivery(Base):
     # gateway aceitou; nulo = o canal não informa ou ainda não informou.
     provider_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     provider_status_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # ADR-025 M5: entrega de escalonamento confere esta condição no envio (sem valer mais, vira SKIPPED)
+    escalation_condition: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Entrega pelo canal alternativo: aponta para a original que falhou de vez
+    fallback_of_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("deliveries.id", ondelete="SET NULL"), nullable=True
+    )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)

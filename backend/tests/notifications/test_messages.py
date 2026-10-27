@@ -88,7 +88,7 @@ async def test_sender_reaches_only_the_own_sector_and_manager_reaches_everyone(c
     assert mine["reaches_everyone"] is False
     assert {world.sender.email, world.colleague.email, world.linked.email} <= emails and world.stranger.email not in emails
     linked = next(r for r in mine["items"] if r["email"] == world.linked.email)
-    assert linked["channels"] == ["email", "in_app", "telegram"] and "777" not in str(mine)  # canais sim, endereços não
+    assert linked["channels"] == ["email", "in_app", "telegram"] and all(set(i) == {"user_id", "name", "email", "channels"} for i in mine["items"])  # canais sim, endereços não
     sender = next(r for r in mine["items"] if r["email"] == world.sender.email)
     assert "telegram" not in sender["channels"]  # vínculo não verificado não conta
 

@@ -253,3 +253,31 @@ seção "Validação".
   só agenda depois da prévia); aba nova Agendamentos (situação, próximo envio, último resultado com o motivo,
   pausar/retomar/cancelar, detalhe com próximos envios e envios feitos). O Histórico mostra o tipo "Agendado".
 - Não feito nesta etapa: editar um agendamento pela tela (a API aceita; hoje se cancela e cria outro).
+
+### M5 — eventos novos, catálogo, escalonamento e canal alternativo (2026-10-27)
+
+- Eventos novos no outbox: `ticket.asset_delivered` e `ticket.asset_returned` (ao lado da auditoria que já existia,
+  com patrimônio e nome no payload) e `job.failed` na falha da última tentativa de um job (exceto `backup.daily`, que
+  já tem `backup.failed`). `job.failed` sai **uma vez por queda** (marca `job.failed.<job>` em `automation_marks`,
+  apagada quando o job volta a dar certo), para não avisar a cada 5 minutos.
+- Regras semeadas novas (o seed só cria as que faltam; editadas não mudam): equipamento entregue → solicitante
+  (caixa de entrada, e-mail, preferido); devolvido → atendentes do setor (caixa de entrada); rotina com falha →
+  administradores (caixa de entrada, e-mail). O teste de caracterização do M0 foi atualizado de "ninguém" para isso.
+- Catálogo (`notifications/event_catalog.py`): rótulo, área, campos de payload e se aceita escalonamento.
+  `GET /notifications/admin/rules` devolve o catálogo nas opções e `in_catalog` em cada regra; a tela escolhe o evento
+  numa lista e marca as regras fora do catálogo (continuam valendo).
+- Escalonamento (ADR-013 §6.3), só em eventos de chamado com `escalation: {after_minutes (5–10080), until
+  (first_response | resolved), audience, channels?}`: o fan-out cria as entregas de escalonamento para daqui a
+  `after_minutes` (`deliveries.escalation_condition`); o despacho confere na hora, por
+  `service_desk/notification_conditions.py` (o hub não importa models de chamados, ADR-004): `first_response` vale
+  enquanto ninguém além do solicitante responder em público (nota interna não conta); `resolved`, enquanto o chamado
+  não for resolvido ou encerrado. Sem valer, a entrega vira `SKIPPED` com o motivo. Erro ao conferir: envia.
+  O simulador mostra as entregas de escalonamento.
+- Canal alternativo (`notification_rules.fallback_channel`): entrega da regra que vira `DEAD` é refeita uma vez pelo
+  outro canal (`deliveries.fallback_of_id`), só se o canal está habilitado, a pessoa tem endereço verificado nele e
+  ainda não recebe este evento por lá. A entrega alternativa não gera outra.
+- Migration `a5b6c7d8e9f0a`: as quatro colunas, vazias no que já existe. Downgrade cancela escalonamentos pendentes
+  (sairiam sem conferir a condição) e remove só as colunas.
+- Ligar ou desligar uma regra na tela agora reenvia escalonamento e canal alternativo (sem isso, o botão os apagaria).
+- Corrigido de passagem: teste da M3 que procurava o texto "777" na resposta falhava quando um UUID sorteado o
+  continha; passou a conferir as chaves de cada pessoa.

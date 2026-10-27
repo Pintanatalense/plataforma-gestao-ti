@@ -741,8 +741,19 @@ class ServiceDeskService:
             },
             user_id=author_id,
         )
+        await self._emit_asset_event("ticket.asset_delivered", ticket, asset_id, author_id)
 
         return movement
+
+    async def _emit_asset_event(self, event_type: str, ticket: Ticket, asset_id: uuid.UUID, actor_id: uuid.UUID) -> None:
+        """Equipamento entregue ou devolvido também vai ao outbox (ADR-025 M5), ao lado da auditoria."""
+        from app.assets.models import Asset
+
+        asset = await self.session.get(Asset, asset_id)
+        await self._emit_ticket_event(
+            event_type, ticket, actor_id, asset_id=str(asset_id),
+            asset_tag=asset.tag if asset else "", asset_name=asset.name if asset else "",
+        )
 
     async def return_ticket_asset(
         self,
@@ -788,6 +799,7 @@ class ServiceDeskService:
             },
             user_id=author_id,
         )
+        await self._emit_asset_event("ticket.asset_returned", ticket, asset_id, author_id)
 
         return movement
 

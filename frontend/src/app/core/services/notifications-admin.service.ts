@@ -55,13 +55,39 @@ export interface RuleItem {
   audience: string[];
   channels: string[];
   template_code: string;
+  escalation: RuleEscalation | Record<string, never>;
+  fallback_channel: string | null;
+  in_catalog: boolean;
 }
 
-export type RuleInput = Omit<RuleItem, 'id' | 'code' | 'is_system'>;
+/** Escalonamento (ADR-013 §6.3, ADR-025 M5): só em eventos de chamado. */
+export interface RuleEscalation {
+  after_minutes: number;
+  until: 'first_response' | 'resolved';
+  audience: string[];
+  channels?: string[];
+}
+
+export type RuleInput = Omit<RuleItem, 'id' | 'code' | 'is_system' | 'in_catalog'>;
+
+export interface CatalogEvent {
+  code: string;
+  label: string;
+  area: string;
+  payload_keys: string[];
+  escalation: boolean;
+}
 
 export interface RulesResponse {
   items: RuleItem[];
-  options: { channels: string[]; templates: string[]; selectors: string[] };
+  options: {
+    channels: string[];
+    templates: string[];
+    selectors: string[];
+    events: CatalogEvent[];
+    audiences: Record<string, string>;
+    escalation_until: Record<string, string>;
+  };
 }
 
 export interface SimulatedDelivery {
@@ -70,6 +96,7 @@ export interface SimulatedDelivery {
   channel: string;
   title: string | null;
   send_at: string;
+  escalation_until?: string | null;
 }
 
 export interface ChannelHealth {
