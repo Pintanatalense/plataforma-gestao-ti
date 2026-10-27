@@ -8,7 +8,8 @@ Convenções:
 - Violação só quando `agora > vencimento` (estritamente); resolver exatamente no vencimento cumpre o prazo.
 - Ciclo `PAUSED` não tem vencimento (`*_due_at` nulos); os minutos úteis que faltam ficam em `remaining_*_minutes`.
 - `BREACHED` quando há QUALQUER violação registrada no ciclo (primeira resposta ou resolução).
-- Violação registrada nunca é apagada (único `(ciclo, tipo)`); o job `sla.check` (P4-S3) cobre quem ninguém tocou.
+- Violação registrada nunca é apagada (único `(ciclo, tipo)`); o job `sla.check` (`app.sla.checker`) registra a de
+  quem ninguém tocou e avisa a equipe.
 """
 
 from __future__ import annotations
@@ -132,18 +133,20 @@ class SlaService:
             else:
                 setattr(cycle, f"{kind}_due_at", add_business_minutes(now, minutes - consumed, calendar))
 
-    async def _register_breach(self, cycle: TicketSlaCycle, kind: str, due_at: datetime, now: datetime) -> None:
+    async def _register_breach(self, cycle: TicketSlaCycle, kind: str, due_at: datetime, now: datetime) -> bool:
+        """Registra a violação se ainda não existe; devolve True só quando esta chamada a criou."""
         exists = (
             await self.session.execute(select(SlaBreach.id).where(SlaBreach.cycle_id == cycle.id, SlaBreach.kind == kind))
         ).first()
         if exists:
-            return
+            return False
         try:
             async with self.session.begin_nested():
                 self.session.add(SlaBreach(cycle_id=cycle.id, kind=kind, due_at=due_at, detected_at=now))
                 await self.session.flush()
         except IntegrityError:  # outra transação registrou no mesmo instante: idempotente
-            pass
+            return False
+        return True
 
     async def _register_overdue(self, cycle: TicketSlaCycle, now: datetime) -> None:
         if cycle.state != "RUNNING":
@@ -298,6 +301,7 @@ class SlaService:
             return
         now = _now()
         active.priority = priority
+        active.first_response_warned_at = active.resolution_warned_at = None  # prazos novos: o alerta vale de novo
         self._apply_targets(active, now)
         await self._register_overdue(active, now)
 

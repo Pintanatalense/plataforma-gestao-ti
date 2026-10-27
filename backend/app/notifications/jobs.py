@@ -31,6 +31,7 @@ DEFAULT_JOBS: dict[str, str] = {
     "audit.retention": "daily:04:00",
     "audit.seal": "every:1",
     "audit.verify": "daily:04:30",
+    "sla.check": "every:5",
 }
 
 
@@ -172,6 +173,18 @@ async def job_audit_verify(session_factory: SessionFactory) -> None:
         await session.commit()
 
 
+async def job_sla_check(session_factory: SessionFactory) -> None:
+    """Registra violações de SLA de quem ninguém tocou e avisa a equipe (proximidade e violação; ADR-017)."""
+    from app.sla.checker import check_sla
+
+    async with session_factory() as session:
+        result = await check_sla(session)
+        await session.commit()
+    if result.breaches or result.warnings or result.breach_notices:
+        logger.info("SLA: %d violações novas, %d alertas de proximidade, %d avisos de violação",
+                    result.breaches, result.warnings, result.breach_notices)
+
+
 async def job_whatsapp_health(session_factory: SessionFactory) -> None:
     """Avisa os administradores quando a sessão do WhatsApp (Evolution) cai, mesmo sem tráfego de mensagens.
 
@@ -228,6 +241,7 @@ JOBS: dict[str, Callable[[SessionFactory], Awaitable[None]]] = {
     "audit.retention": job_audit_retention,
     "audit.seal": job_audit_seal,
     "audit.verify": job_audit_verify,
+    "sla.check": job_sla_check,
 }
 
 
