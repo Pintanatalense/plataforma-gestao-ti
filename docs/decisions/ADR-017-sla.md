@@ -81,6 +81,9 @@ Decisões tomadas ao integrar com os chamados (o texto acima continua valendo):
 - **Reabertura (`TICKET_REOPEN_DAYS`):** vale para **todos** os chamados (com ou sem SLA); a data da resolução vem do ciclo ou, sem ciclo, da auditoria (`ticket.closed` com status `RESOLVED`). Fora do prazo a API responde **422** (`ValidationException`). Como a permissão `service_desk.sla.manage` só nasce no P4-S4 (telas de administração), **por enquanto só administradores** reabrem fora do prazo; o P4-S4 troca isso pela permissão.
 - **Primeira resposta** conta no ponto de criação da interação, inclusive a nota de um `PATCH` de status; a nota interna e o próprio solicitante não contam.
 - **API:** `GET/POST/PATCH /tickets` devolvem `sla` (`NOT_APPLICABLE` sem política ativa ou sem alvo para a prioridade).
+- **Tudo ou nada:** o SLA roda na transação do chamado; se o cálculo falhar, a alteração do chamado também não é gravada (erro 500, nada pela metade). Escolha deliberada, para o relógio nunca divergir do chamado.
+- **Chamado encerrado** (`RESOLVED`/`CLOSED`) nunca ganha relógio por troca de categoria. A janela de reabertura é checada **antes** de qualquer campo ser alterado.
+- **Pendências conhecidas (menores):** dois pedidos simultâneos de troca de categoria num chamado sem ciclo podem colidir no único `(ticket_id, cycle)` (um deles falha com 500 e pode repetir); no ciclo reaberto por `RESTART` o intervalo "resolvido" entre ciclos conta como consumido numa troca de categoria posterior; a suíte desta etapa roda em SQLite — a validação em PostgreSQL (`FOR UPDATE`, datas com fuso) fica para o CI do PR.
 - **Fora desta etapa (P4-S3):** o job `sla.check`, os alertas de proximidade e o registro de violações de chamados que ninguém tocou.
 
 ## Entrega em PRs

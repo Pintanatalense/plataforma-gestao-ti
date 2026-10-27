@@ -293,6 +293,9 @@ class ServiceDeskService:
         old_assignee = ticket.assignee_id
         old_category_id = ticket.category_id
 
+        if schema.status is not None and ticket.status == "RESOLVED" and schema.status in REOPEN_TO and not can_reopen_late:
+            await self._ensure_reopen_window(ticket)  # antes de mexer em qualquer campo do chamado
+
         if schema.category_id is not None:
             cat = await self.repo.get_category(schema.category_id)
             if not cat or not cat.is_active:
@@ -309,8 +312,6 @@ class ServiceDeskService:
             # Regras de máquina de estados simples:
             if ticket.status == "CLOSED" and schema.status != "CLOSED":
                 raise StateTransitionException("Chamado", ticket.status, schema.status)
-            if ticket.status == "RESOLVED" and schema.status in REOPEN_TO and not can_reopen_late:
-                await self._ensure_reopen_window(ticket)
             ticket.status = schema.status
 
         if schema.custom_fields is not None:

@@ -267,6 +267,10 @@ class SlaService:
         if rule == "CONTINUE":
             due = _aware(last.resolution_due_at) if last.resolution_due_at else now
             remaining = business_minutes_between(_aware(last.resolved_at), due, calendar) if last.resolved_at else 0
+            if last.first_response_at is None and last.first_response_due_at is not None:
+                first_due = _aware(last.first_response_due_at)
+                first_left = business_minutes_between(_aware(last.resolved_at), first_due, calendar) if last.resolved_at else 0
+                last.first_response_due_at = add_business_minutes(now, first_left, calendar)
             if last.resolved_at:
                 last.paused_minutes += business_minutes_between(_aware(last.resolved_at), now, calendar)  # o tempo resolvido não conta
             last.resolved_at = None
@@ -299,10 +303,12 @@ class SlaService:
 
     async def category_changed(self, ticket) -> None:
         """Categoria nova: o ciclo atual vira SUPERSEDED e (se a nova política vale) um novo parte do início do chamado."""
+        if ticket.status in ("RESOLVED", "CLOSED"):
+            return  # chamado encerrado (com ou sem ciclo): trocar a categoria não abre relógio nem muda o resultado
         cycles = await self._cycles(ticket.id, lock=True)
         last = cycles[-1] if cycles else None
         if last is not None and last.state in FINAL_STATES:
-            return  # chamado já resolvido: o resultado do ciclo não muda
+            return
         policy = await self._active_policy(ticket.category_id)
         active = last if last is not None and last.state in ACTIVE_STATES else None
         if active is not None and policy is not None and active.policy_id == policy.id:
@@ -343,9 +349,11 @@ class SlaService:
 
     async def resolved_at(self, ticket) -> datetime | None:
         """Quando o chamado foi resolvido pela última vez (ciclo; para chamados sem SLA, a auditoria)."""
-        for cycle in reversed(await self._cycles(ticket.id)):
-            if cycle.resolved_at is not None:
-                return _aware(cycle.resolved_at)
+        cycles = await self._cycles(ticket.id)
+        if cycles and cycles[-1].state != "SUPERSEDED":
+            for cycle in reversed(cycles):
+                if cycle.resolved_at is not None:
+                    return _aware(cycle.resolved_at)
         from app.audit.models import AuditLog
 
         rows = (
@@ -380,7 +388,8 @@ class SlaService:
                 for breach in (await self.session.execute(select(SlaBreach).where(SlaBreach.cycle_id.in_(cycle_ids)))).scalars():
                     breaches.setdefault(breach.cycle_id, []).append(breach.kind)
         for ticket in tickets:
-            cycle = next((c for c in reversed(by_ticket.get(ticket.id, [])) if c.state != "SUPERSEDED"), None)
+            history = by_ticket.get(ticket.id, [])
+            cycle = history[-1] if history and history[-1].state != "SUPERSEDED" else None  # substituído = sem relógio
             ticket.sla = SlaInfo() if cycle is None else SlaInfo(
                 state=cycle.state, policy_name=cycle.snapshot.get("policy_name"), cycle=cycle.cycle, priority=cycle.priority,
                 first_response_due_at=cycle.first_response_due_at, resolution_due_at=cycle.resolution_due_at,

@@ -515,3 +515,53 @@ async def test_resolved_at_falls_back_to_the_audit_trail_for_tickets_without_cyc
     assert await SlaService(db_session).resolved_at(row) is None
     await patch(client, world, ticket, status="RESOLVED")
     assert await SlaService(db_session).resolved_at(row) is not None
+
+
+# --- Revisão independente do P4-S2 ------------------------------------------------------------------
+
+
+async def test_category_change_on_a_resolved_ticket_without_a_cycle_opens_no_clock(client: AsyncClient, db_session: AsyncSession, world: World):
+    plain = await make_ticket_category(db_session, world.org.sector)
+    ticket = await open_ticket(client, world, category=plain)
+    await patch(client, world, ticket, status="RESOLVED")
+    sla = await patch(client, world, ticket, category_id=str(world.category.id))
+    assert sla["state"] == "NOT_APPLICABLE"
+    assert (await db_session.execute(select(TicketSlaCycle))).scalars().all() == []
+    # fechado também
+    await patch(client, world, ticket, status="CLOSED")
+    other = await make_ticket_category(db_session, world.org.sector)
+    other.sla_policy_id = world.policy.id
+    await db_session.commit()
+    assert (await patch(client, world, ticket, category_id=str(other.id)))["state"] == "NOT_APPLICABLE"
+
+
+async def test_after_restart_a_category_without_policy_leaves_no_clock_and_no_stale_resolution(client: AsyncClient, db_session: AsyncSession, world: World, clock: Clock):
+    ticket = await _resolved(client, world, clock, utc(26, 15))
+    clock.set(utc(27, 10))
+    await patch(client, world, ticket, status="OPENED")  # RESTART: ciclo 2
+    plain = await make_ticket_category(db_session, world.org.sector)
+    sla = await patch(client, world, ticket, category_id=str(plain.id))
+    assert sla["state"] == "NOT_APPLICABLE"
+    row = (await db_session.execute(select(Ticket).where(Ticket.id == uuid.UUID(ticket)))).scalar_one()
+    assert await SlaService(db_session).resolved_at(row) is not None  # vem da auditoria, não do ciclo antigo
+
+
+async def test_continue_reopen_without_any_response_does_not_breach_the_first_response_at_once(client: AsyncClient, db_session: AsyncSession, world: World, clock: Clock):
+    cont = await make_policy(db_session, name="Continua2", reopen="CONTINUE")
+    world.category.sla_policy_id = cont.id
+    await db_session.commit()
+    ticket = await open_ticket(client, world)  # sem nenhuma resposta
+    clock.set(utc(26, 11, 30))  # 30 min consumidos dos 60 da primeira resposta
+    await patch(client, world, ticket, status="RESOLVED")
+    clock.set(utc(27, 10))
+    sla = await patch(client, world, ticket, status="IN_PROGRESS")
+    assert sla["breaches"] == [] and same(sla["first_response_due_at"], utc(27, 10, 30))  # faltavam 30 min
+
+
+async def test_reopen_window_is_checked_before_any_field_is_changed(client: AsyncClient, world: World, clock: Clock):
+    ticket = await _resolved(client, world, clock, utc(26, 15))
+    clock.set(utc(26, 15) + timedelta(days=4))
+    late = await client.patch(f"/api/v1/tickets/{ticket}", json={"status": "OPENED", "priority": "LOW"}, headers=world.h_att)
+    assert late.status_code == 422
+    current = (await client.get(f"/api/v1/tickets/{ticket}", headers=world.h_att)).json()
+    assert current["priority"] == "HIGH" and current["status"] == "RESOLVED"
