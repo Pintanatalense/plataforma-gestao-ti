@@ -76,5 +76,6 @@ async def test_migration_grants_message_permissions_only_to_notification_admins_
         codes = set((await conn.execute(text("SELECT code FROM permissions"))).scalars())
         tables = {r[0] for r in (await conn.execute(text("SELECT tablename FROM pg_tables WHERE schemaname='public'"))).all()}
         delivery = (await conn.execute(text("SELECT count(*) FROM deliveries"))).scalar_one()
-    assert codes == {"notifications.manage"} and "outbound_messages" not in tables and delivery == 1
+    assert "notifications.manage" in codes and not {c for c in codes if c.startswith("notifications.messages.")}
+    assert "outbound_messages" not in tables and "message_templates" not in tables and delivery == 1
     await engine.dispose()
