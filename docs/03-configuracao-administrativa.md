@@ -105,7 +105,7 @@ conceder críticas) não entram em perfil nem valem pelo simples "Administrador"
 
 ## 3.1. SLA de chamados (prazos de atendimento)
 
-Tela *Service Desk > SLA (prazos)*, para quem tem **Gerenciar SLA** (`service_desk.sla.manage`). Regras completas em
+Tela *Service Desk > SLA (prazos)*, para quem tem **Gerenciar SLA** (`service_desk.sla.manage`; o perfil Administrador já tem; num perfil Admin criado antes desta versão, marque em *Perfis*). Regras completas em
 [ADR-017](decisions/ADR-017-sla.md).
 
 1. **Calendários** (aba *Calendários*): o expediente de cada dia da semana (pode ter mais de um intervalo, ex.: 08:00–12:00
