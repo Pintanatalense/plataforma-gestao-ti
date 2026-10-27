@@ -187,6 +187,8 @@ async def test_unverified_address_and_disabled_channel_never_receive(db_session:
 DELIVERY_FIELDS = {
     "id", "event_id", "event_type", "channel", "status", "priority", "recipient_email", "address", "title",
     "attempts", "max_attempts", "last_error", "next_attempt_at", "created_at", "sent_at",
+    # M1: campos acrescentados (nenhum removido ou renomeado)
+    "provider_status", "provider_status_at", "origin",
 }
 
 

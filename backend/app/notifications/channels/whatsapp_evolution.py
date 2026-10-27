@@ -13,6 +13,9 @@ Rotas usadas (conferidas no código da v2.3.7; o formato exato dos erros ainda p
   POST   /webhook/set/{instance}             {webhook: {enabled, url, headers, events, byEvents, base64}}
   POST   /message/sendText/{instance}        {number, text, linkPreview}  -> 201 {key: {id}}
 
+Eventos recebidos pelo webhook: MESSAGES_UPSERT (mensagens recebidas) e MESSAGES_UPDATE (confirmações das nossas:
+SERVER_ACK, DELIVERY_ACK, READ, PLAYED, ERROR; formato conferido no código da v2.3.7, homologação pendente no C5).
+
 Autenticação: cabeçalho `apikey` com a chave global.
 
 Configuração em `channel_configs['whatsapp']` com provider='evolution':
@@ -29,6 +32,7 @@ import httpx
 
 from app.config import get_settings
 from app.notifications.channels.base import DeliveryResult, Message
+from app.notifications.receipts import Receipt
 
 for _noisy in ("httpx", "httpcore"):  # a URL carrega o nome da instância; o cabeçalho, a chave
     logging.getLogger(_noisy).setLevel(logging.WARNING)
@@ -103,6 +107,10 @@ def error_text(body: Any) -> str:
 
 
 WEBHOOK_SECRET_HEADER = "X-Webhook-Secret"
+# Instâncias pareadas antes do ADR-025 M1 só recebem MESSAGES_UPSERT até alguém clicar "Conectar" de novo (o que
+# registra o webhook outra vez); até lá as entregas ficam só como "aceitas pelo gateway".
+WEBHOOK_EVENTS = ["MESSAGES_UPSERT", "MESSAGES_UPDATE"]
+RECEIPT_STATUS = {"SERVER_ACK": "accepted", "DELIVERY_ACK": "delivered", "READ": "read", "PLAYED": "read", "ERROR": "failed"}
 JID_RE = re.compile(r"^(\d{10,15})@s\.whatsapp\.net$")
 
 
@@ -110,7 +118,7 @@ async def set_webhook(instance: str, secret: str) -> tuple[bool, str]:
     """Aponta a entrada de mensagens da instância para o backend (rede interna), autenticada por segredo em cabeçalho."""
     body = {"webhook": {
         "enabled": True, "url": get_settings().EVOLUTION_WEBHOOK_URL, "byEvents": False, "base64": False,
-        "headers": {WEBHOOK_SECRET_HEADER: secret}, "events": ["MESSAGES_UPSERT"],
+        "headers": {WEBHOOK_SECRET_HEADER: secret}, "events": WEBHOOK_EVENTS,
     }}
     status, resp = await evolution_call("POST", instance_path("webhook/set", instance), body)
     if status in (200, 201):
@@ -141,6 +149,25 @@ def parse_inbound(payload: Any, instance: str) -> list[tuple[str, str, str]]:
         if key.get("fromMe") is True or not match or not key.get("id") or not isinstance(text, str) or not text.strip():
             continue
         found.append((str(key["id"]), match.group(1), text))
+    return found
+
+
+def parse_receipts(payload: Any, instance: str) -> list[Receipt]:
+    """Confirmações das mensagens QUE ENVIAMOS (evento messages.update). Ignora outra instância, mensagens recebidas
+    (`fromMe` falso) e estados sem significado de entrega (PENDING, DELETED)."""
+    if not isinstance(payload, dict) or payload.get("instance") != instance:
+        return []
+    if str(payload.get("event") or "").replace("_", ".").lower() != "messages.update":
+        return []
+    data = payload.get("data")
+    found: list[Receipt] = []
+    for item in data if isinstance(data, list) else [data]:
+        if not isinstance(item, dict) or item.get("fromMe") is False or (item.get("key") or {}).get("fromMe") is False:
+            continue
+        message_id = item.get("keyId") or (item.get("key") or {}).get("id")
+        status = RECEIPT_STATUS.get(str(item.get("status") or "").upper())
+        if message_id and status:
+            found.append(Receipt(str(message_id), status))
     return found
 
 

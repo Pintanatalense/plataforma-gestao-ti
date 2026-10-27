@@ -13,16 +13,32 @@ import {
   DeliveryItem,
   NotificationsAdminService
 } from '../../../core/services/notifications-admin.service';
+import { CHANNEL_NAMES } from './channels.component';
 
 const PAGE_SIZE = 25;
 
 export const STATUS_LABELS: Record<string, string> = {
   PENDING: 'Pendente',
   SENDING: 'Enviando',
-  SENT: 'Enviada',
+  // SENT = o gateway aceitou; entregue/lida só quando o provedor confirma (coluna "Confirmação", ADR-025 §2).
+  SENT: 'Aceita pelo gateway',
   DEAD: 'Falhou (definitivo)',
   SKIPPED: 'Ignorada',
   CANCELLED: 'Cancelada'
+};
+
+export const PROVIDER_STATUS_LABELS: Record<string, string> = {
+  accepted: 'Recebida pelo provedor',
+  delivered: 'Entregue',
+  read: 'Lida',
+  failed: 'Falhou no provedor'
+};
+
+export const ORIGIN_LABELS: Record<string, string> = {
+  rule: 'Regra',
+  direct: 'Mensagem direta',
+  conversation: 'Resposta do robô',
+  system: 'Sistema'
 };
 
 @Component({
@@ -38,8 +54,28 @@ export const STATUS_LABELS: Record<string, string> = {
         <mat-label>Canal</mat-label>
         <mat-select [(ngModel)]="filters.channel" (selectionChange)="search()" data-testid="f-channel">
           <mat-option value="">Todos</mat-option>
-          <mat-option value="in_app">Caixa de entrada</mat-option>
-          <mat-option value="email">E-mail</mat-option>
+          @for (c of channels; track c.key) {
+            <mat-option [value]="c.key">{{ c.label }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Origem</mat-label>
+        <mat-select [(ngModel)]="filters.origin" (selectionChange)="search()" data-testid="f-origin">
+          <mat-option value="">Todas</mat-option>
+          @for (o of origins; track o.key) {
+            <mat-option [value]="o.key">{{ o.label }}</mat-option>
+          }
+        </mat-select>
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Confirmação</mat-label>
+        <mat-select [(ngModel)]="filters.provider_status" (selectionChange)="search()" data-testid="f-provider-status">
+          <mat-option value="">Todas</mat-option>
+          @for (p of providerStatuses; track p.key) {
+            <mat-option [value]="p.key">{{ p.label }}</mat-option>
+          }
+          <mat-option value="none">Sem confirmação</mat-option>
         </mat-select>
       </mat-form-field>
       <mat-form-field appearance="outline">
@@ -54,6 +90,14 @@ export const STATUS_LABELS: Record<string, string> = {
       <mat-form-field appearance="outline">
         <mat-label>Destinatário (e-mail)</mat-label>
         <input matInput [(ngModel)]="filters.recipient" (keyup.enter)="search()" />
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Endereço (telefone, chat)</mat-label>
+        <input matInput [(ngModel)]="filters.address" (keyup.enter)="search()" maxlength="255" />
+      </mat-form-field>
+      <mat-form-field appearance="outline">
+        <mat-label>Texto da mensagem</mat-label>
+        <input matInput [(ngModel)]="filters.q" (keyup.enter)="search()" maxlength="100" data-testid="f-q" />
       </mat-form-field>
       <mat-form-field appearance="outline">
         <mat-label>De</mat-label>
@@ -73,7 +117,7 @@ export const STATUS_LABELS: Record<string, string> = {
     <div class="table-wrap">
       <table class="grid" data-testid="deliveries-table">
         <thead>
-          <tr><th>Quando</th><th>Evento</th><th>Destinatário</th><th>Canal</th><th>Situação</th><th>Tent.</th><th></th></tr>
+          <tr><th>Quando</th><th>Evento</th><th>Destinatário</th><th>Canal</th><th>Situação</th><th>Confirmação</th><th>Tent.</th><th></th></tr>
         </thead>
         <tbody>
           @for (d of items(); track d.id) {
@@ -81,8 +125,15 @@ export const STATUS_LABELS: Record<string, string> = {
               <td>{{ d.created_at | date: 'dd/MM HH:mm' }}</td>
               <td>{{ d.event_type }}</td>
               <td>{{ d.recipient_email || d.address }}</td>
-              <td>{{ d.channel }}</td>
+              <td>{{ channelName(d.channel) }}</td>
               <td><span class="chip" [class]="'s-' + d.status.toLowerCase()">{{ label(d.status) }}</span></td>
+              <td data-testid="provider-status">
+                @if (d.provider_status) {
+                  <span class="chip" [class]="'p-' + d.provider_status">{{ providerLabel(d.provider_status) }}</span>
+                } @else {
+                  <span class="muted">—</span>
+                }
+              </td>
               <td>{{ d.attempts }}/{{ d.max_attempts }}</td>
               <td class="row-actions">
                 @if (d.status === 'DEAD') {
@@ -94,7 +145,7 @@ export const STATUS_LABELS: Record<string, string> = {
               </td>
             </tr>
           } @empty {
-            <tr><td colspan="7" class="empty">Nenhuma entrega encontrada.</td></tr>
+            <tr><td colspan="8" class="empty">Nenhuma entrega encontrada.</td></tr>
           }
         </tbody>
       </table>
@@ -109,8 +160,17 @@ export const STATUS_LABELS: Record<string, string> = {
     @if (detail(); as d) {
       <section class="detail" data-testid="delivery-detail">
         <h3>{{ d.title }}</h3>
-        <p><strong>Para:</strong> {{ d.recipient_email || d.address }} · <strong>Canal:</strong> {{ d.channel }} ·
-          <strong>Prioridade:</strong> {{ d.priority }}</p>
+        <p><strong>Para:</strong> {{ d.recipient_email || d.address }} · <strong>Canal:</strong> {{ channelName(d.channel) }} ·
+          <strong>Prioridade:</strong> {{ d.priority }} · <strong>Origem:</strong> {{ originLabel(d.origin) }}</p>
+        <p data-testid="detail-confirmation"><strong>Confirmação do provedor:</strong>
+          @if (d.provider_status) {
+            {{ providerLabel(d.provider_status) }} em {{ d.provider_status_at | date: 'dd/MM HH:mm:ss' }}
+          } @else if (d.status === 'SENT') {
+            nenhuma (o canal não informa ou ainda não informou; a mensagem foi aceita pelo gateway)
+          } @else {
+            —
+          }
+        </p>
         @if (d.last_error) {
           <p class="error"><strong>Último erro:</strong> {{ d.last_error }}</p>
         }
@@ -140,6 +200,8 @@ export const STATUS_LABELS: Record<string, string> = {
     .grid tbody tr:hover, .grid tr.selected { background: #f8fafc; }
     .chip { padding: 2px 8px; border-radius: 12px; font-size: 12px; background: #e2e8f0; white-space: nowrap; }
     .s-sent { background: #dcfce7; } .s-dead { background: #fee2e2; } .s-pending, .s-sending { background: #fef9c3; }
+    .p-delivered, .p-read { background: #dcfce7; } .p-failed { background: #fee2e2; } .p-accepted { background: #e0f2fe; }
+    .muted { color: #94a3b8; }
     .row-actions { white-space: nowrap; text-align: right; }
     .pager { display: flex; gap: 8px; align-items: center; justify-content: flex-end; margin-top: 8px; }
     .pager span { margin-right: auto; color: #64748b; }
@@ -154,7 +216,12 @@ export class DeliveriesComponent implements OnInit {
   private snack = inject(MatSnackBar);
 
   readonly statuses = Object.keys(STATUS_LABELS);
-  filters: DeliveryFilters = { channel: '', status: '', recipient: '', date_from: '', date_to: '' };
+  readonly channels = Object.entries(CHANNEL_NAMES).map(([key, label]) => ({ key, label }));
+  readonly origins = Object.entries(ORIGIN_LABELS).map(([key, label]) => ({ key, label }));
+  readonly providerStatuses = Object.entries(PROVIDER_STATUS_LABELS).map(([key, label]) => ({ key, label }));
+  filters: DeliveryFilters = {
+    channel: '', status: '', recipient: '', date_from: '', date_to: '', origin: '', provider_status: '', address: '', q: ''
+  };
 
   items = signal<DeliveryItem[]>([]);
   total = signal(0);
@@ -168,6 +235,18 @@ export class DeliveriesComponent implements OnInit {
 
   label(status: string): string {
     return STATUS_LABELS[status] ?? status;
+  }
+
+  providerLabel(status: string): string {
+    return PROVIDER_STATUS_LABELS[status] ?? status;
+  }
+
+  originLabel(origin: string): string {
+    return ORIGIN_LABELS[origin] ?? origin;
+  }
+
+  channelName(channel: string): string {
+    return CHANNEL_NAMES[channel] ?? channel;
   }
 
   search(): void {

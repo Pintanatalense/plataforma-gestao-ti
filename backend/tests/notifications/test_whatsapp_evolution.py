@@ -780,7 +780,7 @@ async def test_connect_registers_the_webhook_once_with_secret_and_the_qr_refresh
     assert (method, path, key) == ("POST", "/webhook/set/gestao-ti", API_KEY)
     hook = payload["webhook"]
     assert hook["url"].endswith("/api/v1/integrations/whatsapp/evolution/webhook") and hook["enabled"] is True
-    assert hook["headers"] == {"X-Webhook-Secret": secret} and hook["events"] == ["MESSAGES_UPSERT"]
+    assert hook["headers"] == {"X-Webhook-Secret": secret} and hook["events"] == ["MESSAGES_UPSERT", "MESSAGES_UPDATE"]
 
     fake.calls.clear()
     await client.post(f"{BASE}/whatsapp/connect?refresh=true", headers=h)
