@@ -526,6 +526,7 @@ async def test_send_from_ticket_queues_a_delivery_and_records_history(client: As
         json={"template_id": str(template.id), "observacao": "abra o AnyDesk", "priority": 1}, headers=attend(world),
     )
     assert resp.status_code == 200 and resp.json()["status"] == "queued"
+    assert set(resp.json()) == {"status", "delivery_id", "message"}  # contrato da tela do chamado (ADR-025 M0)
     delivery = (await replies(db_session))[-1]
     assert delivery.address == "5585900001111" and delivery.priority == "high" and delivery.recipient_user_id == world.requester.id
     assert delivery.message["body_text"] == f"Olá {world.requester_emp.name}, chamado #{ticket_id[:8]}: abra o AnyDesk"
