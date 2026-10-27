@@ -70,6 +70,19 @@ Calendário padrão: segunda a sexta, 08:00–18:00, fuso `America/Sao_Paulo`, s
 
 Cumprimento = `MET / (MET + BREACHED)` por período, categoria e prioridade; tempo médio de primeira resposta e de resolução em minutos úteis; chamados em risco (acima do % de alerta). Tudo vem dos fatos persistidos nos ciclos e nas violações, sem recalcular o passado.
 
+## Registro de implementação — P4-S2 (2026-10-26)
+
+Decisões tomadas ao integrar com os chamados (o texto acima continua valendo):
+
+- **Resultado do ciclo:** `BREACHED` quando há **qualquer** violação registrada (primeira resposta ou resolução); `MET` só sem nenhuma. Violação de primeira resposta não muda o estado enquanto o ciclo corre (continua `RUNNING`), só aparece em `breaches`.
+- **Retroativo:** ao trocar prioridade ou categoria, se o alvo novo já estourou o vencimento é o instante em que o consumo atingiu o alvo (`início + alvo + minutos pausados`), a violação é registrada na hora e **nunca é apagada** (voltar a uma prioridade folgada não a remove).
+- **Categoria com a mesma política:** não abre ciclo novo (os prazos já são os certos). Categoria nova com política em chamado que nunca teve relógio: o ciclo parte da **criação** do chamado.
+- **Pausa:** o relógio para em minutos **úteis**; resolver um chamado pausado não é violação, por mais longa que seja a pausa. Chamado reaberto direto para um status de pausa nasce pausado.
+- **Reabertura (`TICKET_REOPEN_DAYS`):** vale para **todos** os chamados (com ou sem SLA); a data da resolução vem do ciclo ou, sem ciclo, da auditoria (`ticket.closed` com status `RESOLVED`). Fora do prazo a API responde **422** (`ValidationException`). Como a permissão `service_desk.sla.manage` só nasce no P4-S4 (telas de administração), **por enquanto só administradores** reabrem fora do prazo; o P4-S4 troca isso pela permissão.
+- **Primeira resposta** conta no ponto de criação da interação, inclusive a nota de um `PATCH` de status; a nota interna e o próprio solicitante não contam.
+- **API:** `GET/POST/PATCH /tickets` devolvem `sla` (`NOT_APPLICABLE` sem política ativa ou sem alvo para a prioridade).
+- **Fora desta etapa (P4-S3):** o job `sla.check`, os alertas de proximidade e o registro de violações de chamados que ninguém tocou.
+
 ## Entrega em PRs
 
 1. **P4-S1** modelo + migration + calculadora de tempo útil (funções puras, sem integração).
