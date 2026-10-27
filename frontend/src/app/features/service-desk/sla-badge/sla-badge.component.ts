@@ -9,7 +9,9 @@ const STATE: Record<string, { label: string; icon: string; css: string }> = {
   RUNNING: { label: 'No prazo', icon: 'timer', css: 'running' },
   PAUSED: { label: 'Pausado', icon: 'pause_circle', css: 'paused' },
   MET: { label: 'Cumprido', icon: 'task_alt', css: 'met' },
-  BREACHED: { label: 'Violado', icon: 'error', css: 'breached' }
+  BREACHED: { label: 'Violado', icon: 'error', css: 'breached' },
+  OVERDUE: { label: 'Atrasado', icon: 'error', css: 'breached' },
+  AT_RISK: { label: 'Em risco', icon: 'warning', css: 'at-risk' }
 };
 const KIND: Record<string, string> = { FIRST_RESPONSE: 'primeira resposta', RESOLUTION: 'resolução' };
 
@@ -22,7 +24,7 @@ const KIND: Record<string, string> = { FIRST_RESPONSE: 'primeira resposta', RESO
     @if (view(); as v) {
       <span class="sla" [class]="v.css" data-testid="sla-badge" [matTooltip]="v.tooltip">
         <mat-icon>{{ v.icon }}</mat-icon>
-        SLA: {{ v.label }}
+        @if (!compact()) { SLA: }{{ v.label }}
         @if (v.due) { · {{ v.dueLabel }} {{ v.due | date:'dd/MM HH:mm' }} }
       </span>
     }
@@ -32,19 +34,24 @@ const KIND: Record<string, string> = { FIRST_RESPONSE: 'primeira resposta', RESO
     .sla mat-icon { font-size: 16px; width: 16px; height: 16px; }
     .running { background: #e0f2fe; color: #075985; }
     .paused { background: #f1f5f9; color: #475569; }
+    .at-risk { background: #fef3c7; color: #92400e; }
     .met { background: #dcfce7; color: #166534; }
     .breached { background: #fee2e2; color: #991b1b; }
   `]
 })
 export class SlaBadgeComponent {
   sla = input<SlaInfo | null | undefined>(null);
+  /** Lista de chamados: sem o prefixo "SLA:". */
+  compact = input(false);
 
   view = computed(() => {
     const s = this.sla();
     if (!s || s.state === 'NOT_APPLICABLE') return null;
     const breaches = s.breaches ?? [];
     const late = breaches.length > 0 && s.state !== 'MET';
-    const base = late && s.state !== 'BREACHED' ? STATE['BREACHED'] : STATE[s.state];
+    let base = late && s.state !== 'BREACHED' ? STATE['BREACHED'] : STATE[s.state];
+    if (!late && s.overdue) base = STATE['OVERDUE'];
+    else if (!late && s.at_risk) base = STATE['AT_RISK'];
     const waitingFirst = !s.first_response_at && !!s.first_response_due_at;
     const due = s.state === 'RUNNING' ? (waitingFirst ? s.first_response_due_at : s.resolution_due_at) : null;
     const lines = [`Política: ${s.policy_name ?? '-'}`];

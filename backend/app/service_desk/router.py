@@ -3,9 +3,10 @@ MOD-04 — Service Desk (Router)
 """
 
 import uuid
+from datetime import date
 from typing import Sequence
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.access import AccessContext
@@ -24,6 +25,7 @@ from app.service_desk.schemas import (
     TicketHistoryItem,
     TicketAssetActionRequest,
     TicketAssetInspectRequest,
+    TicketsReport,
 )
 from app.service_desk.services import ServiceDeskService
 from app.sla.router import SLA_MANAGE
@@ -110,17 +112,20 @@ async def list_tickets(
 
 @router.get(
     "/reports/summary",
-    summary="Resumo gerencial de chamados, métricas e distribuição por status/prioridade"
+    response_model=TicketsReport,
+    summary="Resumo gerencial de chamados no período: status, prioridade, categoria e indicadores de SLA"
 )
 async def get_tickets_summary_report(
+    start: date | None = Query(None, description="Primeiro dia (fuso APP_TIMEZONE)"),
+    end: date | None = Query(None, description="Último dia, incluído"),
     ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
-) -> dict:
+) -> TicketsReport:
     if not ctx.can_view_reports:
         from app.core.exceptions import ForbiddenException
         raise ForbiddenException("Apenas o perfil de Gestão ou Administrador pode visualizar relatórios.")
     service = ServiceDeskService(session)
-    return await service.get_tickets_summary_report()
+    return await service.get_tickets_summary_report(start, end)
 
 
 @router.get(

@@ -52,6 +52,18 @@
   }
 }
 
+.sla-filter {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sla-filter-label {
+  font-size: 13px;
+  color: #475569;
+}
+
 .table-card {
   background: #ffffff;
   border-radius: 12px;

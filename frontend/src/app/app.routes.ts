@@ -111,6 +111,11 @@ export const routes: Routes = [
         loadComponent: () => import('./features/service-desk/category-list/category-list.component').then(m => m.CategoryListComponent)
       },
       {
+        path: 'service-desk/reports',
+        canActivate: [permissionGuard('service_desk.reports.read')],
+        loadComponent: () => import('./features/service-desk/ticket-report/ticket-report.component').then(m => m.TicketReportComponent)
+      },
+      {
         path: 'service-desk/sla',
         canActivate: [permissionGuard('service_desk.sla.manage')],
         loadComponent: () => import('./features/service-desk/sla-admin/sla-admin.component').then(m => m.SlaAdminComponent)

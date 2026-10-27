@@ -6,10 +6,10 @@ Implementa as regras de negócio de visualização e transição de chamados.
 
 import logging
 import uuid
-from datetime import timedelta
+from datetime import date, datetime, time, timedelta
 from typing import Sequence
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.config import get_settings
@@ -25,8 +25,11 @@ from app.notifications.outbox import emit_event
 from app.organization.models import Employee
 from app.service_desk.models import Ticket, TicketCategory, TicketInteraction, TicketMaterial
 from app.service_desk.repository import ServiceDeskRepository
+from app.sla.report import sla_report
 from app.sla.service import REOPEN_TO, SlaService, _now as sla_now
 from app.service_desk.schemas import (
+    CategoryCount,
+    TicketsReport,
     TicketCreate,
     TicketInteractionCreate,
     TicketUpdate,
@@ -907,34 +910,56 @@ class ServiceDeskService:
 
         return history
 
-    async def get_tickets_summary_report(self) -> dict:
-        """Gera resumo gerencial de métricas para o perfil de Gestão e Administração."""
-        tickets = await self.repo.list_tickets()
-        total = len(tickets)
+    async def get_tickets_summary_report(self, start: date | None = None, end: date | None = None) -> TicketsReport:
+        """Resumo gerencial (Gestão e Administração): chamados criados no período e indicadores de SLA.
+
+        As datas são dias no fuso `APP_TIMEZONE`, com `end` incluído; sem datas, todo o histórico. As contagens saem
+        agregadas do banco (antes carregava todos os chamados em memória).
+        """
+        if start and end and start > end:
+            raise ValidationException("A data inicial deve ser anterior ou igual à final.")
+        from app.notifications.jobs import local_timezone  # import tardio: o módulo de jobs importa serviços
+
+        tz = local_timezone()
+        start_at = datetime.combine(start, time.min, tz) if start else None
+        end_at = datetime.combine(end + timedelta(days=1), time.min, tz) if end else None
+
+        def in_period(stmt):
+            if start_at is not None:
+                stmt = stmt.where(Ticket.created_at >= start_at)
+            if end_at is not None:
+                stmt = stmt.where(Ticket.created_at < end_at)
+            return stmt
+
         status_counts = {"OPENED": 0, "IN_PROGRESS": 0, "PENDING": 0, "RESOLVED": 0, "CLOSED": 0}
         priority_counts = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
-        by_category: dict[str, int] = {}
-
-        for t in tickets:
-            st = t.status
-            if st in status_counts:
-                status_counts[st] += 1
-            prio = t.priority
-            if prio in priority_counts:
-                priority_counts[prio] += 1
-            cat_name = t.category.name if t.category else "Sem Categoria"
-            by_category[cat_name] = by_category.get(cat_name, 0) + 1
+        for column, counts in ((Ticket.status, status_counts), (Ticket.priority, priority_counts)):
+            rows = await self.session.execute(in_period(select(column, func.count()).group_by(column)))
+            for value, count in rows.all():
+                if value in counts:
+                    counts[value] = count
+        category_rows = await self.session.execute(
+            in_period(
+                select(TicketCategory.name, func.count(Ticket.id))
+                .select_from(Ticket)
+                .outerjoin(TicketCategory, TicketCategory.id == Ticket.category_id)
+                .group_by(TicketCategory.name)
+            )
+        )
+        by_category = sorted(
+            (CategoryCount(category=name or "Sem Categoria", count=count) for name, count in category_rows.all()),
+            key=lambda c: (-c.count, c.category.casefold()),
+        )
+        total = (await self.session.execute(in_period(select(func.count(Ticket.id))))).scalar_one()
 
         resolved_or_closed = status_counts["RESOLVED"] + status_counts["CLOSED"]
         resolution_rate = round((resolved_or_closed / total) * 100, 1) if total > 0 else 100.0
 
-        return {
-            "total_tickets": total,
-            "resolution_rate_percent": resolution_rate,
-            "by_status": status_counts,
-            "by_priority": priority_counts,
-            "by_category": [{"category": k, "count": v} for k, v in by_category.items()],
-        }
+        return TicketsReport(
+            start=start, end=end, total_tickets=total, resolution_rate_percent=resolution_rate,
+            by_status=status_counts, by_priority=priority_counts, by_category=by_category,
+            sla=await sla_report(self.session, start_at, end_at),
+        )
 
     def _format_history_description(self, event_type: str, data: dict, user_name: str | None) -> tuple[str, str]:
         by_user = f" por {user_name}" if user_name else ""

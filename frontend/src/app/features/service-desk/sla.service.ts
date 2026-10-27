@@ -25,6 +25,51 @@ export interface SlaInfo {
   resolved_at?: string | null;
   paused?: boolean;
   breaches?: string[];
+  /** Prazo pendente já vencido (antes de o job registrar a violação). */
+  overdue?: boolean;
+  /** Acima do % de alerta da política. */
+  at_risk?: boolean;
+}
+
+/** Indicadores de SLA de um grupo (total, categoria ou prioridade); minutos úteis. */
+export interface SlaGroup {
+  key: string;
+  label: string;
+  met: number;
+  breached: number;
+  compliance_percent: number | null;
+  avg_first_response_minutes: number | null;
+  avg_resolution_minutes: number | null;
+}
+
+export interface SlaAttention {
+  ticket_id: string;
+  title: string;
+  priority: string;
+  kind: 'FIRST_RESPONSE' | 'RESOLUTION';
+  due_at: string;
+  overdue: boolean;
+}
+
+export interface SlaReport {
+  total: SlaGroup;
+  by_category: SlaGroup[];
+  by_priority: SlaGroup[];
+  open: number;
+  at_risk: number;
+  overdue: number;
+  attention: SlaAttention[];
+}
+
+export interface TicketsReport {
+  start: string | null;
+  end: string | null;
+  total_tickets: number;
+  resolution_rate_percent: number;
+  by_status: Record<string, number>;
+  by_priority: Record<string, number>;
+  by_category: { category: string; count: number }[];
+  sla: SlaReport;
 }
 
 export interface SlaHoliday {
@@ -109,5 +154,13 @@ export class SlaService {
 
   deletePolicy(id: string): Observable<void> {
     return this.http.delete<void>(`${this.apiUrl}/policies/${id}`);
+  }
+
+  /** Relatório de chamados; `start`/`end` em AAAA-MM-DD (o último dia entra). */
+  ticketsReport(start?: string, end?: string): Observable<TicketsReport> {
+    const params: Record<string, string> = {};
+    if (start) params['start'] = start;
+    if (end) params['end'] = end;
+    return this.http.get<TicketsReport>('/api/v1/tickets/reports/summary', { params });
   }
 }

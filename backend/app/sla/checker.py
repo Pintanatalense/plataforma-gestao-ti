@@ -21,9 +21,8 @@ from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.notifications.outbox import emit_event
-from app.sla.business_time import business_minutes_between
 from app.sla.models import SlaBreach, TicketSlaCycle
-from app.sla.service import FIRST_RESPONSE, RESOLUTION, SlaService, _aware, _calendar, _now, _target
+from app.sla.service import FIRST_RESPONSE, RESOLUTION, SlaService, _aware, _calendar, _now, in_alert_zone
 
 BATCH = 500
 KINDS = ((FIRST_RESPONSE, "first_response"), (RESOLUTION, "resolution"))
@@ -52,15 +51,6 @@ def _ticket_payload(ticket, cycle: TicketSlaCycle, kind: str, due_at: datetime) 
         "due_local": due_at.astimezone(calendar.tz).strftime("%d/%m %H:%M"),
         "policy_name": cycle.snapshot.get("policy_name"),
     }
-
-
-def _should_warn(cycle: TicketSlaCycle, attr: str, due_at: datetime, now: datetime) -> bool:
-    percent = int(cycle.snapshot.get("alert_percent") or 0)
-    target = _target(cycle, cycle.priority)
-    if not 0 < percent < 100 or target is None or not target.get(attr):
-        return False
-    left = business_minutes_between(now, due_at, _calendar(cycle))
-    return left * 100 <= target[attr] * (100 - percent)
 
 
 async def check_sla(session: AsyncSession, now: datetime | None = None) -> CheckResult:
@@ -105,7 +95,7 @@ async def check_sla(session: AsyncSession, now: datetime | None = None) -> Check
             due = _aware(due)
             if now > due:
                 result.breaches += await sla._register_breach(cycle, kind, due, now)
-            elif getattr(cycle, f"{attr}_warned_at") is None and _should_warn(cycle, attr, due, now):
+            elif getattr(cycle, f"{attr}_warned_at") is None and in_alert_zone(cycle, attr, due, now):
                 await emit_event(
                     session, event_type="ticket.sla_warning", entity_type="ticket", entity_id=ticket.id,
                     payload=_ticket_payload(ticket, cycle, kind, due), priority="high",
