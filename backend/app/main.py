@@ -185,6 +185,8 @@ def _mount_routers(app: FastAPI) -> None:
     app.include_router(attachments_router, prefix=f"{prefix}")
 
     # antes do router de notificações: os caminhos /notifications/messages/... não podem cair em /notifications/{id}
+    from app.notifications.schedules_router import router as notifications_schedules_router
+    app.include_router(notifications_schedules_router, prefix=prefix)  # antes de /messages/{id}
     from app.notifications.messages_router import router as notifications_messages_router
     app.include_router(notifications_messages_router, prefix=prefix)
 

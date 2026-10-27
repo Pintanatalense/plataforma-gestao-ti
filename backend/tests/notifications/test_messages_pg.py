@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import create_async_engine
 pytestmark = [pytest.mark.pg, pytest.mark.asyncio, pytest.mark.migrations]
 
 BEFORE = "d1e2f3a4b5c6d"
+TARGET = "e2f3a4b5c6d7e"  # esta migration; as seguintes têm os próprios testes
 
 
 async def test_migration_grants_message_permissions_only_to_notification_admins_and_reverts():
@@ -61,14 +62,14 @@ async def test_migration_grants_message_permissions_only_to_notification_admins_
             ))
             return {(name, code) for name, code in rows.all()}
 
-    await move(command.upgrade, "head")
+    await move(command.upgrade, TARGET)
     assert await grants() == {("Operação", "notifications.messages.send"), ("Operação", "notifications.messages.read")}
     async with engine.connect() as conn:
         old = (await conn.execute(text("SELECT message_id FROM deliveries WHERE idempotency_key = 'k-antiga'"))).scalar_one()
         tables = {r[0] for r in (await conn.execute(text("SELECT tablename FROM pg_tables WHERE schemaname='public'"))).all()}
     assert old is None and {"message_templates", "outbound_messages"} <= tables
 
-    await move(command.upgrade, "head")  # rodar de novo não duplica nada
+    await move(command.upgrade, TARGET)  # rodar de novo não duplica nada
     assert len(await grants()) == 2
 
     await move(command.downgrade, BEFORE)

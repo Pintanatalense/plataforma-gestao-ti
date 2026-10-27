@@ -169,6 +169,12 @@ CATALOG: tuple[PermissionSpec, ...] = (
         "alteracao",
     ),
     PermissionSpec(
+        "notifications.messages.schedule",
+        "Agendar mensagens",
+        "Agendar envios da Central de Mensagens, uma vez ou recorrentes, e pausar ou cancelar os próprios agendamentos",
+        "alteracao",
+    ),
+    PermissionSpec(
         "notifications.messages.read",
         "Ver histórico de mensagens",
         "Ver todos os envios da Central de Mensagens, não só os próprios",

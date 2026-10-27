@@ -220,3 +220,36 @@ seção "Validação".
   qualquer mudança a invalida; a chave de idempotência vale até o envio dar certo), Histórico e Modelos.
 - Não unificado: as respostas rápidas do chamado (`wa_templates`, `whatsapp/template_service.py`) mantêm a própria
   substituição de variáveis, que é específica de chamado.
+
+### M4 — agendamento (2026-10-27)
+
+- Migration `f3a4b5c6d7e8f`: `message_schedules`, `outbound_messages.schedule_id`/`scheduled_for` (nulos no que já
+  existia) e a permissão `notifications.messages.schedule`, concedida só aos perfis que já tinham
+  `notifications.manage`. Downgrade remove tudo isso; os envios já feitos continuam no histórico.
+- Recorrência (`notifications/schedules.py`, funções puras): uma vez (`run_at` com fuso), todo dia, dias da semana ou
+  dia do mês (mês mais curto: último dia), sempre num horário `HH:MM` no fuso do agendamento (padrão `APP_TIMEZONE`),
+  com início e fim opcionais. Calendário do SLA opcional: dia sem expediente ou feriado é pulado (`skip`) ou vai para
+  o próximo dia útil (`next`); várias datas que caem no mesmo dia útil viram uma ocorrência só. O calendário só vale
+  para os recorrentes.
+- Job `messages.schedules` (a cada minuto): agendamentos vencidos com `SKIP LOCKED`, em lotes; cada ocorrência vira
+  um envio `kind = scheduled` pelo mesmo `enqueue` do envio manual, com a chave `schedule_id|instante`, e
+  `next_run_at` avança na mesma transação. Testado contra PostgreSQL: quatro execuções simultâneas geram um envio;
+  falha no meio não deixa nada pela metade e a execução seguinte envia.
+- A cada ocorrência valem as permissões e o setor **atuais** de quem agendou (`load_access_context`): sem conta ativa
+  ou sem `schedule`, o agendamento é pausado com o motivo; pessoa que saiu do setor ou desvinculou o canal fica de
+  fora; ninguém alcançável ou teto por hora estourado é `failed` e o agendamento segue.
+- Parada do worker: a ocorrência sai atrasada até `MESSAGES_SCHEDULE_TOLERANCE_MINUTES` (60); depois é `missed`
+  (registrada, não enviada). De várias perdidas seguidas só a mais recente ainda pode sair.
+- Desvio do texto do ADR: a "janela de horário" virou horário fixo + tolerância; uma janela separada não acrescentava
+  nada com recorrência mínima diária.
+- API `/notifications/messages/schedules`: `GET /calendars` (nome e fuso, sem exigir a permissão do SLA),
+  `POST /occurrences` (próximas 5 datas), `POST` com `Idempotency-Key`, `GET`, `GET /{id}` (próximos envios e os
+  últimos 20 feitos), `PUT /{id}` com `version` (409 se outra pessoa alterou), `POST /{id}/pause|resume|cancel`.
+  Retomar vale a partir de agora (o que venceu pausado não sai). Teto `MESSAGES_MAX_ACTIVE_SCHEDULES` (20 abertos por
+  pessoa). Criar, editar, pausar, retomar, cancelar e cada envio agendado passam pela auditoria. Calendário do SLA
+  usado por agendamento aberto não pode ser excluído (409); dos encerrados, o vínculo é desfeito.
+- Agendar usa a busca de pessoas e a prévia do envio, então pede também `notifications.messages.send`.
+- Tela: em Nova mensagem, "Quando enviar: Agora / Agendar" (nome, repetição, dias, calendário, "Ver próximas datas";
+  só agenda depois da prévia); aba nova Agendamentos (situação, próximo envio, último resultado com o motivo,
+  pausar/retomar/cancelar, detalhe com próximos envios e envios feitos). O Histórico mostra o tipo "Agendado".
+- Não feito nesta etapa: editar um agendamento pela tela (a API aceita; hoje se cancela e cria outro).

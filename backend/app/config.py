@@ -82,6 +82,8 @@ class Settings(BaseSettings):
     # --- Central de Mensagens (ADR-025): tetos contra disparo em massa (o WhatsApp tem ainda o teto por pessoa) ---
     MESSAGES_MAX_RECIPIENTS: int = 50  # por envio
     MESSAGES_MAX_PER_HOUR: int = 20  # envios por pessoa por hora (testes contam à parte: 10 por hora)
+    MESSAGES_MAX_ACTIVE_SCHEDULES: int = 20  # agendamentos ativos ou pausados por pessoa
+    MESSAGES_SCHEDULE_TOLERANCE_MINUTES: int = 60  # ocorrência atrasada (worker parado) ainda sai dentro deste prazo
 
     # --- Backups ---
     BACKUP_STORAGE_PATH: str = "/data/backups"

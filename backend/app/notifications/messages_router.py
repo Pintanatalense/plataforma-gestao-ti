@@ -212,6 +212,7 @@ def _message_out(m: OutboundMessage, counts: dict[str, int] | None = None) -> di
         "status": m.status, "queued_count": m.queued_count, "skipped_count": m.skipped_count,
         "created_at": m.created_at, "created_by": str(m.created_by) if m.created_by else None,
         "cancelled_at": m.cancelled_at, "deliveries": counts or {},
+        "schedule_id": str(m.schedule_id) if m.schedule_id else None, "scheduled_for": m.scheduled_for,
     }
 
 
@@ -270,7 +271,7 @@ def _visible(ctx: AccessContext):
 async def list_messages(
     db: DB, ctx: Ctx,
     channel: str | None = None,
-    kind: Literal["manual", "test"] | None = None,
+    kind: Literal["manual", "test", "scheduled"] | None = None,
     date_from: date | None = None,
     date_to: date | None = None,
     limit: int = Query(25, ge=1, le=100),

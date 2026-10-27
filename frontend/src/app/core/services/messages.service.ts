@@ -61,7 +61,7 @@ export interface PreviewResponse {
 
 export interface OutboundMessage {
   id: string;
-  kind: 'manual' | 'test';
+  kind: 'manual' | 'test' | 'scheduled';
   channel: string;
   subject: string;
   priority: string;
@@ -72,6 +72,56 @@ export interface OutboundMessage {
   created_by: string | null;
   cancelled_at: string | null;
   deliveries: Record<string, number>;
+  schedule_id?: string | null;
+  scheduled_for?: string | null;
+}
+
+/** Agendamento (ADR-025 M4). */
+export type Recurrence = 'once' | 'daily' | 'weekly' | 'monthly';
+
+export interface ScheduleRule {
+  recurrence: Recurrence;
+  run_at: string | null;
+  time_of_day: string | null;
+  weekdays: number[];
+  month_day: number | null;
+  starts_on: string | null;
+  ends_on: string | null;
+  calendar_id: string | null;
+  non_business_rule: 'skip' | 'next';
+}
+
+export type ScheduleInput = MessageDraft & ScheduleRule & { name: string };
+
+export interface MessageSchedule extends ScheduleRule {
+  id: string;
+  name: string;
+  channel: string;
+  subject: string;
+  priority: string;
+  timezone: string;
+  status: 'ACTIVE' | 'PAUSED' | 'DONE' | 'CANCELLED';
+  next_run_at: string | null;
+  last_run_at: string | null;
+  last_outcome: 'sent' | 'failed' | 'missed' | null;
+  last_error: string | null;
+  runs_count: number;
+  recipient_count: number;
+  version: number;
+  created_by: string | null;
+  created_at: string;
+}
+
+export interface MessageScheduleDetail extends MessageSchedule {
+  body: string;
+  upcoming: string[];
+  runs: OutboundMessage[];
+}
+
+export interface BusinessCalendarOption {
+  id: string;
+  name: string;
+  timezone: string;
 }
 
 export interface OutboundMessageDetail extends OutboundMessage {
@@ -137,5 +187,34 @@ export class MessagesService {
 
   cancel(id: string): Observable<OutboundMessage & { cancelled: number }> {
     return this.http.post<OutboundMessage & { cancelled: number }>(`${this.base}/${id}/cancel`, {});
+  }
+
+  // --- Agendamentos ---
+
+  calendars(): Observable<{ items: BusinessCalendarOption[] }> {
+    return this.http.get<{ items: BusinessCalendarOption[] }>(`${this.base}/schedules/calendars`);
+  }
+
+  occurrences(rule: ScheduleRule): Observable<{ timezone: string; occurrences: string[] }> {
+    return this.http.post<{ timezone: string; occurrences: string[] }>(`${this.base}/schedules/occurrences`, rule);
+  }
+
+  /** Mesma ideia do envio: a chave evita criar dois agendamentos num clique duplo. */
+  createSchedule(body: ScheduleInput, idempotencyKey: string): Observable<MessageSchedule> {
+    const headers = new HttpHeaders({ 'Idempotency-Key': idempotencyKey });
+    return this.http.post<MessageSchedule>(`${this.base}/schedules`, body, { headers });
+  }
+
+  listSchedules(status?: string): Observable<{ items: MessageSchedule[] }> {
+    const params = status ? new HttpParams().set('status', status) : undefined;
+    return this.http.get<{ items: MessageSchedule[] }>(`${this.base}/schedules`, { params });
+  }
+
+  getSchedule(id: string): Observable<MessageScheduleDetail> {
+    return this.http.get<MessageScheduleDetail>(`${this.base}/schedules/${id}`);
+  }
+
+  scheduleAction(id: string, action: 'pause' | 'resume' | 'cancel'): Observable<MessageSchedule> {
+    return this.http.post<MessageSchedule>(`${this.base}/schedules/${id}/${action}`, {});
   }
 }

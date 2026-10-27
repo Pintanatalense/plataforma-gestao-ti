@@ -204,7 +204,7 @@ export class SidebarComponent implements OnInit {
         { icon: 'tune', label: 'Minhas preferências', route: '/notifications/preferences' },
         {
           icon: 'campaign', label: 'Central de mensagens', route: '/notifications/messages',
-          anyPermission: ['notifications.messages.send', 'notifications.messages.read', 'notifications.manage']
+          anyPermission: ['notifications.messages.send', 'notifications.messages.schedule', 'notifications.messages.read', 'notifications.manage']
         },
         { icon: 'send', label: 'Entregas e regras', route: '/notifications/admin', permission: 'notifications.manage' }
       ]

@@ -9,6 +9,7 @@ import { PROVIDER_STATUS_LABELS, STATUS_LABELS } from '../admin/deliveries.compo
 import { OUTCOME_LABELS } from './compose.component';
 
 const PAGE_SIZE = 25;
+const KIND_LABELS: Record<string, string> = { manual: 'Envio', test: 'Teste', scheduled: 'Agendado' };
 
 /** Resumo das entregas de um envio, na ordem em que interessa ler. */
 export function deliverySummary(counts: Record<string, number>): string {
@@ -33,7 +34,7 @@ export function deliverySummary(counts: Record<string, number>): string {
               <td>{{ m.created_at | date: 'dd/MM HH:mm' }}</td>
               <td>{{ m.subject || '(sem assunto)' }}</td>
               <td>{{ channelName(m.channel) }}</td>
-              <td>{{ m.kind === 'test' ? 'Teste' : 'Envio' }}{{ m.status === 'CANCELLED' ? ' (cancelado)' : '' }}</td>
+              <td>{{ kindLabel(m.kind) }}{{ m.status === 'CANCELLED' ? ' (cancelado)' : '' }}</td>
               <td>{{ summary(m) }}</td>
               <td class="row-actions">
                 @if (m.status !== 'CANCELLED' && m.deliveries['PENDING']) {
@@ -118,6 +119,10 @@ export class MessageHistoryComponent implements OnInit {
 
   outcomeLabel(outcome: string): string {
     return OUTCOME_LABELS[outcome] ?? outcome;
+  }
+
+  kindLabel(kind: string): string {
+    return KIND_LABELS[kind] ?? kind;
   }
 
   summary(m: OutboundMessage): string {

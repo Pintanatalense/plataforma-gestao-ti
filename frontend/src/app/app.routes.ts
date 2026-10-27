@@ -98,7 +98,7 @@ export const routes: Routes = [
       },
       {
         path: 'notifications/messages',
-        canActivate: [anyPermissionGuard('notifications.messages.send', 'notifications.messages.read', 'notifications.manage')],
+        canActivate: [anyPermissionGuard('notifications.messages.send', 'notifications.messages.schedule', 'notifications.messages.read', 'notifications.manage')],
         loadComponent: () => import('./features/notifications/messages/messages-page.component').then(m => m.MessagesPageComponent)
       },
       {
