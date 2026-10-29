@@ -6,9 +6,27 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { apiErrorMessage } from '../../../core/http/api-error';
-import { MessageSchedule, MessageScheduleDetail, MessagesService } from '../../../core/services/messages.service';
+import { MatInputModule } from '@angular/material/input';
+import {
+  BusinessCalendarOption,
+  MessageSchedule,
+  MessageScheduleDetail,
+  MessagesService,
+  ScheduleRule
+} from '../../../core/services/messages.service';
 import { CHANNEL_NAMES } from '../admin/channels.component';
 import { deliverySummary } from './history.component';
+import { ScheduleRuleFieldsComponent, ruleBodyOf, toLocalInput } from './schedule-rule-fields.component';
+
+interface ScheduleEdit {
+  source: MessageScheduleDetail;
+  name: string;
+  subject: string;
+  body: string;
+  priority: 'low' | 'normal' | 'high';
+  rule: ScheduleRule;
+  runAtLocal: string;
+}
 
 export const SCHEDULE_STATUS_LABELS: Record<string, string> = {
   ACTIVE: 'Ativo',
@@ -45,7 +63,7 @@ export function describeRule(s: Pick<MessageSchedule, 'recurrence' | 'run_at' | 
 @Component({
   selector: 'app-message-schedules',
   standalone: true,
-  imports: [DatePipe, FormsModule, MatButtonModule, MatFormFieldModule, MatSelectModule, MatSnackBarModule],
+  imports: [DatePipe, FormsModule, MatButtonModule, MatFormFieldModule, MatInputModule, MatSelectModule, MatSnackBarModule, ScheduleRuleFieldsComponent],
   template: `
     <div class="toolbar">
       <mat-form-field appearance="outline">
@@ -93,9 +111,52 @@ export function describeRule(s: Pick<MessageSchedule, 'recurrence' | 'run_at' | 
       </table>
     </div>
 
-    @if (detail(); as d) {
+    @if (editing(); as e) {
+      <section class="detail" data-testid="schedule-edit">
+        <h3>Editar agendamento</h3>
+        <p class="hint">Canal e destinatários continuam os mesmos; para trocá-los, cancele e crie outro.</p>
+        <div class="row">
+          <mat-form-field appearance="outline">
+            <mat-label>Nome</mat-label>
+            <input matInput [(ngModel)]="e.name" maxlength="150" data-testid="edit-name" />
+          </mat-form-field>
+          <mat-form-field appearance="outline">
+            <mat-label>Prioridade</mat-label>
+            <mat-select [(ngModel)]="e.priority">
+              <mat-option value="low">Baixa</mat-option>
+              <mat-option value="normal">Normal</mat-option>
+              <mat-option value="high">Alta</mat-option>
+            </mat-select>
+          </mat-form-field>
+        </div>
+        <mat-form-field appearance="outline" class="full">
+          <mat-label>Assunto</mat-label>
+          <input matInput [(ngModel)]="e.subject" maxlength="200" />
+        </mat-form-field>
+        <mat-form-field appearance="outline" class="full">
+          <mat-label>Mensagem</mat-label>
+          <textarea matInput rows="5" [(ngModel)]="e.body" maxlength="4000" data-testid="edit-body"></textarea>
+        </mat-form-field>
+        <app-schedule-rule-fields [rule]="e.rule" [(runAt)]="e.runAtLocal" [calendars]="calendars()" (changed)="editDates.set([])" />
+        <button mat-stroked-button (click)="loadEditDates()" data-testid="edit-occurrences">Ver próximas datas</button>
+        @if (editDates().length) {
+          <ul data-testid="edit-dates">@for (u of editDates(); track u) { <li>{{ u | date: 'EEE dd/MM/yyyy HH:mm' }}</li> }</ul>
+        }
+        @if (editError()) {
+          <p class="error" role="alert">{{ editError() }}</p>
+        }
+        <div class="footer">
+          <button mat-button (click)="editing.set(null)">Cancelar</button>
+          <button mat-flat-button color="primary" (click)="saveEdit()" [disabled]="saving()" data-testid="edit-save">Salvar</button>
+        </div>
+      </section>
+    } @else if (detail(); as d) {
       <section class="detail" data-testid="schedule-detail">
-        <h3>{{ d.name }}</h3>
+        <h3>{{ d.name }}
+          @if (d.status === 'ACTIVE' || d.status === 'PAUSED') {
+            <button mat-stroked-button (click)="startEdit(d)" data-testid="schedule-edit-start">Editar</button>
+          }
+        </h3>
         <p class="hint">{{ rule(d) }} · fuso {{ d.timezone }} · {{ d.recipient_count }} destinatário(s) · {{ d.runs_count }} envio(s) feitos</p>
         <pre>{{ d.subject ? d.subject + '\n\n' : '' }}{{ d.body }}</pre>
         @if (d.upcoming.length) {
@@ -128,6 +189,11 @@ export function describeRule(s: Pick<MessageSchedule, 'recurrence' | 'run_at' | 
     .hint, .empty-item { color: #64748b; }
     .empty { text-align: center; color: #94a3b8; padding: 24px; }
     .error { color: #dc2626; }
+    .detail h3 { display: flex; align-items: center; gap: 12px; }
+    .row { display: flex; flex-wrap: wrap; gap: 12px; }
+    .row mat-form-field { flex: 1 1 180px; }
+    .full { width: 100%; }
+    .footer { display: flex; justify-content: flex-end; gap: 8px; }
   `]
 })
 export class MessageSchedulesComponent implements OnInit {
@@ -139,6 +205,11 @@ export class MessageSchedulesComponent implements OnInit {
   items = signal<MessageSchedule[]>([]);
   detail = signal<MessageScheduleDetail | null>(null);
   error = signal('');
+  editing = signal<ScheduleEdit | null>(null);
+  editDates = signal<string[]>([]);
+  editError = signal('');
+  saving = signal(false);
+  calendars = signal<BusinessCalendarOption[]>([]);
 
   ngOnInit(): void {
     this.load();
@@ -173,7 +244,60 @@ export class MessageSchedulesComponent implements OnInit {
   }
 
   open(s: MessageSchedule): void {
+    this.editing.set(null);
     this.api.getSchedule(s.id).subscribe({ next: (d) => this.detail.set(d) });
+  }
+
+  startEdit(d: MessageScheduleDetail): void {
+    this.editError.set('');
+    this.editDates.set([]);
+    if (!this.calendars().length) {
+      this.api.calendars().subscribe({ next: (res) => this.calendars.set(res.items), error: () => this.calendars.set([]) });
+    }
+    this.editing.set({
+      source: d, name: d.name, subject: d.subject, body: d.body, priority: d.priority as ScheduleEdit['priority'],
+      runAtLocal: toLocalInput(d.run_at),
+      rule: {
+        recurrence: d.recurrence, run_at: d.run_at, time_of_day: d.time_of_day ?? '09:00', weekdays: [...d.weekdays],
+        month_day: d.month_day ?? 1, starts_on: d.starts_on, ends_on: d.ends_on, calendar_id: d.calendar_id,
+        non_business_rule: d.non_business_rule
+      }
+    });
+  }
+
+  loadEditDates(): void {
+    const e = this.editing();
+    if (!e) return;
+    this.api.occurrences(ruleBodyOf(e.rule, e.runAtLocal)).subscribe({
+      next: (res) => this.editDates.set(res.occurrences),
+      error: (err) => this.editError.set(apiErrorMessage(err, 'Não foi possível calcular as datas.'))
+    });
+  }
+
+  /** Mesmo canal, destinatários, variáveis e modelo; a versão lida evita sobrescrever a edição de outra pessoa. */
+  saveEdit(): void {
+    const e = this.editing();
+    if (!e) return;
+    const d = e.source;
+    this.editError.set('');
+    this.saving.set(true);
+    this.api.updateSchedule(d.id, {
+      name: e.name.trim(), channel: d.channel, subject: e.subject, body: e.body, priority: e.priority,
+      variables: d.variables, template_id: d.template_id, recipient_ids: d.recipient_ids,
+      ...ruleBodyOf(e.rule, e.runAtLocal), version: d.version
+    }).subscribe({
+      next: (saved) => {
+        this.saving.set(false);
+        this.editing.set(null);
+        this.snack.open('Agendamento atualizado.', 'OK', { duration: 3000 });
+        this.load();
+        this.open(saved);
+      },
+      error: (err) => {
+        this.saving.set(false);
+        this.editError.set(apiErrorMessage(err, 'Não foi possível salvar.'));
+      }
+    });
   }
 
   act(s: MessageSchedule, action: 'pause' | 'resume' | 'cancel', event: Event): void {

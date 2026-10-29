@@ -114,6 +114,9 @@ export interface MessageSchedule extends ScheduleRule {
 
 export interface MessageScheduleDetail extends MessageSchedule {
   body: string;
+  variables: Record<string, string>;
+  recipient_ids: string[];
+  template_id: string | null;
   upcoming: string[];
   runs: OutboundMessage[];
 }
@@ -212,6 +215,11 @@ export class MessagesService {
 
   getSchedule(id: string): Observable<MessageScheduleDetail> {
     return this.http.get<MessageScheduleDetail>(`${this.base}/schedules/${id}`);
+  }
+
+  /** `version` é a do agendamento lido: se outra pessoa alterou antes, a API responde 409. */
+  updateSchedule(id: string, body: ScheduleInput & { version: number }): Observable<MessageSchedule> {
+    return this.http.put<MessageSchedule>(`${this.base}/schedules/${id}`, body);
   }
 
   scheduleAction(id: string, action: 'pause' | 'resume' | 'cancel'): Observable<MessageSchedule> {

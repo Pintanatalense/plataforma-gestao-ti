@@ -51,6 +51,7 @@ function api(overrides: object = {}) {
     listSchedules: vi.fn().mockReturnValue(of({ items: [] })),
     getSchedule: vi.fn(),
     scheduleAction: vi.fn(),
+    updateSchedule: vi.fn(),
     ...overrides
   };
 }
@@ -285,6 +286,63 @@ describe('scheduling', () => {
     rows[0].click();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="schedule-detail"]').textContent).toContain('Todo dia às 09:00');
+  });
+});
+
+describe('editing a schedule', () => {
+  const detail = {
+    id: 's1', name: 'Diário', channel: 'email', subject: 'Aviso', priority: 'normal', recurrence: 'daily', run_at: null,
+    time_of_day: '09:00', weekdays: [], month_day: null, timezone: 'America/Fortaleza', starts_on: null, ends_on: null,
+    calendar_id: null, non_business_rule: 'skip', status: 'ACTIVE', next_run_at: '2026-11-02T12:00:00Z', last_run_at: null,
+    last_outcome: null, last_error: null, runs_count: 0, recipient_count: 2, version: 3, created_by: 'u0', created_at: '',
+    body: 'Oi {{setor}}', variables: { setor: 'TI' }, recipient_ids: ['u1', 'u2'], template_id: 't1', upcoming: [], runs: []
+  };
+
+  async function editor(overrides: object = {}) {
+    const service = api({
+      listSchedules: vi.fn().mockReturnValue(of({ items: [detail] })),
+      getSchedule: vi.fn().mockReturnValue(of(detail)),
+      ...overrides
+    });
+    const fixture = await mount(MessageSchedulesComponent, service);
+    const c = fixture.componentInstance;
+    c.open(detail as never);
+    fixture.detectChanges();
+    (fixture.nativeElement.querySelector('[data-testid="schedule-edit-start"]') as HTMLElement).click();
+    fixture.detectChanges();
+    return { service, fixture, c };
+  }
+
+  it('keeps channel, people, variables and template, and sends the version read', async () => {
+    const { service, fixture, c } = await editor({ updateSchedule: vi.fn().mockReturnValue(of(detail)) });
+    expect(fixture.nativeElement.querySelector('[data-testid="schedule-edit"]')).toBeTruthy();
+    const e = c.editing()!;
+    e.rule.recurrence = 'weekly';
+    e.rule.weekdays = [1];
+    e.rule.time_of_day = '15:30';
+    e.name = ' Semanal ';
+    c.saveEdit();
+    expect(service.updateSchedule).toHaveBeenCalledWith('s1', expect.objectContaining({
+      name: 'Semanal', channel: 'email', recipient_ids: ['u1', 'u2'], variables: { setor: 'TI' }, template_id: 't1',
+      recurrence: 'weekly', weekdays: [1], time_of_day: '15:30', run_at: null, version: 3
+    }));
+    expect(c.editing()).toBeNull();
+  });
+
+  it('shows the conflict when someone else changed it and keeps the form open', async () => {
+    const conflict = new HttpErrorResponse({ status: 409, error: { error: { code: 'CONFLICT', message: 'Este agendamento foi alterado por outra pessoa.' } } });
+    const { c } = await editor({ updateSchedule: vi.fn().mockReturnValue(throwError(() => conflict)) });
+    c.saveEdit();
+    expect(c.editError()).toContain('outra pessoa');
+    expect(c.editing()).not.toBeNull();
+  });
+
+  it('a single send is edited in the browser time zone', async () => {
+    const once = { ...detail, recurrence: 'once', run_at: '2026-11-03T12:00:00Z', time_of_day: null };
+    const { service, c } = await editor({ getSchedule: vi.fn().mockReturnValue(of(once)), updateSchedule: vi.fn().mockReturnValue(of(once)) });
+    expect(new Date(c.editing()!.runAtLocal).toISOString()).toBe('2026-11-03T12:00:00.000Z');
+    c.saveEdit();
+    expect(service.updateSchedule.mock.calls[0][1]).toEqual(expect.objectContaining({ run_at: '2026-11-03T12:00:00.000Z', time_of_day: null }));
   });
 });
 

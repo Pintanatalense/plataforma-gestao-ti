@@ -284,6 +284,30 @@ async def test_pause_resume_cancel_and_concurrent_edit(client, world, db_session
     assert events == {f"notifications.message_schedule_{e}" for e in ("created", "paused", "resumed", "updated", "cancelled")}
 
 
+async def test_template_deactivated_later_does_not_block_editing(client, world, db_session):
+    from app.notifications.models import MessageTemplate
+
+    template = MessageTemplate(code="lembrete", name="Lembrete", channels=[], subject="S", body="Oi {{nome}}", is_active=True)
+    db_session.add(template)
+    await db_session.commit()
+    created = (await _create(client, world, template_id=str(template.id))).json()
+    template.is_active = False
+    await db_session.commit()
+
+    h = as_author(world)
+    kept = await client.put(
+        f"{BASE}/{created['id']}", json={**body(world, template_id=str(template.id), time_of_day="11:00"), "version": created["version"]}, headers=h
+    )
+    assert kept.status_code == 200, kept.text  # mesmo modelo: só o horário mudou
+    other = MessageTemplate(code="outro", name="Outro", channels=[], subject="S", body="B", is_active=False)
+    db_session.add(other)
+    await db_session.commit()
+    swapped = await client.put(
+        f"{BASE}/{created['id']}", json={**body(world, template_id=str(other.id)), "version": kept.json()["version"]}, headers=h
+    )
+    assert swapped.status_code == 400 and "desativado" in swapped.text  # trocar para um modelo desativado continua barrado
+
+
 async def test_open_schedules_per_person_are_capped(client, world, monkeypatch):
     from app.config import get_settings
 

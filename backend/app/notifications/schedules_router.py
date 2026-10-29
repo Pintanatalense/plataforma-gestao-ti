@@ -127,13 +127,19 @@ async def _first_run(db: AsyncSession, rule: dict[str, Any]) -> datetime:
     return first
 
 
-async def _check_content(db: AsyncSession, ctx: AccessContext, body: ScheduleIn) -> svc.Draft:
-    """Mesmas validações do envio manual, e ao menos uma pessoa precisa poder receber hoje."""
+async def _check_content(
+    db: AsyncSession, ctx: AccessContext, body: ScheduleIn, kept_template: uuid.UUID | None = None
+) -> svc.Draft:
+    """Mesmas validações do envio manual, e ao menos uma pessoa precisa poder receber hoje.
+
+    Na edição, manter o mesmo modelo não passa de novo pela checagem do modelo: o texto já foi copiado para o
+    agendamento, e um modelo desativado depois não pode impedir de mudar o horário."""
     if not body.recipient_ids:
         raise ValidationException("Escolha ao menos um destinatário.")
     if len(body.recipient_ids) > get_settings().MESSAGES_MAX_RECIPIENTS:
         raise BusinessRuleException(f"No máximo {get_settings().MESSAGES_MAX_RECIPIENTS} destinatários por envio.")
-    draft = await _draft(db, body)
+    same_template = kept_template is not None and body.template_id == kept_template
+    draft = await _draft(db, body.model_copy(update={"template_id": None}) if same_template else body)
     recipients = await svc.resolve_recipients(db, ctx, draft.channel, body.recipient_ids)
     if not any(r.outcome == "queued" for r in recipients):
         raise BusinessRuleException("Nenhum destinatário pode receber por este canal (veja a prévia).")
@@ -304,7 +310,7 @@ async def update_schedule(schedule_id: uuid.UUID, body: ScheduleUpdate, db: DB, 
     if body.version != schedule.version:
         raise ConflictException("Este agendamento foi alterado por outra pessoa. Recarregue e tente de novo.")
     rule = _normalized_rule(body)
-    await _check_content(db, ctx, body)
+    await _check_content(db, ctx, body, kept_template=schedule.template_id)
     for name, value in _content_fields(body, rule).items():
         setattr(schedule, name, value)
     if schedule.status == "ACTIVE":

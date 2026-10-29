@@ -253,6 +253,11 @@ seção "Validação".
   só agenda depois da prévia); aba nova Agendamentos (situação, próximo envio, último resultado com o motivo,
   pausar/retomar/cancelar, detalhe com próximos envios e envios feitos). O Histórico mostra o tipo "Agendado".
 - Não feito nesta etapa: editar um agendamento pela tela (a API aceita; hoje se cancela e cria outro).
+  **Feito depois (2026-10-28):** botão Editar no detalhe da aba Agendamentos (nome, prioridade, assunto, texto e
+  regra; canal, destinatários, variáveis e modelo ficam), com "Ver próximas datas" e a `version` lida (409 vira
+  aviso na tela). Os campos da regra viraram um componente só (`schedule-rule-fields.component.ts`), usado ao criar
+  e ao editar. Manter o mesmo modelo na edição não passa de novo pela checagem do modelo (desativado depois não
+  impede mudar o horário); trocar para um modelo desativado continua barrado.
 
 ### M5 — eventos novos, catálogo, escalonamento e canal alternativo (2026-10-27)
 

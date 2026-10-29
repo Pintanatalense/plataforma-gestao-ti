@@ -19,6 +19,7 @@ import {
   ScheduleRule
 } from '../../../core/services/messages.service';
 import { CHANNEL_NAMES } from '../admin/channels.component';
+import { ScheduleRuleFieldsComponent, emptyRule, ruleBodyOf, toggleWeekday } from './schedule-rule-fields.component';
 
 export const OUTCOME_LABELS: Record<string, string> = {
   queued: 'Vai receber',
@@ -39,13 +40,6 @@ export function customVariables(texts: string[], builtin: string[]): string[] {
   return [...found].filter((name) => !builtin.includes(name)).sort();
 }
 
-export function emptyRule(): ScheduleRule {
-  return {
-    recurrence: 'once', run_at: null, time_of_day: '09:00', weekdays: [], month_day: 1, starts_on: null, ends_on: null,
-    calendar_id: null, non_business_rule: 'skip'
-  };
-}
-
 function newKey(): string {
   return crypto.randomUUID();
 }
@@ -53,7 +47,7 @@ function newKey(): string {
 @Component({
   selector: 'app-message-compose',
   standalone: true,
-  imports: [DatePipe, FormsModule, MatButtonModule, MatFormFieldModule, MatIconModule, MatInputModule, MatSelectModule, MatSnackBarModule],
+  imports: [DatePipe, FormsModule, ScheduleRuleFieldsComponent, MatButtonModule, MatFormFieldModule, MatIconModule, MatInputModule, MatSelectModule, MatSnackBarModule],
   template: `
     <section class="form">
       <div class="row">
@@ -141,76 +135,11 @@ function newKey(): string {
               <mat-label>Nome do agendamento</mat-label>
               <input matInput [(ngModel)]="scheduleName" maxlength="150" data-testid="m-schedule-name" />
             </mat-form-field>
-            <mat-form-field appearance="outline">
-              <mat-label>Repetição</mat-label>
-              <mat-select [(ngModel)]="rule.recurrence" (selectionChange)="ruleChanged()" data-testid="m-recurrence">
-                <mat-option value="once">Uma vez</mat-option>
-                <mat-option value="daily">Todo dia</mat-option>
-                <mat-option value="weekly">Dias da semana</mat-option>
-                <mat-option value="monthly">Todo mês</mat-option>
-              </mat-select>
-            </mat-form-field>
           }
         </div>
         @if (when === 'schedule') {
-          <div class="row" data-testid="m-schedule">
-            @if (rule.recurrence === 'once') {
-              <mat-form-field appearance="outline">
-                <mat-label>Data e hora</mat-label>
-                <input matInput type="datetime-local" [(ngModel)]="runAtLocal" (ngModelChange)="ruleChanged()" data-testid="m-run-at" />
-              </mat-form-field>
-            } @else {
-              <mat-form-field appearance="outline">
-                <mat-label>Horário</mat-label>
-                <input matInput type="time" [(ngModel)]="rule.time_of_day" (ngModelChange)="ruleChanged()" data-testid="m-time" />
-              </mat-form-field>
-              @if (rule.recurrence === 'monthly') {
-                <mat-form-field appearance="outline">
-                  <mat-label>Dia do mês</mat-label>
-                  <input matInput type="number" min="1" max="31" [(ngModel)]="rule.month_day" (ngModelChange)="ruleChanged()" />
-                  <mat-hint>Em mês mais curto, vai no último dia.</mat-hint>
-                </mat-form-field>
-              }
-              <mat-form-field appearance="outline">
-                <mat-label>A partir de</mat-label>
-                <input matInput type="date" [(ngModel)]="rule.starts_on" (ngModelChange)="ruleChanged()" />
-              </mat-form-field>
-              <mat-form-field appearance="outline">
-                <mat-label>Até (opcional)</mat-label>
-                <input matInput type="date" [(ngModel)]="rule.ends_on" (ngModelChange)="ruleChanged()" />
-              </mat-form-field>
-            }
-          </div>
-          @if (rule.recurrence === 'weekly') {
-            <div class="weekdays">
-              @for (label of weekdayNames; track $index) {
-                <label><input type="checkbox" [checked]="rule.weekdays.includes($index)" (change)="toggleWeekday($index)"
-                  [attr.data-testid]="'m-weekday-' + $index" /> {{ label }}</label>
-              }
-            </div>
-          }
-          @if (rule.recurrence !== 'once') {
-            <div class="row">
-              <mat-form-field appearance="outline">
-                <mat-label>Dias úteis (calendário do SLA)</mat-label>
-                <mat-select [(ngModel)]="rule.calendar_id" (selectionChange)="ruleChanged()" data-testid="m-calendar">
-                  <mat-option [value]="null">Todos os dias</mat-option>
-                  @for (c of calendars(); track c.id) {
-                    <mat-option [value]="c.id">{{ c.name }}</mat-option>
-                  }
-                </mat-select>
-              </mat-form-field>
-              @if (rule.calendar_id) {
-                <mat-form-field appearance="outline">
-                  <mat-label>Em feriado ou dia sem expediente</mat-label>
-                  <mat-select [(ngModel)]="rule.non_business_rule" (selectionChange)="ruleChanged()">
-                    <mat-option value="skip">Não enviar</mat-option>
-                    <mat-option value="next">Enviar no próximo dia útil</mat-option>
-                  </mat-select>
-                </mat-form-field>
-              }
-            </div>
-          }
+          <app-schedule-rule-fields data-testid="m-schedule" [rule]="rule" [(runAt)]="runAtLocal" [calendars]="calendars()"
+            (changed)="ruleChanged()" />
           <button mat-stroked-button (click)="loadOccurrences()" [disabled]="busy()" data-testid="m-occurrences">Ver próximas datas</button>
           @if (occurrences().length) {
             <ul class="dates" data-testid="m-dates">
@@ -277,7 +206,6 @@ function newKey(): string {
     .html { border: 1px dashed #cbd5e1; border-radius: 6px; padding: 8px; }
     .hint { color: #64748b; font-size: 13px; }
     .error { color: #dc2626; }
-    .weekdays { display: flex; flex-wrap: wrap; gap: 12px; margin-bottom: 12px; }
     .dates { margin: 8px 0; }
   `]
 })
@@ -304,7 +232,6 @@ export class MessageComposeComponent implements OnInit {
   scheduleName = '';
   rule: ScheduleRule = emptyRule();
   runAtLocal = '';
-  readonly weekdayNames = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
   calendars = signal<BusinessCalendarOption[]>([]);
   occurrences = signal<string[]>([]);
   private scheduleKey = newKey();
@@ -431,22 +358,12 @@ export class MessageComposeComponent implements OnInit {
   }
 
   toggleWeekday(day: number): void {
-    const days = this.rule.weekdays;
-    this.rule.weekdays = days.includes(day) ? days.filter((d) => d !== day) : [...days, day].sort();
+    toggleWeekday(this.rule, day);
     this.ruleChanged();
   }
 
-  /** O que vai para a API: só os campos do tipo de repetição escolhido; data e hora únicas com fuso (ISO). */
   ruleBody(): ScheduleRule {
-    const once = this.rule.recurrence === 'once';
-    return {
-      ...this.rule,
-      run_at: once && this.runAtLocal ? new Date(this.runAtLocal).toISOString() : null,
-      time_of_day: once ? null : this.rule.time_of_day,
-      starts_on: once ? null : this.rule.starts_on || null,
-      ends_on: once ? null : this.rule.ends_on || null,
-      calendar_id: once ? null : this.rule.calendar_id
-    };
+    return ruleBodyOf(this.rule, this.runAtLocal);
   }
 
   loadOccurrences(): void {
