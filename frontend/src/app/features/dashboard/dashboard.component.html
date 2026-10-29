@@ -144,7 +144,7 @@
             <th mat-header-cell *matHeaderCellDef> Prioridade </th>
             <td mat-cell *matCellDef="let ticket">
               <span class="priority-badge" [ngClass]="getPriorityClass(ticket.priority)">
-                {{ ticket.priority }}
+                {{ getPriorityLabel(ticket.priority) }}
               </span>
             </td>
           </ng-container>

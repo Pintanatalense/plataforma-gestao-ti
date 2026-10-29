@@ -72,6 +72,20 @@ describe('Dashboard', () => {
     expect(text('dashboard-error')).toBeNull();
   });
 
+  it('shows priority, status and weekday in Portuguese', async () => {
+    const tickets = [
+      { ...ticket('PENDING'), id: 'a', priority: 'MEDIUM' },
+      { ...ticket('OPENED'), id: 'b', priority: 'CRITICAL' }
+    ];
+    await mount(vi.fn().mockReturnValue(of(tickets)));
+    const html = fixture.nativeElement.textContent as string;
+    expect(html).toContain('Média');
+    expect(html).toContain('Crítica');
+    expect(html).toContain('Pendente');
+    expect(html).not.toMatch(/\bMEDIUM\b|\bCRITICAL\b|\bPENDING\b/);
+    expect(html).toMatch(/(segunda|terça|quarta|quinta|sexta)-feira|sábado|domingo/);
+  });
+
   it('a failed source is shown as unavailable, never as zero, and the user is warned', async () => {
     await mount(vi.fn().mockReturnValue(throwError(() => ({ status: 500, error: {} }))));
     expect(text('kpi-tickets')).toBe('—'); // antes: "0 chamados"
