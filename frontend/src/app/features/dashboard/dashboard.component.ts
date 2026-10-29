@@ -1,4 +1,5 @@
 import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
+import { PT_BR } from '../../core/i18n/pt-br';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
@@ -43,6 +44,7 @@ export class Dashboard implements OnInit {
   private cdr = inject(ChangeDetectorRef);
 
   today = new Date();
+  readonly ptBr = PT_BR;
 
   /**
    * Estado de cada fonte de dados. Uma fonte que falhou NÃO vira zero: o cartão mostra "—" e o painel avisa

@@ -9,6 +9,7 @@ import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { Observable } from 'rxjs';
 import { apiErrorMessage } from '../../../core/http/api-error';
+import { PT_BR } from '../../../core/i18n/pt-br';
 import {
   BusinessCalendarOption,
   MessageDraft,
@@ -143,7 +144,7 @@ function newKey(): string {
           <button mat-stroked-button (click)="loadOccurrences()" [disabled]="busy()" data-testid="m-occurrences">Ver próximas datas</button>
           @if (occurrences().length) {
             <ul class="dates" data-testid="m-dates">
-              @for (d of occurrences(); track d) { <li>{{ d | date: 'EEE dd/MM/yyyy HH:mm' }}</li> }
+              @for (d of occurrences(); track d) { <li>{{ d | date: 'EEE dd/MM/yyyy HH:mm' : undefined : ptBr }}</li> }
             </ul>
           }
           <p class="hint">Quem recebe é conferido de novo a cada envio: quem sair do seu setor ou desvincular o canal fica de fora.</p>
@@ -226,6 +227,7 @@ export class MessageComposeComponent implements OnInit {
   busy = signal(false);
   private idempotencyKey = newKey();
 
+  readonly ptBr = PT_BR;
   /** A página só liga quando a pessoa tem `notifications.messages.schedule`. */
   @Input() canSchedule = false;
   when: 'now' | 'schedule' = 'now';

@@ -286,6 +286,7 @@ describe('scheduling', () => {
     rows[0].click();
     fixture.detectChanges();
     expect(fixture.nativeElement.querySelector('[data-testid="schedule-detail"]').textContent).toContain('Todo dia às 09:00');
+    expect(fixture.nativeElement.querySelector('[data-testid="schedule-detail"]').textContent).toMatch(/seg\.? 02\/11\/2026/);  // dia em português
   });
 });
 

@@ -6,6 +6,7 @@ import { MatFormFieldModule } from '@angular/material/form-field';
 import { MatSelectModule } from '@angular/material/select';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import { apiErrorMessage } from '../../../core/http/api-error';
+import { PT_BR } from '../../../core/i18n/pt-br';
 import { MatInputModule } from '@angular/material/input';
 import {
   BusinessCalendarOption,
@@ -140,7 +141,7 @@ export function describeRule(s: Pick<MessageSchedule, 'recurrence' | 'run_at' | 
         <app-schedule-rule-fields [rule]="e.rule" [(runAt)]="e.runAtLocal" [calendars]="calendars()" (changed)="editDates.set([])" />
         <button mat-stroked-button (click)="loadEditDates()" data-testid="edit-occurrences">Ver próximas datas</button>
         @if (editDates().length) {
-          <ul data-testid="edit-dates">@for (u of editDates(); track u) { <li>{{ u | date: 'EEE dd/MM/yyyy HH:mm' }}</li> }</ul>
+          <ul data-testid="edit-dates">@for (u of editDates(); track u) { <li>{{ u | date: 'EEE dd/MM/yyyy HH:mm' : undefined : ptBr }}</li> }</ul>
         }
         @if (editError()) {
           <p class="error" role="alert">{{ editError() }}</p>
@@ -161,7 +162,7 @@ export function describeRule(s: Pick<MessageSchedule, 'recurrence' | 'run_at' | 
         <pre>{{ d.subject ? d.subject + '\n\n' : '' }}{{ d.body }}</pre>
         @if (d.upcoming.length) {
           <h4>Próximos envios</h4>
-          <ul>@for (u of d.upcoming; track u) { <li>{{ u | date: 'EEE dd/MM/yyyy HH:mm' }}</li> }</ul>
+          <ul>@for (u of d.upcoming; track u) { <li>{{ u | date: 'EEE dd/MM/yyyy HH:mm' : undefined : ptBr }}</li> }</ul>
         }
         <h4>Envios feitos</h4>
         <ul>
@@ -201,6 +202,7 @@ export class MessageSchedulesComponent implements OnInit {
   private snack = inject(MatSnackBar);
 
   readonly statuses = Object.entries(SCHEDULE_STATUS_LABELS).map(([key, label]) => ({ key, label }));
+  readonly ptBr = PT_BR;
   status = '';
   items = signal<MessageSchedule[]>([]);
   detail = signal<MessageScheduleDetail | null>(null);
