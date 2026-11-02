@@ -12,6 +12,11 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 - **Telegram e Slack: *Enviar teste para mim*.** Cada aba manda uma mensagem agora para a conta que o próprio administrador vinculou (nunca para um destino digitado); sem vínculo, o sistema orienta a vincular. Até 5 testes por hora.
 - **WhatsApp: vínculo e menu pela Evolution, sem URL pública.** A pessoa envia `vincular CÓDIGO` ao número da empresa e passa a receber alertas e usar o menu de chamados. A entrada de mensagens chega pela rede interna do Docker, autenticada por segredo, e o caminho é bloqueado no Nginx.
 
+### Processo
+
+- **CI local** (`make ci-local` / `bash scripts/ci-local.sh`): as mesmas verificações do GitHub Actions, em contêineres Linux, só nas áreas alteradas, com PostgreSQL descartável em memória e o código montado só leitura. Resumo em `.ci-local/ultimo-resultado.txt`.
+- **Relatório de consumo do Actions** (`scripts/ci_usage.py`, só leitura) e linha de base medida em `docs/ci-consumo.md`.
+
 ## [0.1.1] — 2026-10-23
 
 ### Funcionalidades
