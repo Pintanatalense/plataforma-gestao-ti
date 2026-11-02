@@ -70,7 +70,8 @@ services:
     networks: [ci-egress]
 
   ci-shellcheck:
-    image: koalaman/shellcheck-alpine:v0.10.0
+    # o runner do GitHub (ubuntu-26.04) já tem shellcheck 0.11 ou mais novo (acusa SC2329, que não existe na 0.10)
+    image: koalaman/shellcheck-alpine:v0.11.0
     working_dir: /src
     volumes:
       - ./scripts:/src/scripts:ro

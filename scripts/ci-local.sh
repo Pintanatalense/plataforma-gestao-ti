@@ -113,13 +113,13 @@ step() { # step "nome" comando...
   fi
 }
 
-# shellcheck disable=SC2317  # chamadas indiretas (trap e step)
+# shellcheck disable=SC2317,SC2329  # chamadas indiretas (trap e step); SC2329 é o nome no shellcheck 0.11
 cleanup() { "${COMPOSE[@]}" down --remove-orphans >/dev/null 2>&1; }
 trap cleanup EXIT
 
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 in_backend() { "${COMPOSE[@]}" run --rm --no-deps ci-backend sh -c "$1"; }       # com internet, sem banco
-# shellcheck disable=SC2317
+# shellcheck disable=SC2317,SC2329
 in_backend_db() { "${COMPOSE[@]}" run --rm ci-backend-db sh -c "$1"; }           # com banco, sem internet
 
 if [ "${run[backend]}" = true ]; then
