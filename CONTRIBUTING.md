@@ -21,6 +21,7 @@ Dependabot: PRs semanais de dependências (limite baixo no início). Versão **m
 
 | Verificação | Comando |
 |---|---|
+| **Tudo o que o CI roda, nas áreas alteradas** (recomendado) | `make ci-local` ou `bash scripts/ci-local.sh` (ver "Minutos do GitHub Actions") |
 | Testes do backend (SQLite, rápido) | `cd backend && uv run pytest` |
 | Testes do backend em PostgreSQL (inclui `pg` e `migrations`) | `docker compose -f docker-compose.test.yml up -d`; depois `export TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/gti_test` e `cd backend && uv run pytest` (sem a variável os testes `pg`/`migrations` são ignorados; ver `docs/11-base-de-testes-e-homologacao.md`) |
 | Lint do backend | `cd backend && uv run ruff check app tests alembic` |
@@ -29,7 +30,9 @@ Dependabot: PRs semanais de dependências (limite baixo no início). Versão **m
 | Frontend | `cd frontend && npm ci && npm run test -- --watch=false && npm run build` |
 
 Regras que o CI faz cumprir: `ruff` sem achados (regras de defeito), `alembic check` sem diferença, `shellcheck` limpo,
-testes em SQLite **e** PostgreSQL, imagens Docker construindo.
+testes passando, imagens Docker construindo. Em todo PR de backend os testes de regra rodam em SQLite e os marcados
+`pg`/`migrations` no PostgreSQL 16; a suíte **inteira** em PostgreSQL real (`USE_PG_TEST=true`) roda quando o PR mexe em
+migrations, `models.py`, `repository.py`, `app/database.py` ou `tests/conftest.py`, e na execução semanal.
 
 ## Telas que dependem da API (frontend)
 
@@ -68,6 +71,6 @@ O plano gratuito dá 2.000 minutos por mês (e o aviso chega aos 90%). Uma execu
   - Diferenças que ainda podem existir: o runner do GitHub (Ubuntu) e a versão do `uv` instalada pelo CI. Verde local reduz, mas não elimina, a chance de falha no CI.
 - **Um PR, poucos commits.** Cada `push` num PR reexecuta o que mudou. Junte as correções de revisão em um único commit em vez de um commit por achado.
 - **O CI só roda o que o PR tocou** (job `changes`): só documentação não roda nada pesado; só frontend não roda o backend. Mudar `.github/workflows/` roda tudo.
-- **Não há execução em `push` na `main`** (o PR já rodou o mesmo código). A suíte completa, inclusive SQLite e auditoria de dependências, roda toda segunda-feira e sob demanda (aba *Actions* → *CI* → *Run workflow*).
+- **Não há execução em `push` na `main`** (o PR já rodou o mesmo código). A suíte completa (backend em SQLite e em PostgreSQL real, auditoria de dependências) roda toda segunda-feira e sob demanda (aba *Actions* → *CI* → *Run workflow*).
 - **Dependabot é mensal e sem rebase automático**: cada rebase reexecuta o CI. Revise os PRs dele em lote, um por vez.
 - Consulte o gasto em *Settings → Billing → Usage*. Para nunca cobrar além do incluído, defina um orçamento de US$ 0 para Actions (isso bloqueia as execuções ao chegar no limite).

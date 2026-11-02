@@ -84,7 +84,8 @@ async def test_demo_setup_loads_a_rich_example_on_top_of_the_same_catalog(client
 
 async def test_cleaning_the_example_keeps_the_real_catalog_and_returns_to_production(client: AsyncClient, db_session: AsyncSession, monkeypatch):
     await _installed_base(db_session)
-    await db_session.execute(text("PRAGMA foreign_keys=ON"))  # o Postgres impõe FKs; o SQLite dos testes, por padrão, não
+    if db_session.bind.dialect.name == "sqlite":
+        await db_session.execute(text("PRAGMA foreign_keys=ON"))  # o Postgres impõe FKs; o SQLite dos testes, por padrão, não
     token = (await client.post(SETUP, json={**ADMIN, "setup_mode": "DEMO"})).json()["access_token"]
 
     async def recent_backup(self, max_age_hours=24):

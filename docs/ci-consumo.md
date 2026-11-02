@@ -14,7 +14,9 @@ O script só lê (`gh api`), roda na sua máquina e **não gasta minutos**. Most
 
 **Limites:** os minutos são uma *estimativa* (duração de cada job arredondada para cima, em minutos, runner Linux). O número oficial é o de *Settings → Billing and plans → Usage*; confira os dois uma vez por mês. Execuções recusadas pelo GitHub por cobrança aparecem com 0 minuto.
 
-## Linha de base: CI atual (a partir de 24/10/2026)
+**Calibração (25/10/2026):** a página de cobrança mostrou US$ 12,20 de uso bruto em outubro (todo coberto pela franquia gratuita), o que equivale a ~2.033 minutos Linux; o script estimou ~2.035. A estimativa é confiável para comparar períodos.
+
+## Linha de base: CI atual (a partir de 24/10/2026, antes do PR-C)
 
 13 execuções de PR, ~80 min estimados. Duração média por job (n pequeno; a variação é grande):
 
@@ -46,6 +48,17 @@ Execução completa de um PR: **~10 a 13 min faturados**; PR só de backend: ~9 
 
 ## Achados sobre o CI
 
-1. O job `backend-postgres` **não roda a suíte em PostgreSQL**: o `conftest.py` só usa PostgreSQL quando `USE_PG_TEST=true`, e o CI define apenas `TEST_DATABASE_URL`. A suíte principal roda em SQLite em memória; o PostgreSQL só serve aos testes marcados `pg`/`migrations` (CI: 580 passam, 0 ignorados; local sem banco: 7 ignorados) e ao `alembic upgrade/check`.
-2. Em PR, a suíte SQLite roda no job `backend-postgres`; na execução semanal ela roda **duas vezes** (também em `backend-tests`).
-3. O frontend é compilado duas vezes (`frontend-tests` e dentro da imagem nginx); a imagem é construída mas nunca iniciada.
+1. O antigo job `backend-postgres` **não rodava a suíte em PostgreSQL**: o `conftest.py` só usa PostgreSQL quando `USE_PG_TEST=true`, e o CI definia apenas `TEST_DATABASE_URL`. A suíte principal rodava em SQLite em memória; o PostgreSQL só servia aos testes marcados `pg`/`migrations` e ao `alembic upgrade/check`. **Corrigido no PR-C** (ver abaixo).
+2. Na execução semanal a suíte SQLite rodava **duas vezes** (`backend-tests` e `backend-postgres`). **Corrigido no PR-C**: os dois jobs viraram um só (`backend-tests`).
+3. O frontend é compilado duas vezes (`frontend-tests` e dentro da imagem nginx); a imagem é construída mas nunca iniciada. Tratado no PR-E.
+
+## Suíte inteira em PostgreSQL real (medição de 25/10/2026, CI local, 587 testes)
+
+| Modo | Tempo do pytest |
+|---|---|
+| Padrão: regras em SQLite + testes `pg`/`migrations` no PostgreSQL | 316 s |
+| `USE_PG_TEST=true`: tudo no PostgreSQL 16 | 670 s (~2,1×) |
+
+- O modo `USE_PG_TEST=true` **nunca tinha funcionado**: o engine dos testes guardava conexões num pool e cada teste roda num event loop novo; do 2º teste em diante, 586 erros (`another operation is in progress`). Corrigido no `conftest.py` (sem pool no PostgreSQL).
+- Rodando de verdade, apareceram 3 suposições de SQLite nos próprios testes (comando `PRAGMA`, data sem fuso e falta do `pg_dump` na imagem de CI local), corrigidas. Nenhum defeito do sistema.
+- **Regra adotada**: a suíte inteira em PostgreSQL real roda na execução semanal/manual (junto com a SQLite) e em PRs que mexem em `backend/alembic/`, `models.py`, `repository.py`, `app/database.py` ou `tests/conftest.py`. Custo extra estimado nesses PRs: ~6 min (substitui a execução SQLite, não se soma a ela).
