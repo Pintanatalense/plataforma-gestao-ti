@@ -40,7 +40,7 @@ async def list_movements_by_asset(
 @router.post(
     "/",
     response_model=AssetMovementResponse,
-    dependencies=[Depends(require_permission("assets.write"))],
+    dependencies=[Depends(require_permission("assets.movements.write"))],
 )
 async def create_movement(
     data: AssetMovementCreate,
@@ -54,7 +54,7 @@ async def create_movement(
 @router.post(
     "/{asset_id}/reserve",
     response_model=AssetMovementResponse,
-    dependencies=[Depends(require_permission("assets.write"))],
+    dependencies=[Depends(require_permission("assets.movements.write"))],
 )
 async def reserve_asset(
     asset_id: uuid.UUID,
@@ -75,7 +75,7 @@ async def reserve_asset(
 @router.post(
     "/{asset_id}/cancel-reservation",
     response_model=AssetMovementResponse,
-    dependencies=[Depends(require_permission("assets.write"))],
+    dependencies=[Depends(require_permission("assets.movements.write"))],
 )
 async def cancel_reservation(
     asset_id: uuid.UUID,
@@ -89,7 +89,7 @@ async def cancel_reservation(
 @router.post(
     "/{asset_id}/deliver",
     response_model=AssetMovementResponse,
-    dependencies=[Depends(require_permission("assets.write"))],
+    dependencies=[Depends(require_permission("assets.movements.write"))],
 )
 async def deliver_asset(
     asset_id: uuid.UUID,
@@ -110,7 +110,7 @@ async def deliver_asset(
 @router.post(
     "/{asset_id}/return",
     response_model=AssetMovementResponse,
-    dependencies=[Depends(require_permission("assets.write"))],
+    dependencies=[Depends(require_permission("assets.movements.write"))],
 )
 async def return_asset(
     asset_id: uuid.UUID,
@@ -130,7 +130,7 @@ async def return_asset(
 @router.post(
     "/{asset_id}/inspect",
     response_model=AssetMovementResponse,
-    dependencies=[Depends(require_permission("assets.write"))],
+    dependencies=[Depends(require_permission("assets.movements.write"))],
 )
 async def inspect_asset(
     asset_id: uuid.UUID,

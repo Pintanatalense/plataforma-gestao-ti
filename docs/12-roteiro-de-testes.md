@@ -72,7 +72,7 @@ Com 2 usuários comuns criados (A e B) e o administrador.
 
 ## Etapa 4b — Importar inventário do GLPI Agent (XML)
 
-Menu **Importar Inventário (GLPI)** (exige `assets.write`). Use XMLs gerados pelo GLPI Agent (`glpi-agent --tasks inventory --local <pasta>`).
+Menu **Importar Inventário (GLPI)** (exige `assets.import`). Use XMLs gerados pelo GLPI Agent (`glpi-agent --tasks inventory --local <pasta>`).
 
 1. Envie 2 ou 3 arquivos `.xml` e clique em analisar. **Esperado:** cada máquina aparece como **Novo** (série ainda não cadastrada) ou **Já cadastrado** (série igual à de um ativo).
 2. Tente adicionar de novo um arquivo com o **mesmo nome**. **Esperado:** é ignorado, com aviso.

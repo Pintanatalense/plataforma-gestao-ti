@@ -116,9 +116,10 @@ async def test_ticket_reports_require_reports_permission(
 
 @pytest.mark.parametrize(
     "perms,is_admin,expected",
-    [((), False, 403), ((MANAGE,), False, 201), ((READ_ALL,), False, 403), ((), True, 201)],
+    # PR 6: era "técnico" (tickets.manage); agora service_desk.categories.manage, dada a todo perfil com tickets.manage.
+    [((), False, 403), ((MANAGE,), False, 403), (("service_desk.categories.manage",), False, 201), ((READ_ALL,), False, 403), ((), True, 201)],
 )
-async def test_ticket_category_write_requires_technician(
+async def test_ticket_category_write_requires_categories_permission(
     client: AsyncClient, db_session: AsyncSession, perms, is_admin, expected
 ):
     org = await make_org(db_session)

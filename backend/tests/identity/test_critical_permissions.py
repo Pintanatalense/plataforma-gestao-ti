@@ -23,7 +23,9 @@ GRANT = "identity.critical.grant"
 async def test_catalog_codes_are_unique_and_the_critical_set_is_explicit():
     codes = [spec.code for spec in CATALOG]
     assert len(codes) == len(set(codes))
-    assert CRITICAL_CODES == {GRANT, "system.data.import", "system.backup.manage", "system.backup.download"}
+    assert CRITICAL_CODES == {
+        GRANT, "system.data.import", "system.backup.manage", "system.backup.download", "system.demo.manage", "system.data.reset"
+    }
     assert all(spec.risk in ("leitura", "alteracao", "aprovacao", "execucao", "administracao") for spec in CATALOG)
 
 

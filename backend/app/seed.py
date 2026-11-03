@@ -112,6 +112,7 @@ async def seed() -> None:
         # Tier 2 - Atendente: Solicitante + atendimento de chamados do seu setor/unidade
         atendente_codes = solicitante_codes + [
             "service_desk.tickets.manage",
+        "service_desk.categories.manage",
             "service_desk.interactions.internal",
             "assets.read",
             "stock.read",
@@ -144,6 +145,9 @@ async def seed() -> None:
         # Tier 4 - Admin: Gestão + cadastro de inventário e ativos completo + usuários e estoque
         admin_local_codes = gestao_codes + [
             "assets.write",
+        "assets.categories.manage",
+        "assets.movements.write",
+        "assets.import",
             "stock.write",
             "organization.company.update",
             "organization.units.create",

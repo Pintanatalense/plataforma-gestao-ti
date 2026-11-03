@@ -68,7 +68,7 @@ async def test_admin_resets_work_data_and_keeps_accounts(client: AsyncClient, db
     other = await make_user(db_session)
     await _populate(db_session)
 
-    resp = await client.post(URL, json={"confirmation_phrase": PHRASE}, headers=headers_for(admin, "system.backup.manage"))
+    resp = await client.post(URL, json={"confirmation_phrase": PHRASE}, headers=headers_for(admin, "system.data.reset"))
 
     assert resp.status_code == 200, resp.text
     assert resp.json()["summary"]["assets_removed"] == 1
@@ -90,7 +90,7 @@ async def test_wrong_phrase_deletes_nothing(client: AsyncClient, db_session: Asy
     admin = await make_user(db_session, is_admin=True)
     await _populate(db_session)
 
-    resp = await client.post(URL, json={"confirmation_phrase": "zerar"}, headers=headers_for(admin, "system.backup.manage"))
+    resp = await client.post(URL, json={"confirmation_phrase": "zerar"}, headers=headers_for(admin, "system.data.reset"))
 
     assert resp.status_code >= 400
     assert await _count(db_session, Asset) == 1
@@ -100,7 +100,7 @@ async def test_manager_without_admin_flag_is_refused(client: AsyncClient, db_ses
     manager = await make_user(db_session)
     await _populate(db_session)
 
-    resp = await client.post(URL, json={"confirmation_phrase": PHRASE}, headers=headers_for(manager, "system.backup.manage"))
+    resp = await client.post(URL, json={"confirmation_phrase": PHRASE}, headers=headers_for(manager, "system.data.reset"))
 
     assert resp.status_code == 403
     assert await _count(db_session, Asset) == 1

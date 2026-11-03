@@ -165,14 +165,14 @@ Prefixo global `API_V1_PREFIX=/api/v1` (`config.py:28`). Permissão: `P:x` = `re
 
 | Método | Rota | Permissão |
 |---|---|---|
-| GET/POST/PUT/DELETE | `/categories[/{id}]` | `P:assets.read` / `P:assets.write` |
+| GET/POST/PUT/DELETE | `/categories[/{id}]` | `P:assets.read` / `P:assets.categories.manage` |
 | GET | `` | `P:assets.read` |
 | GET | `/me` | `JWT` |
 | GET | `/{id}` | `assets.read` **ou** `assets.read_own` + dono (manual, `:77-99`) |
 | POST/PUT | `` , `/{id}` | `P:assets.write` |
 | GET | `/{id}/responsibility-statement` | idem GET `/{id}` (HTML gerado na hora) |
 
-**movements** (`/movements`) — `P:assets.read` (GET `/asset/{id}`), `P:assets.write` (POST `/`, `/{id}/reserve|cancel-reservation|deliver|return|inspect`). **stock** (`/stock`) — `P:stock.read|write` em categorias, itens e `/movements`. **inventory** (`/inventory`) — `P:inventory.read` (GET) / `P:inventory.write` (POST, PATCH, itens).
+**movements** (`/movements`) — `P:assets.read` (GET `/asset/{id}`), `P:assets.movements.write` (POST `/`, `/{id}/reserve|cancel-reservation|deliver|return|inspect`). **stock** (`/stock`) — `P:stock.read|write` em categorias, itens e `/movements`. **inventory** (`/inventory`) — `P:inventory.read` (GET) / `P:inventory.write` (POST, PATCH, itens).
 
 **attachments** (`/attachments`) — `attachments/router.py`
 

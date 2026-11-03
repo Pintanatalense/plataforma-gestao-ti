@@ -42,7 +42,7 @@ async def get_demo_status(
 @router.get(
     "/preview-clean",
     summary="Pré-visualização do impacto da limpeza: registros a remover vs preservados",
-    dependencies=[Depends(require_permission("system.backup.manage"))]
+    dependencies=[Depends(require_permission("system.demo.manage"))]
 )
 async def preview_clean(
     session: Annotated[AsyncSession, Depends(get_db)]
@@ -54,7 +54,7 @@ async def preview_clean(
 @router.post(
     "/clean",
     summary="Limpeza segura dos dados demonstrativos com confirmação e verificação de backup",
-    dependencies=[Depends(require_permission("system.backup.manage"))]
+    dependencies=[Depends(require_permission("system.demo.manage"))]
 )
 async def clean_demo_data(
     body: CleanDemoRequest,
@@ -78,7 +78,7 @@ class ResetAllRequest(BaseModel):
 @router.post(
     "/reset-all",
     summary="Zera toda a base de trabalho (só administrador), mantendo usuários, perfis e configurações",
-    dependencies=[Depends(require_permission("system.backup.manage"))]
+    dependencies=[Depends(require_permission("system.data.reset"))]
 )
 async def reset_all_data(
     body: ResetAllRequest,
@@ -100,7 +100,7 @@ async def reset_all_data(
     "/seed",
     status_code=status.HTTP_201_CREATED,
     summary="Recarrega dados demonstrativos modelo de forma limpa e idempotente",
-    dependencies=[Depends(require_permission("system.backup.manage"))]
+    dependencies=[Depends(require_permission("system.demo.manage"))]
 )
 async def seed_demo_data(
     payload: Annotated[dict, Depends(get_token_payload)],
@@ -115,7 +115,7 @@ async def seed_demo_data(
     "/seed-test",
     status_code=status.HTTP_201_CREATED,
     summary="Recarrega dados da base de testes e homologação (QA)",
-    dependencies=[Depends(require_permission("system.backup.manage"))]
+    dependencies=[Depends(require_permission("system.demo.manage"))]
 )
 async def seed_test_data(
     payload: Annotated[dict, Depends(get_token_payload)],
