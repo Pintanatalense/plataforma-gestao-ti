@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies import client_ip
 from app.database import get_db
 from app.notifications.channel_store import load_channel
 from app.notifications.channels.whatsapp import WHATSAPP_CHANNEL
@@ -71,7 +72,7 @@ async def receive_webhook(request: Request, db: Annotated[AsyncSession, Depends(
     if stored is None or not stored.enabled:
         return Response(status_code=404)
     if not signature_valid(stored.secrets.get("app_secret"), request.headers.get("X-Hub-Signature-256"), raw):
-        logger.warning("WhatsApp webhook com assinatura inválida de %s", request.client.host if request.client else "?")
+        logger.warning("WhatsApp webhook com assinatura inválida de %s", client_ip(request))
         return Response(status_code=401)
 
     try:

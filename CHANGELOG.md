@@ -12,6 +12,10 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 - **Telegram e Slack: *Enviar teste para mim*.** Cada aba manda uma mensagem agora para a conta que o próprio administrador vinculou (nunca para um destino digitado); sem vínculo, o sistema orienta a vincular. Até 5 testes por hora.
 - **WhatsApp: vínculo e menu pela Evolution, sem URL pública.** A pessoa envia `vincular CÓDIGO` ao número da empresa e passa a receber alertas e usar o menu de chamados. A entrada de mensagens chega pela rede interna do Docker, autenticada por segredo, e o caminho é bloqueado no Nginx.
 
+### Segurança
+
+- **IP do cliente não pode mais ser forjado** na auditoria e nos limites por IP. O bloco geral `/api/` do Nginx repassava o `X-Forwarded-For` enviado pelo cliente, e o backend usava o primeiro IP dele: qualquer pessoa escolhia o IP gravado (por exemplo, no setup inicial). Agora todo bloco do Nginx sobrescreve `X-Real-IP` e `X-Forwarded-For` com o IP que ele viu, e o backend só aceita esses cabeçalhos vindos de um proxy confiável (`TRUSTED_PROXIES`, padrão: redes privadas e loopback); fora disso, vale o IP da conexão. Logs de webhook recusado passam a mostrar o IP real. Atrás de outro proxy/balanceador, configure o módulo `real_ip` do Nginx.
+
 ### Processo
 
 - **CI local** (`make ci-local` / `bash scripts/ci-local.sh`): as mesmas verificações do GitHub Actions, em contêineres Linux, só nas áreas alteradas, com PostgreSQL descartável em memória e o código montado só leitura. Resumo em `.ci-local/ultimo-resultado.txt`.

@@ -352,4 +352,5 @@ async def test_oversized_forwarded_ip_does_not_break_the_request(client: AsyncCl
         f"{BASE}/password-reset/request", json={"email": "maria@test.com"}, headers={"X-Forwarded-For": "9" * 300}
     )
     assert resp.status_code == 202
-    assert len((await db_session.execute(select(PasswordResetRequest.requested_ip))).scalar_one()) == 50
+    # cabeçalho que não é um IP não vira "IP" gravado (antes era cortado em 50 caracteres)
+    assert (await db_session.execute(select(PasswordResetRequest.requested_ip))).scalar_one() is None

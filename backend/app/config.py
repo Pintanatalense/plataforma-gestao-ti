@@ -72,6 +72,9 @@ class Settings(BaseSettings):
     ENABLE_QA_SEED: bool = False
     # Swagger/ReDoc/openapi.json. Em produção exposta à internet, desligue.
     ENABLE_API_DOCS: bool = True
+    # De quem o backend aceita os cabeçalhos X-Real-IP/X-Forwarded-For (o Nginx do Compose fica numa rede privada do
+    # Docker). Conexão vinda de fora dessas redes usa o IP da própria conexão: o cabeçalho é ignorado.
+    TRUSTED_PROXIES: str = "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
     # --- Chamados ---
     TICKET_REOPEN_DAYS: int = 3

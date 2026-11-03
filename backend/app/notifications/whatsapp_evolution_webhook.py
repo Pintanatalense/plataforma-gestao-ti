@@ -13,6 +13,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies import client_ip
 from app.database import get_db
 from app.notifications.channel_store import load_channel
 from app.notifications.channels import whatsapp_evolution as evolution
@@ -35,7 +36,7 @@ async def receive_evolution_webhook(request: Request, db: Annotated[AsyncSession
     expected = stored.secrets.get("webhook_secret")
     given = request.headers.get(evolution.WEBHOOK_SECRET_HEADER)
     if not expected or not given or not hmac.compare_digest(expected, given):
-        logger.warning("Webhook da Evolution sem segredo válido, de %s", request.client.host if request.client else "?")
+        logger.warning("Webhook da Evolution sem segredo válido, de %s", client_ip(request))
         return Response(status_code=401)
     try:
         payload = json.loads(await request.body())
