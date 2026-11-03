@@ -114,4 +114,4 @@ As credenciais de SMTP, Telegram, WhatsApp, Slack e as chaves do pop-up do naveg
 4. O backup **não é criptografado** e a geração pela tela carrega o dump em memória (atenção em bases grandes).
 5. Dumps `*.sql.gz`, `arquivos_*.tar.gz` e `pre-restore-*` podem conter dados reais: o `.gitignore` ignora `*.sql.gz` e `pre-restore-*`; nunca os coloque em repositório.
 
-Plano de correção do restante: `docs/plans/plano-diretor.md`, Fase 5.
+Plano de correção do restante: `docs/plans/plano-evolucao.md`, Fase 0 (PR 13, backup completo).

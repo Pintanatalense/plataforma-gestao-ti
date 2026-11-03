@@ -1,6 +1,7 @@
 # ADR-017 — SLA de chamados
 
-**Status:** Proposto (2026-10-22), revisado após revisão independente. Os prazos iniciais da seção "Valores iniciais" são uma sugestão a confirmar com o usuário; todo o resto vale para a implementação.  
+**Status:** Aceito; **implementado em parte**. P4-S1 (tabelas e cálculo de horas úteis, `backend/app/sla/`) foi entregue em 2026-10-23 (#51). P4-S2 a P4-S5 (integração com chamados, job de violações, telas, indicadores) estão pendentes: no Plano de Evolução são a Fase 2, depois da prova de conceito. Nenhum chamado usa SLA ainda. Os prazos da seção "Valores iniciais" continuam sendo sugestão a confirmar com o usuário.  
+*Status anterior: Proposto (2026-10-22), revisado após revisão independente.*  
 **Data:** 2026-10-22  
 **Depende de:** ADR-013 (worker e outbox já existentes)
 

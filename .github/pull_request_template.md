@@ -1,5 +1,5 @@
 ## Problema
-<!-- O que está errado ou faltando, e qual o impacto. Cite o item do plano diretor (docs/plans/plano-diretor.md), se houver. -->
+<!-- O que está errado ou faltando, e qual o impacto. Cite o item do plano (docs/plans/plano-evolucao.md), se houver. -->
 
 ## O que muda
 <!-- Resumo objetivo. Liste o que NÃO entra neste PR. -->

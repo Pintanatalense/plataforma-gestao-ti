@@ -1,6 +1,6 @@
 # AUDIT — Plataforma de Gestão de TI
 
-> **Documento histórico (instantâneo de 2026-10-15/21).** Descreve o repositório antes das fases A–G e do PR de endurecimento da importação GLPI; os achados abertos não foram reconciliados com o estado atual. Para o diagnóstico vigente e o plano de correção, veja `docs/plans/plano-diretor.md`.
+> **Documento histórico (instantâneo de 2026-10-15/21).** Descreve o repositório antes das fases A–G e do PR de endurecimento da importação GLPI; os achados abertos não foram reconciliados com o estado atual. Para o diagnóstico vigente e o plano atual, veja `docs/plans/plano-evolucao.md`.
 
 > Base: commit `a544af7` (main). Auditoria de 2026-10-15. Mapa de referência: `docs/PROJECT_MAP.md`.
 > **Como validei:** stack real via Docker Compose numa cópia isolada do commit (projeto `gtiaudit`, volumes e portas próprios; nenhum container/volume existente foi tocado), scripts de API contra Nginx (`:18080`) e `pytest` do backend.

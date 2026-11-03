@@ -1,6 +1,7 @@
 # ADR-019 — Página "Canais de comunicação" e WhatsApp para alertas
 
-**Status:** Proposto (2026-10-23), **revisado no mesmo dia**: o provedor inicial do WhatsApp passou a ser a **Evolution API** (sem custo), mantendo a Meta Cloud API como segundo provedor. Nada implementado; as fases abaixo viram PRs depois da aprovação.  
+**Status:** Aceito e **implementado** (C1–C4: #59–#62). C5 parcial (#63): Evolution real conferida sem chip e envio de teste confirmado com número descartável; falta homologar com chip dedicado (vínculo, alerta real, queda de sessão) e fechar o `docs/04`. Ver "Registro de implementação" abaixo.  
+*Status anterior: Proposto (2026-10-23), revisado no mesmo dia: o provedor inicial do WhatsApp passou a ser a **Evolution API** (sem custo), mantendo a Meta Cloud API como segundo provedor.*  
 **Data:** 2026-10-23  
 **Depende de:** ADR-013 (hub de notificações), ADR-018 (e-mail)  
 **Altera:** ADR-013 §14.1 (WhatsApp: "Meta Cloud API" passa a "Evolution API primeiro, Meta pronta para entrar")

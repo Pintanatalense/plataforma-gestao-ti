@@ -1,6 +1,7 @@
 # Plano Diretor — Profissionalização e Evolução da Plataforma de Gestão de TI
 
-> **Status:** plano aprovado em 2026-10-21. Execução em PRs independentes, um por vez; nenhum merge, migration em ambiente real ou mudança de arquitetura sem autorização do responsável. Requisitos de origem: [diretriz-engenharia.md](diretriz-engenharia.md).
+> **Histórico.** Fases 1–4 concluídas (#11–#63); substituído pelo [Plano de Evolução](plano-evolucao.md) em 2026-10-25.
+> **Status original:** plano aprovado em 2026-10-21. Execução em PRs independentes, um por vez; nenhum merge, migration em ambiente real ou mudança de arquitetura sem autorização do responsável. Requisitos de origem: [diretriz-engenharia.md](diretriz-engenharia.md).
 > Base: 3 auditorias de leitura (backend/infra, frontend, governança) + verificação direta dos achados mais graves (marcados ✔ = confirmado por mim lendo o código; os demais vêm dos relatórios e serão reconfirmados com teste antes de cada correção).
 
 ## Context
