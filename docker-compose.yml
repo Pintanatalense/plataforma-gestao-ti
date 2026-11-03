@@ -49,7 +49,7 @@ services:
       APP_TIMEZONE: ${APP_TIMEZONE:-America/Fortaleza}
       DEBUG: ${DEBUG:-false}
       ENABLE_QA_SEED: ${ENABLE_QA_SEED:-false}
-      ENABLE_API_DOCS: ${ENABLE_API_DOCS:-true}
+      ENABLE_API_DOCS: ${ENABLE_API_DOCS:-false}
       EVOLUTION_BASE_URL: http://evolution:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
       ATTACHMENT_STORAGE_PATH: /data/attachments
@@ -87,8 +87,12 @@ services:
       EVOLUTION_BASE_URL: http://evolution:8080
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
       BACKUP_STORAGE_PATH: /data/backups
+      ATTACHMENT_STORAGE_PATH: /data/attachments
     volumes:
       - backups_data:/data/backups
+      # Só leitura: o worker lê anexos e logo (backup completo); quem grava é o backend.
+      - attachments_data:/data/attachments:ro
+      - static_data:/app/static:ro
     depends_on:
       backend:
         condition: service_healthy

@@ -14,7 +14,8 @@
 #   4. o frontend é servido (index com <app-root>) e uma rota do SPA cai no index;
 #   5. o caminho interno da Evolution continua bloqueado no Nginx (404);
 #   6. rota protegida sem token responde 401;
-#   7. IP forjado no X-Forwarded-For não é gravado (setup inicial pelo Nginx; consulta no banco descartável).
+#   7. IP forjado no X-Forwarded-For não é gravado (setup inicial pelo Nginx; consulta no banco descartável);
+#   8. documentação da API desligada por padrão; worker enxerga anexos e logo, sem poder gravar.
 #
 # Segurança: projeto Compose próprio (`gti-smoke`), segredos gerados na hora e descartados, porta só em
 # 127.0.0.1, e tudo (contêineres e volumes do projeto) é apagado ao final. Não toca em gti-dev nem em produção.
@@ -120,6 +121,14 @@ saved_ip="$("${COMPOSE[@]}" exec -T postgres psql -U postgres -d gestao_ti -tAc 
 echo "setup: HTTP $setup_status, IP gravado: ${saved_ip:-<vazio>}"
 check "IP forjado no X-Forwarded-For não chega à auditoria" \
   test "$setup_status" = "201" -a -n "$saved_ip" -a "$saved_ip" != "$forged"
+
+# --- 8. padrões seguros da instalação ------------------------------------------------------------------
+check "documentação da API desligada por padrão (404)" test "$(status_of GET /api/v1/openapi.json)" = "404"
+worker_volumes_ro() {
+  "${COMPOSE[@]}" exec -T worker sh -c \
+    'test -d /data/attachments && test -d /app/static && ! touch /data/attachments/.w 2>/dev/null && ! touch /app/static/.w 2>/dev/null'
+}
+check "worker lê anexos e logo, só leitura" worker_volumes_ro
 
 if [ "$failures" -gt 0 ]; then
   echo "RESULTADO: $failures verificação(ões) falharam"

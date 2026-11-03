@@ -70,8 +70,8 @@ class Settings(BaseSettings):
     # --- Segurança operacional ---
     # Carga de QA cria o usuário admin@teste.local com senha conhecida: nunca ligar em produção.
     ENABLE_QA_SEED: bool = False
-    # Swagger/ReDoc/openapi.json. Em produção exposta à internet, desligue.
-    ENABLE_API_DOCS: bool = True
+    # Swagger/ReDoc/openapi.json: desligado por padrão (mapa completo da API para quem chegar). Ligue em desenvolvimento.
+    ENABLE_API_DOCS: bool = False
     # De quem o backend aceita os cabeçalhos X-Real-IP/X-Forwarded-For (o Nginx do Compose fica numa rede privada do
     # Docker). Conexão vinda de fora dessas redes usa o IP da própria conexão: o cabeçalho é ignorado.
     TRUSTED_PROXIES: str = "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
