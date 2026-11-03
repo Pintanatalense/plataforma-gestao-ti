@@ -16,6 +16,7 @@ from sqlalchemy.orm import selectinload
 from app.database import AsyncSessionLocal
 import app.main  # Import all modules to avoid SQLAlchemy mapper errors
 from app.identity.models import Permission, Role
+from app.identity.permission_catalog import sync_permission_catalog
 from app.organization.models import Company, Unit
 
 
@@ -53,78 +54,13 @@ async def seed() -> None:
             await session.flush()
             print(f"Unidade '{matriz.name}' criada.")
 
-        # 3. Criar Permissões Iniciais
-        permissions_data = [
-            # Organization
-            {"code": "organization.company.read", "description": "Ler dados da empresa"},
-            {"code": "organization.company.create", "description": "Inicializar a empresa"},
-            {"code": "organization.company.update", "description": "Editar dados da empresa"},
-            {"code": "organization.units.read", "description": "Ler unidades"},
-            {"code": "organization.units.create", "description": "Criar unidades"},
-            {"code": "organization.units.update", "description": "Editar unidades"},
-            {"code": "organization.sectors.read", "description": "Ler setores"},
-            {"code": "organization.sectors.create", "description": "Criar setores"},
-            {"code": "organization.sectors.update", "description": "Editar setores"},
-            {"code": "organization.employees.read", "description": "Ler colaboradores"},
-            {"code": "organization.employees.create", "description": "Criar colaboradores"},
-            {"code": "organization.employees.update", "description": "Editar colaboradores"},
-            
-            # Identity
-            {"code": "identity.users.read", "description": "Ler usuários"},
-            {"code": "identity.users.create", "description": "Criar usuários"},
-            {"code": "identity.users.update", "description": "Editar usuários"},
-            {"code": "identity.roles.read", "description": "Ler perfis"},
-            {"code": "identity.roles.create", "description": "Criar perfis"},
-            {"code": "identity.roles.update", "description": "Editar perfis"},
+        # 3. Permissões: catálogo único (app/identity/permission_catalog.py). Também tira críticas de perfis.
+        await sync_permission_catalog(session)
+        print("Permissões sincronizadas com o catálogo.")
 
-            # Assets
-            {"code": "assets.read", "description": "Ler patrimônio e ativos"},
-            {"code": "assets.write", "description": "Criar/editar ativos e movimentações"},
-            {"code": "assets.read_own", "description": "Visualizar próprios ativos e equipamentos vinculados"},
-
-            # Stock
-            {"code": "stock.read", "description": "Ler estoque e insumos"},
-            {"code": "stock.write", "description": "Criar/editar insumos e movimentações de estoque"},
-
-            # Inventory
-            {"code": "inventory.read", "description": "Ler inventários periódicos"},
-            {"code": "inventory.write", "description": "Criar e conduzir inventários periódicos"},
-
-            # Auditoria
-            {"code": "audit.read", "description": "Visualizar logs de auditoria e trilha de conformidade"},
-
-            # Service Desk
-            {"code": "service_desk.tickets.manage", "description": "Atender e gerenciar chamados (técnico/setorial)"},
-            {"code": "service_desk.tickets.create", "description": "Abrir novos chamados de suporte"},
-            {"code": "service_desk.tickets.read", "description": "Visualizar próprios chamados"},
-            {"code": "service_desk.tickets.read_all", "description": "Visualizar todos os chamados da organização (Gestão)"},
-            {"code": "service_desk.reports.read", "description": "Acessar relatórios e métricas de desempenho/SLA"},
-            {"code": "service_desk.interactions.internal", "description": "Registrar e visualizar notas internas no chamado"},
-
-            # Sistema, Dados e Backups
-            {"code": "system.data.export", "description": "Exportar dados do sistema em formato CSV"},
-            {"code": "system.data.import", "description": "Importar dados no sistema via CSV"},
-            {"code": "system.backup.manage", "description": "Gerenciar e gerar backups do banco de dados"},
-            {"code": "system.backup.download", "description": "Baixar arquivos de backup do banco de dados"},
-
-            # Notificações
-            {"code": "notifications.manage", "description": "Administrar o hub de notificações: entregas, regras, canais e agenda"},
-
-            # Integrações
-            {"code": "integrations.whatsapp.manage", "description": "Configurar e gerenciar bot do WhatsApp"},
-        ]
-        
-        for p_data in permissions_data:
-            stmt = select(Permission).where(Permission.code == p_data["code"])
-            result = await session.execute(stmt)
-            if not result.scalar_one_or_none():
-                permission = Permission(**p_data)
-                session.add(permission)
-        await session.flush()
-        print("Permissões sincronizadas.")
-
-        # 4. Criar Administrador Global (mantém todas as permissões do sistema)
-        stmt_all_perms = select(Permission)
+        # 4. Perfil Administrador: todas as permissões comuns. Críticas nunca vão em perfil (S5): só por concessão
+        # individual (assistente de instalação, tela de usuários ou `python -m app.cli grant-critical`).
+        stmt_all_perms = select(Permission).where(Permission.is_critical.is_(False))
         all_perms = list((await session.execute(stmt_all_perms)).scalars().all())
 
         stmt = select(Role).options(selectinload(Role.permissions)).where(Role.name == "Administrador")
@@ -144,7 +80,7 @@ async def seed() -> None:
 
         # Helper para sincronizar perfil
         async def sync_role(name: str, desc: str, perm_codes: list[str]) -> Role:
-            stmt_p = select(Permission).where(Permission.code.in_(perm_codes))
+            stmt_p = select(Permission).where(Permission.code.in_(perm_codes), Permission.is_critical.is_(False))
             perms = list((await session.execute(stmt_p)).scalars().all())
             stmt_r = select(Role).options(selectinload(Role.permissions)).where(Role.name == name)
             role = (await session.execute(stmt_r)).scalar_one_or_none()

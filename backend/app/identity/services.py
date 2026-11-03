@@ -22,6 +22,7 @@ from app.core.exceptions import (
 )
 from app.core.security import create_access_token, hash_password, verify_password
 from app.identity.models import Permission, Role, UserAccount
+from app.identity.permission_catalog import CRITICAL_CODES
 from app.identity.repository import IdentityRepository
 from app.identity.schemas import (
     InitialSetup,
@@ -130,9 +131,10 @@ class IdentityService:
         user.locked_until = None
 
     def _issue_token(self, user: UserAccount) -> str:
-        # Extrair permissions e roles (flat)
+        # Perfis dão as permissões comuns; críticas só por concessão explícita (mesmo que um perfil a contenha).
         roles = [r.name for r in user.roles]
-        permissions = {p.code for r in user.roles for p in r.permissions}
+        permissions = {p.code for r in user.roles for p in r.permissions} - CRITICAL_CODES
+        permissions |= set(user.critical_permissions)
 
         token_data = {
             "sub": str(user.id),
@@ -165,9 +167,9 @@ class IdentityService:
 
         admin_role = await self.repo.get_role_by_name(ADMIN_ROLE_NAME)
         if admin_role is None:
-            # Seed não executado: cria o perfil com todas as permissões existentes.
+            # Seed não executado: cria o perfil com todas as permissões comuns (críticas nunca vão em perfil).
             admin_role = Role(name=ADMIN_ROLE_NAME, description="Acesso total ao sistema.")
-            admin_role.permissions = list(await self.repo.list_permissions())
+            admin_role.permissions = [p for p in await self.repo.list_permissions() if p.code not in CRITICAL_CODES]
             await self.repo.create_role(admin_role)
         else:
             # Recarrega com permissions (necessárias para montar o token).
@@ -183,6 +185,17 @@ class IdentityService:
         )
         user.roles = [admin_role]
         await self.repo.create_user(user)
+
+        # Concessão inicial (A2): quem instala recebe as permissões críticas, registrado na auditoria.
+        from app.identity.critical import CriticalGrantService
+        from app.identity.permission_catalog import sync_permission_catalog
+
+        await sync_permission_catalog(self.repo.session)
+        await CriticalGrantService(self.repo.session).grant_all(
+            user.id, via="setup", actor_id=user.id, reason="primeiro administrador (assistente de instalação)"
+        )
+        await self._audit("identity.setup_completed", user.id, {"ip": ip_address, "mode": schema.setup_mode}, user.id)
+        await self.repo.session.refresh(user, ["critical_grants"])
 
         from app.core.starter_catalog import seed_starter_catalog
         await seed_starter_catalog(self.repo.session)
@@ -411,6 +424,12 @@ class IdentityService:
         missing = set(permission_ids) - {p.id for p in permissions}
         if missing:
             raise NotFoundException("Permissão", ", ".join(str(m) for m in missing))
+        critical = sorted(p.code for p in permissions if p.code in CRITICAL_CODES)
+        if critical:
+            raise BusinessRuleException(
+                "Permissões críticas não entram em perfil; conceda individualmente ao usuário: " + ", ".join(critical),
+                rule="identity.critical.not_in_role",
+            )
         return permissions
 
     def _ensure_can_grant_permissions(self, actor: Actor, permissions: Sequence[Permission]) -> None:

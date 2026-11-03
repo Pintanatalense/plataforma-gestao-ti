@@ -83,7 +83,10 @@ export class RoleDialogComponent implements OnInit {
   }
 
   ngOnInit(): void {
-    this.identityService.getPermissions().subscribe((perms: any) => (this.permissions = perms));
+    // Críticas não entram em perfil (o backend recusa): ficam fora da lista.
+    this.identityService
+      .getPermissions()
+      .subscribe((perms: Permission[]) => (this.permissions = perms.filter((p) => !p.is_critical)));
   }
 
   save() {

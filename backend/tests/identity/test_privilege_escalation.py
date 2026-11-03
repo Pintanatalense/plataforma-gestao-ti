@@ -17,6 +17,7 @@ pytestmark = pytest.mark.asyncio
 
 BASE = "/api/v1/identity"
 MANAGER_PERMS = ("identity.users.create", "identity.users.update", "identity.roles.create", "identity.roles.update")
+# Permissão "forte" de exemplo: comum (não crítica). Críticas nem entram em perfil (test_critical_permissions.py).
 
 
 async def _permission(db: AsyncSession, code: str) -> Permission:
@@ -67,13 +68,13 @@ async def test_admin_can_create_an_admin(client: AsyncClient, db_session: AsyncS
 
 
 async def test_non_admin_cannot_assign_a_role_with_permissions_they_lack(client: AsyncClient, db_session: AsyncSession):
-    strong = await _role(db_session, "Forte", "system.backup.manage", "audit.read")
+    strong = await _role(db_session, "Forte", "notifications.manage", "audit.read")
     manager = await _user(db_session, "manager")
     resp = await client.post(
         f"{BASE}/users", json={**NEW_USER, "role_ids": [str(strong.id)]}, headers=_as(manager, *MANAGER_PERMS)
     )
     assert resp.status_code == 403
-    assert "system.backup.manage" in resp.json()["error"]["message"]
+    assert "notifications.manage" in resp.json()["error"]["message"]
 
 
 async def test_non_admin_can_assign_a_role_within_their_own_permissions(client: AsyncClient, db_session: AsyncSession):
@@ -97,7 +98,7 @@ async def test_non_admin_cannot_promote_themselves(client: AsyncClient, db_sessi
 
 
 async def test_non_admin_cannot_escalate_via_roles_on_themselves(client: AsyncClient, db_session: AsyncSession):
-    strong = await _role(db_session, "Forte", "system.backup.manage")
+    strong = await _role(db_session, "Forte", "notifications.manage")
     manager = await _user(db_session, "manager")
     resp = await client.patch(
         f"{BASE}/users/{manager.id}", json={"role_ids": [str(strong.id)]}, headers=_as(manager, *MANAGER_PERMS)
@@ -128,7 +129,7 @@ async def test_non_admin_cannot_deactivate_or_delete_an_admin(
 
 
 async def test_non_admin_cannot_manage_a_user_with_more_permissions(client: AsyncClient, db_session: AsyncSession):
-    strong = await _role(db_session, "Forte", "system.backup.manage")
+    strong = await _role(db_session, "Forte", "notifications.manage")
     boss = await _user(db_session, "boss", roles=(strong,))
     manager = await _user(db_session, "manager")
     resp = await client.patch(
@@ -183,7 +184,7 @@ async def test_inactive_admin_does_not_count_as_a_remaining_admin(client: AsyncC
 
 
 async def test_non_admin_cannot_create_a_role_with_permissions_they_lack(client: AsyncClient, db_session: AsyncSession):
-    perm = await _permission(db_session, "system.backup.manage")
+    perm = await _permission(db_session, "notifications.manage")
     manager = await _user(db_session, "manager")
     resp = await client.post(
         f"{BASE}/roles",
@@ -196,7 +197,7 @@ async def test_non_admin_cannot_create_a_role_with_permissions_they_lack(client:
 async def test_non_admin_cannot_rewrite_or_delete_a_role_holding_more_than_they_have(
     client: AsyncClient, db_session: AsyncSession
 ):
-    strong = await _role(db_session, "Forte", "system.backup.manage")
+    strong = await _role(db_session, "Forte", "notifications.manage")
     manager = await _user(db_session, "manager")
     headers = _as(manager, *MANAGER_PERMS)
 
@@ -205,7 +206,7 @@ async def test_non_admin_cannot_rewrite_or_delete_a_role_holding_more_than_they_
 
 
 async def test_admin_can_create_any_role(client: AsyncClient, db_session: AsyncSession):
-    perm = await _permission(db_session, "system.backup.manage")
+    perm = await _permission(db_session, "notifications.manage")
     admin = await _user(db_session, "admin", is_admin=True)
     resp = await client.post(
         f"{BASE}/roles", json={"name": "Backup", "permission_ids": [str(perm.id)]}, headers=_as(admin)

@@ -20,6 +20,7 @@ from app.core.exceptions import AppException, ForbiddenException, UnauthorizedEx
 from app.core.security import decode_access_token
 from app.database import get_db
 from app.identity.models import UserAccount
+from app.identity.permission_catalog import is_critical
 
 
 # Com troca de senha obrigatória pendente, só estas rotas funcionam.
@@ -145,13 +146,20 @@ async def get_current_user_ip(request: Request) -> str:
     return client_ip(request)
 
 
+def has_permission(payload: dict, code: str) -> bool:
+    """
+    Regra única de permissão a partir do token. Administrador passa em tudo, menos nas permissões críticas: essas
+    exigem concessão explícita (``user_critical_grants``), que o login coloca em ``permissions``.
+    """
+    if code in payload.get("permissions", []):
+        return True
+    return bool(payload.get("is_admin")) and not is_critical(code)
+
+
 def require_any_permission(*required_permissions: str):
-    """Libera se o usuário for admin ou tiver ao menos uma das permissões informadas."""
+    """Libera se o usuário tiver ao menos uma das permissões informadas (admin: ver ``has_permission``)."""
     async def _require_any_permission(payload: dict = Depends(get_token_payload)) -> None:
-        if payload.get("is_admin"):
-            return
-        user_permissions = set(payload.get("permissions", []))
-        if not user_permissions.intersection(required_permissions):
+        if not any(has_permission(payload, code) for code in required_permissions):
             raise ForbiddenException(
                 "Permissão necessária: " + " ou ".join(f"'{p}'" for p in required_permissions) + "."
             )
@@ -162,14 +170,10 @@ def require_any_permission(*required_permissions: str):
 def require_permission(required_permission: str):
     """
     Fábrica de dependências para verificar se o usuário tem a permissão requerida.
-    Admin (is_admin=True) sempre tem permissão.
+    Admin (is_admin=True) tem todas, exceto as críticas (``has_permission``).
     """
     async def _require_permission(payload: dict = Depends(get_token_payload)) -> None:
-        if payload.get("is_admin"):
-            return
-            
-        user_permissions = payload.get("permissions", [])
-        if required_permission not in user_permissions:
+        if not has_permission(payload, required_permission):
             raise ForbiddenException(f"Permissão '{required_permission}' necessária.")
             
     return _require_permission

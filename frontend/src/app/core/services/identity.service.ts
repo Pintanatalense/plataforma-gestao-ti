@@ -6,6 +6,11 @@ export interface Permission {
   id: string;
   code: string;
   description: string;
+  label?: string | null;
+  module?: string | null;
+  risk?: string | null;
+  /** Crítica: não entra em perfil, só por concessão individual. */
+  is_critical?: boolean;
 }
 
 export interface Role {

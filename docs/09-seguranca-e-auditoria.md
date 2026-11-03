@@ -17,7 +17,12 @@ Este documento consolida os controles de segurança técnica, mecanismos de prot
 
 ## 2. Princípio do Menor Privilégio e Segregação de Funções
 
-* **Controle Granular por Permissões (RBAC):** Cada endpoint da API exige uma permissão explícita (ex: `system.backup.manage`, `sd.ticket.write`, `integrations.whatsapp.manage`).
+* **Controle Granular por Permissões (RBAC):** Cada endpoint da API exige uma permissão explícita (ex: `system.backup.manage`, `service_desk.tickets.manage`, `integrations.whatsapp.manage`). O catálogo único (código, módulo, rótulo, descrição e risco) fica em `backend/app/identity/permission_catalog.py`; o mapa de qual permissão protege cada rota é testado em `backend/tests/access_control/`.
+* **Permissões críticas** (`system.backup.manage`, `system.backup.download`, `system.data.import` e `identity.critical.grant`): valem **só por concessão individual**, nunca por perfil e nunca pelo simples "administrador". Perfis não aceitam críticas (o sistema recusa e tira as que encontrar).
+  * **Concessão inicial:** quem conclui o assistente de instalação recebe todas.
+  * **Pela API:** `POST/DELETE /api/v1/identity/users/{id}/critical-permissions`, só para quem tem `identity.critical.grant`, com motivo obrigatório; ninguém concede a si mesmo; não se revoga a última concessão de `identity.critical.grant`. Revogar encerra as sessões da pessoa. Tudo vai para a auditoria e avisa os administradores (regra *Permissão crítica concedida ou revogada*).
+  * **Recuperação (acesso ao servidor):** `docker compose exec backend python -m app.cli grant-critical --email <conta> --reason "<motivo>"` concede todas à conta ativa; `python -m app.cli list-critical` lista quem tem. A pessoa precisa entrar de novo.
+  * **Atualização de uma instalação existente:** quem já tinha uma crítica (administrador ou perfil) recebe a concessão equivalente, registrada na auditoria; nada muda no acesso.
 * **Anti-escalada de privilégio (gestão de usuários e perfis):** só administradores concedem ou retiram o papel de administrador; quem não é administrador só atribui perfis (e só cria perfis) com permissões que ele mesmo possui, não altera contas de administrador nem de quem tem mais permissões do que ele (incluindo redefinir a senha), e ninguém consegue desativar, excluir ou rebaixar o **último administrador ativo** (erro 409).
 * **Isolamento de Escopo Setorial:**
   * Solicitantes só visualizam e interagem com os chamados abertos por eles próprios.
