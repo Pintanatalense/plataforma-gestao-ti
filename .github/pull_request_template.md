@@ -6,6 +6,7 @@
 
 ## Validação (evidência, não intenção)
 <!-- Comandos executados e resultados: testes (n passed), alembic upgrade/downgrade com dados, build, teste manual. -->
+- [ ] `bash scripts/ci-local.sh` verde **no commit publicado** (cole abaixo o `.ci-local/ultimo-resultado.txt`)
 - [ ] Testes automatizados novos ou ajustados, incluindo cenário de falha
 - [ ] Testes do backend e do frontend passando; CI verde
 - [ ] Migration testada com dados (upgrade → downgrade → upgrade) e `alembic check` limpo — ou "sem migration"

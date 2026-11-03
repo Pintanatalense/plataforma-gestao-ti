@@ -15,6 +15,9 @@ em [`docs/decisions/`](docs/decisions/).
 5. O PR só entra na `main` com **CI verde** e **revisão** (code owner). Nada de commit direto na `main`.
    Com um único code owner, o GitHub não deixa o dono aprovar o PR que ele mesmo abriu: use um autor diferente do dono, um segundo code owner ou o bypass de administrador na proteção da `main`.
 
+**Agentes de IA** seguem também o [AGENTS.md](AGENTS.md): validam e corrigem localmente (`ci-local`) antes de publicar,
+não usam o CI para descobrir erro e nunca mesclam sem autorização humana.
+
 Dependabot: PRs semanais de dependências (limite baixo no início). Versão **maior** de runtime (Python, Node, PostgreSQL, Nginx, uv) não é proposta automaticamente; o `uv` do `backend/Dockerfile` é atualizado à mão.
 
 ## Qualidade mínima
