@@ -30,7 +30,8 @@ Dependabot: PRs semanais de dependências (limite baixo no início). Versão **m
 | Frontend | `cd frontend && npm ci && npm run test -- --watch=false && npm run build` |
 
 Regras que o CI faz cumprir: `ruff` sem achados (regras de defeito), `alembic check` sem diferença, `shellcheck` limpo,
-testes passando, imagens Docker construindo. Em todo PR de backend os testes de regra rodam em SQLite e os marcados
+testes passando, imagens Docker construindo **e funcionando** (teste de fumaça `scripts/smoke-test.sh`: sobe a pilha
+real e confere health com banco e worker saudáveis, versão, migrations, seed, frontend e bloqueios do Nginx). Em todo PR de backend os testes de regra rodam em SQLite e os marcados
 `pg`/`migrations` no PostgreSQL 16; a suíte **inteira** em PostgreSQL real (`USE_PG_TEST=true`) roda quando o PR mexe em
 migrations, `models.py`, `repository.py`, `app/database.py` ou `tests/conftest.py`, e na execução semanal.
 

@@ -17,10 +17,12 @@
 #            suíte inteira em PostgreSQL real se mudou migrations/models/repositórios/database.py/conftest.py
 #            (com --all: SQLite e PostgreSQL real, como a execução semanal)
 #   frontend (frontend/)                         npm ci, lint --quiet, test, build
-#   docker   (backend/ nginx/ frontend/ compose) build das imagens do backend e do nginx (sem publicar)
+#   docker   (backend/ nginx/ frontend/ compose) build das imagens do backend e do nginx (sem publicar) e
+#            teste de fumaça com a pilha real (scripts/smoke-test.sh)
 #   scripts  (scripts/)                          shellcheck
 #   audit    (uv.lock, package-lock.json)        pip-audit e npm audit (informativos, como no CI)
-#   Mudou .github/workflows/: roda tudo.
+#   Mudou .github/workflows/: roda tudo e valida o workflow com o actionlint (erros de sintaxe e de contexto
+#   que o GitHub só acusaria ao executar).
 #
 # Segurança: nada aqui usa o banco de desenvolvimento, de teste ou de produção. O único banco é o do
 # docker-compose.ci.yml: em memória, rede interna sem porta, nome terminado em `_test`, apagado ao final.
@@ -40,6 +42,7 @@ mode="changed"
 only=""
 with_docker=true
 pg_real=false
+lint_workflows=false
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -48,7 +51,7 @@ while [ $# -gt 0 ]; do
     --no-docker) with_docker=false ;;
     --pg-real) pg_real=true ;;
     --base) base="${2:-}"; shift ;;
-    -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
+    -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
     *) echo "Opção desconhecida: $1 (use --help)" >&2; exit 2 ;;
   esac
   shift
@@ -76,7 +79,7 @@ changed_files() {
 declare -A run=([backend]=false [frontend]=false [docker]=false [scripts]=false [audit]=false)
 files=""
 case "$mode" in
-  all) for a in "${!run[@]}"; do run[$a]=true; done; pg_real=true ;;
+  all) for a in "${!run[@]}"; do run[$a]=true; done; pg_real=true; lint_workflows=true ;;
   only)
     IFS=',' read -r -a wanted <<< "$only"
     for a in "${wanted[@]}"; do
@@ -89,6 +92,7 @@ case "$mode" in
     if matches '^\.github/workflows/'; then
       for a in "${!run[@]}"; do run[$a]=true; done
       pg_real=true
+      lint_workflows=true
     else
       matches '^backend/' && run[backend]=true
       matches '^frontend/' && run[frontend]=true
@@ -129,6 +133,10 @@ trap cleanup EXIT
 in_backend() { "${COMPOSE[@]}" run --rm --no-deps ci-backend sh -c "$1"; }       # com internet, sem banco
 # shellcheck disable=SC2317,SC2329
 in_backend_db() { "${COMPOSE[@]}" run --rm ci-backend-db sh -c "$1"; }           # com banco, sem internet
+
+if [ "$lint_workflows" = true ]; then
+  step "workflows: actionlint" docker run --rm -v "$(pwd -W 2>/dev/null || pwd):/repo:ro" -w /repo rhysd/actionlint:1.7.7 -color=false
+fi
 
 if [ "${run[backend]}" = true ]; then
   step "backend: imagem" "${COMPOSE[@]}" build -q ci-backend
@@ -176,6 +184,7 @@ fi
 if [ "${run[docker]}" = true ]; then
   step "docker: imagem do backend" docker build -q -t gti-backend:ci-local ./backend
   step "docker: imagem do nginx (compila o frontend)" docker build -q -f nginx/Dockerfile -t gti-nginx:ci-local .
+  step "docker: teste de fumaça (pilha real)" scripts/smoke-test.sh
 fi
 
 # ---------------------------------------------------------------------------
