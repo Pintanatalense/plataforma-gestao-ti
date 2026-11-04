@@ -90,9 +90,11 @@ if problems: print("  " + "; ".join(problems)); sys.exit(1)
 check "health: status, banco, worker e versão $expected_version" health_ok
 
 # --- 2. migrations e seed -------------------------------------------------------------------------------
-alembic_head() { "${COMPOSE[@]}" exec -T backend alembic current 2>/dev/null | grep -q "(head)"; }
+# A saída vai para uma variável antes do grep: com pipefail, `comando | grep -q` falha ao acaso quando o grep sai no
+# primeiro achado e o comando morre de SIGPIPE ainda escrevendo (logs longos).
+alembic_head() { local out; out="$("${COMPOSE[@]}" exec -T backend alembic current 2>/dev/null)"; grep -q "(head)" <<< "$out"; }
 check "migrations na última versão (alembic current = head)" alembic_head
-seed_done() { "${COMPOSE[@]}" logs backend 2>/dev/null | grep -q "Iniciando aplicação"; }
+seed_done() { local out; out="$("${COMPOSE[@]}" logs backend 2>/dev/null)"; grep -q "Iniciando aplicação" <<< "$out"; }
 check "seed concluído antes de iniciar a API" seed_done
 
 # --- 3. rota pública que lê o banco ------------------------------------------------------------------------
