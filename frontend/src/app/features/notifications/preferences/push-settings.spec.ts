@@ -1,6 +1,7 @@
 import { TestBed } from '@angular/core/testing';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { signal } from '@angular/core';
+import { MatSnackBar } from '@angular/material/snack-bar';
 import { PushService, PushState, urlBase64ToBytes } from '../../../core/services/push.service';
 import { PushSettingsComponent } from './push-settings.component';
 
@@ -15,11 +16,21 @@ function fakeService(initial: PushState) {
   };
 }
 
+// Aviso falso: o MatSnackBar real fica aberto 3 s e o whenStable espera ele fechar (teste lento e instável).
+let snack: { open: ReturnType<typeof vi.fn> };
+
 async function mount(service: ReturnType<typeof fakeService>) {
-  await TestBed.configureTestingModule({
+  snack = { open: vi.fn() };
+  TestBed.configureTestingModule({
     imports: [PushSettingsComponent],
-    providers: [provideAnimationsAsync(), { provide: PushService, useValue: service }]
-  }).compileComponents();
+    providers: [
+      provideAnimationsAsync(),
+      { provide: PushService, useValue: service }
+    ]
+  });
+  // overrideProvider: o MatSnackBarModule importado pelo componente traria o serviço real
+  TestBed.overrideProvider(MatSnackBar, { useValue: snack });
+  await TestBed.compileComponents();
   const fixture = TestBed.createComponent(PushSettingsComponent);
   fixture.detectChanges();
   await fixture.whenStable();
@@ -63,6 +74,7 @@ describe('PushSettingsComponent', () => {
     await fixture.whenStable();
     expect(svc.test).toHaveBeenCalled();
     expect(svc.disable).toHaveBeenCalled();
+    expect(snack.open).toHaveBeenCalledTimes(2);
   });
 
   it('enables on click and shows the failure message when the user refuses', async () => {
@@ -71,6 +83,7 @@ describe('PushSettingsComponent', () => {
     q(fixture, 'push-enable')!.click();
     await fixture.whenStable();
     expect(svc.enable).toHaveBeenCalled();
+    expect(snack.open).toHaveBeenCalledTimes(1);
 
     svc.enable.mockRejectedValueOnce(new Error('A permissão de notificações não foi concedida.'));
     await fixture.componentInstance.enable();
