@@ -24,6 +24,8 @@ class PermissionOut(PermissionBase):
     label: Optional[str] = None
     risk: Optional[str] = None
     is_critical: bool = False
+    module_label: Optional[str] = None
+    risk_label: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -119,6 +121,19 @@ class UserAccountOut(BaseModel):
     critical_permissions: list[str] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EffectivePermissionOut(BaseModel):
+    """Uma permissão que a conta TEM, e de onde ela vem (calculado pelo backend, mesma regra da autorização)."""
+    code: str
+    label: str
+    description: str
+    module: str
+    module_label: str
+    risk: str
+    risk_label: str
+    is_critical: bool
+    sources: list[str]
 
 
 class CriticalGrantIn(BaseModel):

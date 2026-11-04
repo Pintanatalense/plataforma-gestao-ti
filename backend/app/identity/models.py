@@ -102,6 +102,18 @@ class Permission(Base, TimestampMixin):
     risk: Mapped[str | None] = mapped_column(String(20), nullable=True)
     is_critical: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
 
+    @property
+    def module_label(self) -> str | None:
+        from app.identity.permission_catalog import MODULE_LABELS
+
+        return MODULE_LABELS.get(self.module or "", self.module)
+
+    @property
+    def risk_label(self) -> str | None:
+        from app.identity.permission_catalog import RISK_LABELS
+
+        return RISK_LABELS.get(self.risk or "", self.risk)
+
     roles: Mapped[list["Role"]] = relationship("Role", secondary=role_permission_association, back_populates="permissions")
 
 

@@ -167,6 +167,37 @@ def is_critical(code: str) -> bool:
     return code in CRITICAL_CODES
 
 
+def effective_access(user) -> list[dict]:
+    """
+    O que a conta pode, permissão a permissão, com a origem: perfis (só as comuns), concessão individual (críticas)
+    e "Administrador" (todas as comuns). É a mesma regra do login e de ``require_permission``.
+    """
+    granted = set(user.critical_permissions)
+    result = []
+    for spec in CATALOG:
+        if spec.critical:
+            sources = ["Concessão individual"] if spec.code in granted else []
+        else:
+            sources = [f"Perfil {role.name}" for role in user.roles if any(p.code == spec.code for p in role.permissions)]
+            if user.is_admin:
+                sources.append("Administrador")
+        if sources:
+            result.append(
+                {
+                    "code": spec.code,
+                    "label": spec.label,
+                    "description": spec.description,
+                    "module": spec.module,
+                    "module_label": MODULE_LABELS.get(spec.module, spec.module),
+                    "risk": spec.risk,
+                    "risk_label": RISK_LABELS[spec.risk],
+                    "is_critical": spec.critical,
+                    "sources": sources,
+                }
+            )
+    return result
+
+
 async def sync_permission_catalog(session: AsyncSession) -> None:
     """
     Cria as permissões que faltam, atualiza rótulo/risco/criticidade e tira as críticas de todos os perfis.

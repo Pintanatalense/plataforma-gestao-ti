@@ -10,6 +10,7 @@ import { LoadStateComponent } from '../../../shared/components/load-state/load-s
 import { IdentityService, User } from '../../../core/services/identity.service';
 import { generateTemporaryPassword } from '../../../core/auth/temporary-password';
 import { UserDialogComponent } from './user-dialog.component';
+import { UserAccessDialogComponent } from './user-access-dialog.component';
 
 @Component({
   selector: 'app-user-list',
@@ -94,6 +95,10 @@ export class UserList implements OnInit {
         }
       }
     });
+  }
+
+  openAccess(user: User) {
+    this.dialog.open(UserAccessDialogComponent, { width: '720px', data: user });
   }
 
   resetPassword(id: string) {

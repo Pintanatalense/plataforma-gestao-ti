@@ -68,12 +68,34 @@ Quem tem apenas permissão de editar usuários **não** pode conceder o papel de
 
 ---
 
-## 3. Matriz de Perfis e Permissões (RBAC)
+## 3. Perfis, permissões e acesso efetivo
 
-O sistema opera sob o princípio do menor privilégio. Estão pré-configurados os seguintes perfis padrão:
+O sistema opera sob o princípio do menor privilégio. O catálogo único de permissões (código, módulo, rótulo em
+português, descrição e risco) fica em `backend/app/identity/permission_catalog.py`. Perfis criados pelo seed
+(cumulativos; perfis já existentes não são sobrescritos):
 
-| Perfil | Escopo de Permissões | Indicado Para |
-| :--- | :--- | :--- |
+| Perfil | O que acrescenta |
+| :--- | :--- |
+| **Solicitante** | Abrir chamados, ver os próprios chamados e os próprios ativos. |
+| **Atendente** | Atender os chamados do seu setor, notas internas, categorias de chamados, ver ativos e estoque. |
+| **Gestão** | Ver todos os chamados, relatórios, inventários, auditoria, organização (leitura) e exportar dados. |
+| **Admin** | Cadastro e movimentação de ativos, categorias, importação do GLPI, estoque, organização, usuários e perfis. |
+| **Administrador** | Todas as permissões comuns. |
+
+**Permissões críticas** (backups, download de backup, dados de demonstração, zerar a base, importação de dados e
+conceder críticas) não entram em perfil nem valem pelo simples "Administrador": são concedidas a cada pessoa. Ver
+`docs/09`, seção 2.
+
+**Telas:**
+* **Perfis** (*Administração & Sistema > Perfis*): ao criar ou editar um perfil, as permissões aparecem agrupadas por
+  módulo, com nome em português, descrição e o risco (Leitura, Alteração, Execução, Administração). As críticas não
+  aparecem ali. Se a lista de permissões não carregar, o perfil não pode ser salvo (salvar apagaria as permissões dele).
+* **Usuários** → botão **Acesso** (ícone de escudo): mostra o **acesso efetivo** da conta, calculado pelo servidor com a
+  mesma regra da autorização — cada permissão que ela tem e de onde vem (perfil, "Administrador" ou concessão
+  individual) — e as permissões críticas concedidas. Quem tem `identity.critical.grant` concede (com motivo) e revoga
+  críticas ali mesmo; a pessoa precisa entrar de novo para a concessão valer.
+
+--- | :--- | :--- |
 | **Administrador (`ADMIN_TOTAL`)** | Acesso irrestrito a configurações, backups, integrações, auditoria e limpeza de dados. | Gerentes de TI, CISO e Sysadmins. |
 | **Gestão de TI (`GESTAO_TI`)** | Visualização completa de chamados, relatórios executivos, movimentações de patrimônio e estoque. | Coordenadores e Supervisores de Suporte. |
 | **Técnico N2 (`TECNICO_N2`)** | Atendimento de chamados do seu setor, lançamento de notas internas, consumo de estoque e movimentação de ativos. | Analistas de Suporte e Especialistas de Infraestrutura. |
