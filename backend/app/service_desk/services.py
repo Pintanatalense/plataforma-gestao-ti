@@ -8,6 +8,7 @@ import logging
 import uuid
 from typing import Sequence
 
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.exceptions import (
@@ -418,10 +419,17 @@ class ServiceDeskService:
 
         # Notificação via outbox (mesma transação). A regra DEC-012 (nota interna jamais ao solicitante)
         # vive no seletor de audiência `counterpart`.
-        author = await self.session.get(UserAccount, author_id)
+        # Consulta explícita: não depende de o usuário (e o colaborador dele) já estar carregado na sessão.
+        author = (
+            await self.session.execute(
+                select(UserAccount.email, Employee.name)
+                .outerjoin(Employee, Employee.id == UserAccount.employee_id)
+                .where(UserAccount.id == author_id)
+            )
+        ).first()
         author_name = None
         if author:
-            author_name = getattr(author.employee, "name", None) or author.email.split("@")[0].title()
+            author_name = author.name or author.email.split("@")[0].title()
         await self._emit_ticket_event(
             "ticket.interaction_added",
             ticket,

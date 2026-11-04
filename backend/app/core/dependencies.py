@@ -20,7 +20,7 @@ from app.core.exceptions import AppException, ForbiddenException, UnauthorizedEx
 from app.core.security import decode_access_token
 from app.database import get_db
 from app.identity.models import UserAccount
-from app.identity.permission_catalog import is_critical
+from app.core.access import AccessContext, build_access_context, has_permission as _has_permission
 
 
 # Com troca de senha obrigatória pendente, só estas rotas funcionam.
@@ -151,9 +151,21 @@ def has_permission(payload: dict, code: str) -> bool:
     Regra única de permissão a partir do token. Administrador passa em tudo, menos nas permissões críticas: essas
     exigem concessão explícita (``user_critical_grants``), que o login coloca em ``permissions``.
     """
-    if code in payload.get("permissions", []):
-        return True
-    return bool(payload.get("is_admin")) and not is_critical(code)
+    return _has_permission(bool(payload.get("is_admin")), payload.get("permissions", []), code)
+
+
+async def get_access_context(
+    payload: dict = Depends(get_token_payload),
+    db: AsyncSession = Depends(get_db),
+) -> AccessContext:
+    """Contexto de acesso único da requisição (FastAPI reaproveita o mesmo objeto em todas as dependências)."""
+    return await build_access_context(
+        db, uuid_from_payload(payload), is_admin=payload.get("is_admin", False), permissions=payload.get("permissions")
+    )
+
+
+def uuid_from_payload(payload: dict) -> UUID:
+    return UUID(str(payload["sub"]))
 
 
 def require_any_permission(*required_permissions: str):
