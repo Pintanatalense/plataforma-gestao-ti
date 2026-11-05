@@ -1,8 +1,8 @@
 # ADR-026 — Chamados vinculados: principal e subchamados para vários setores
 
 **Status:** Aceito; implementado em partes.
-- **Feito:** 2a (vínculo, cancelamento, substituição, obrigatoriedade e avisos), 2b (idempotência) e 2c (indicadores de SLA).
-- **Próximos PRs:** 3 (anexos restritos), 4 (modelos de atendimento) e 5 (telas).
+- **Feito:** 2a (vínculo, cancelamento, substituição, obrigatoriedade e avisos), 2b (idempotência), 2c (indicadores de SLA) e 3 (anexos restritos).
+- **Próximos PRs:** 4 (modelos de atendimento) e 5 (telas).
 **Data:** 2026-11-05
 **Depende de:** criador do chamado e direcionamento por categoria (PR 1 da série), ADR-013 (outbox e notificações),
 ADR-017 (SLA).
@@ -148,6 +148,20 @@ intenção de envio. A tela repete a mesma chave nas novas tentativas.
 - `steps_overdue`: há etapa obrigatória atrasada.
 
 O `children_progress` de cada principal traz os mesmos dois sinais.
+
+### Anexos restritos (parte 3, `app/attachments/access.py`)
+
+**Campo.** `attachments.is_internal`, com padrão `false`: os anexos existentes continuam como estão.
+
+**Quem envia.** Só quem vê as notas internas do chamado marca um anexo como restrito. Num subchamado, isso vale só
+para o setor dele. Anexo de ativo não pode ser restrito.
+
+**Quem não vê as notas internas.** Para essa pessoa, o anexo restrito não existe:
+- a listagem não o mostra; o filtro é feito na consulta;
+- o download e a exclusão por id dão **404**, para não confirmar que ele existe.
+
+**Regra central.** Tudo isso vive em `ensure_attachment_access`, o ponto único por onde passa toda rota de anexo,
+inclusive as futuras.
 
 ## Alternativas descartadas
 

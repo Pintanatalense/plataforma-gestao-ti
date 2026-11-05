@@ -25,15 +25,17 @@ async def upload_attachment(
     file: UploadFile = File(...),
     entity_type: AttachmentEntityType = Form(...),
     entity_id: uuid.UUID = Form(...),
+    # Restrito ao setor que atende o chamado (ADR-026); só para quem vê as notas internas dele.
+    is_internal: bool = Form(False),
     service: AttachmentService = Depends(get_attachment_service),
     access: AccessContext = Depends(get_access_context),
     db: AsyncSession = Depends(get_db),
 ):
     await ensure_attachment_access(
         db=db, access=access,
-        entity_type=entity_type, entity_id=entity_id, action=AttachmentAction.WRITE,
+        entity_type=entity_type, entity_id=entity_id, action=AttachmentAction.WRITE, is_internal=is_internal,
     )
-    return await service.upload_file(file, entity_type, entity_id, access.user_id)
+    return await service.upload_file(file, entity_type, entity_id, access.user_id, is_internal=is_internal)
 
 
 @router.get("", response_model=List[AttachmentOut])
@@ -44,11 +46,11 @@ async def list_attachments(
     access: AccessContext = Depends(get_access_context),
     db: AsyncSession = Depends(get_db),
 ):
-    await ensure_attachment_access(
+    sees_internal = await ensure_attachment_access(
         db=db, access=access,
         entity_type=entity_type, entity_id=entity_id, action=AttachmentAction.READ,
     )
-    return await service.list_attachments(entity_type.value, entity_id)
+    return await service.list_attachments(entity_type.value, entity_id, include_internal=sees_internal)
 
 
 @router.get("/{attachment_id}/download")
