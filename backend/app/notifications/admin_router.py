@@ -51,7 +51,7 @@ router = APIRouter(
 DB = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[uuid.UUID, Depends(get_current_user_id)]
 
-FIXED_SELECTORS = {"requester", "assignee", "sector_attendants", "counterpart", "admins"}
+FIXED_SELECTORS = {"requester", "creator", "assignee", "sector_attendants", "counterpart", "admins"}
 CONDITION_KEYS = {"min_priority", "exclude_actor", "payload_equals"}
 EVENT_TYPE = re.compile(r"^[a-z_]+(\.[a-z_]+)*(\.\*)?$")
 DELIVERY_STATUSES = ("PENDING", "SENDING", "SENT", "DEAD", "SKIPPED", "CANCELLED")

@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.sla.business_time import _MAX_MINUTES as MAX_MINUTES
 
-SlaState = Literal["NOT_APPLICABLE", "RUNNING", "PAUSED", "MET", "BREACHED"]
+SlaState = Literal["NOT_APPLICABLE", "RUNNING", "PAUSED", "MET", "BREACHED", "CANCELED"]
 
 
 class SlaInfo(BaseModel):

@@ -12,6 +12,11 @@ Papéis de quem pede, em relação ao chamado:
 - **gestão**: ``read_all`` vê qualquer chamado.
 
 Solicitante e criador podem o mesmo no chamado: ver, comentar em público e finalizar ou encerrar.
+
+Subchamados (ADR-026): herdam o solicitante do principal, então ele já vê todos. O **criador do principal** também vê e
+comenta em público em todos os filhos (``parent_created_by_user_id``). O criador de um filho vê só aquele filho. O
+atendente do setor do principal acompanha os filhos pelo resumo (``GET /tickets/{id}/children``), não pelo detalhe.
+Solicitante e criadores não alteram um filho: só o setor dele atende.
 """
 
 import uuid
@@ -25,10 +30,12 @@ class TicketAccess:
     is_creator: bool
     # Atende o chamado: altera campos, atribui, cria nota interna (com is_technician).
     is_sector_attendant: bool
+    # Subchamado: quem abriu o principal acompanha todos os filhos.
+    is_parent_creator: bool = False
 
     @property
     def is_requester_or_creator(self) -> bool:
-        return self.is_requester or self.is_creator
+        return self.is_requester or self.is_creator or self.is_parent_creator
 
 
 def evaluate_ticket_access(
@@ -39,18 +46,24 @@ def evaluate_ticket_access(
     sector_id: uuid.UUID | None,
     is_technician: bool,
     can_read_all: bool,
+    parent_created_by_user_id: uuid.UUID | None = None,
 ) -> TicketAccess:
-    """``sector_id`` já resolvido (o serviço busca o do colaborador quando não veio)."""
+    """``sector_id`` já resolvido (o serviço busca o do colaborador quando não veio).
+
+    ``parent_created_by_user_id``: criador do principal, quando ``ticket`` é um subchamado.
+    """
     is_requester = user_employee_id is not None and ticket.requester_id == user_employee_id
     is_creator = user_id is not None and ticket.created_by_user_id == user_id
+    is_parent_creator = user_id is not None and parent_created_by_user_id == user_id
     in_sector_or_assigned = (sector_id is not None and ticket.responsible_sector_id == sector_id) or (
         user_id is not None and ticket.assignee_id == user_id
     )
     is_sector_attendant = is_technician and (can_read_all or in_sector_or_assigned)
-    can_view = can_read_all or is_sector_attendant or is_requester or is_creator
+    can_view = can_read_all or is_sector_attendant or is_requester or is_creator or is_parent_creator
     return TicketAccess(
         can_view=can_view,
         is_requester=is_requester,
         is_creator=is_creator,
         is_sector_attendant=is_sector_attendant,
+        is_parent_creator=is_parent_creator,
     )

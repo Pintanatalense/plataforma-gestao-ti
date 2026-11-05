@@ -92,12 +92,49 @@ class TicketBase(BaseModel):
     category_id: uuid.UUID | None = None
     custom_fields: dict = Field(default_factory=dict)
 
+class ChildTicketSpec(BaseModel):
+    """Um subchamado (ADR-026). Passa pelas mesmas regras de um chamado comum: direcionamento, formulário e SLA."""
+
+    category_id: uuid.UUID
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(..., min_length=1)
+    # Omitido: o setor padrão da categoria. Outro setor exige service_desk.tickets.route_any_sector.
+    responsible_sector_id: uuid.UUID | None = None
+    custom_fields: dict = Field(default_factory=dict)
+    is_required: bool = True
+    # Omitida: a prioridade do principal.
+    priority: str | None = Field(None, pattern="^(LOW|MEDIUM|HIGH|CRITICAL)$")
+
+
+MAX_CHILDREN_PER_REQUEST = 20
+
+
 class TicketCreate(TicketBase):
     asset_ids: list[uuid.UUID] = Field(default_factory=list)
     # Omitido: vai para o setor padrão da categoria. Outro setor exige service_desk.tickets.route_any_sector.
     responsible_sector_id: uuid.UUID | None = None
     # Omitido: o solicitante é quem abre. Outro colaborador exige service_desk.tickets.create_on_behalf.
     requester_id: uuid.UUID | None = None
+    # Subchamados criados junto com o principal, na mesma transação (ADR-026).
+    children: list[ChildTicketSpec] = Field(default_factory=list, max_length=MAX_CHILDREN_PER_REQUEST)
+
+
+class ChildrenAdd(BaseModel):
+    children: list[ChildTicketSpec] = Field(..., min_length=1, max_length=MAX_CHILDREN_PER_REQUEST)
+
+
+class TicketCancel(BaseModel):
+    reason: str = Field(..., min_length=10, max_length=2000)
+
+
+class TicketReplace(BaseModel):
+    reason: str = Field(..., min_length=10, max_length=2000)
+    child: ChildTicketSpec
+
+
+class TicketRequirementUpdate(BaseModel):
+    is_required: bool
+    reason: str = Field(..., min_length=10, max_length=2000)
 
 class TicketUpdate(BaseModel):
     status: str | None = Field(None, pattern="^(OPENED|IN_PROGRESS|PENDING|RESOLVED|CLOSED)$")
@@ -144,8 +181,52 @@ class TicketResponse(TicketBase):
     assets: list[TicketAssetBrief] = []
     # Preenchido pelo roteador (`SlaService.attach`); NOT_APPLICABLE quando a categoria não tem política ativa.
     sla: SlaInfo | None = None
+    # Chamados vinculados (ADR-026). `parent_ticket_id` só aparece para quem pode ver o principal (o roteador limpa).
+    parent_ticket_id: uuid.UUID | None = None
+    is_required: bool = True
+    replaces_ticket_id: uuid.UUID | None = None
+    # Só no principal (preenchido pelo roteador).
+    children_progress: "ChildrenProgress | None" = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class ChildrenProgress(BaseModel):
+    """`done`: filhos resolvidos ou encerrados. `required_pending`: obrigatórios ainda não concluídos, cancelados inclusive."""
+
+    total: int = 0
+    done: int = 0
+    canceled: int = 0
+    required_pending: int = 0
+    overdue: int = 0
+
+
+class ChildTicketSummary(BaseModel):
+    """Resumo de acompanhamento de um subchamado (nível `track`): sem descrição, interações nem anexos."""
+
+    id: uuid.UUID
+    title: str
+    status: str
+    is_required: bool
+    responsible_sector_id: uuid.UUID
+    responsible_sector_name: str | None = None
+    category_id: uuid.UUID | None = None
+    category_name: str | None = None
+    assignee_name: str | None = None
+    created_at: datetime
+    replaces_ticket_id: uuid.UUID | None = None
+    replaced_by_ticket_id: uuid.UUID | None = None
+    resolution_due_at: datetime | None = None
+    overdue: bool = False
+    at_risk: bool = False
+
+
+class ChildrenOverview(BaseModel):
+    progress: ChildrenProgress
+    children: list[ChildTicketSummary]
+
+
+TicketResponse.model_rebuild()
 
 
 # ==============================================================================

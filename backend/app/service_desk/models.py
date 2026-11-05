@@ -49,7 +49,7 @@ class Ticket(Base, TimestampMixin):
     # Enum-like strings: LOW, MEDIUM, HIGH, CRITICAL
     priority: Mapped[str] = mapped_column(String(50), nullable=False, default="LOW")
     
-    # Enum-like strings: OPENED, IN_PROGRESS, PENDING, RESOLVED, CLOSED
+    # Enum-like strings: OPENED, IN_PROGRESS, PENDING, RESOLVED, CLOSED, CANCELED (só subchamados, ADR-026)
     status: Mapped[str] = mapped_column(String(50), nullable=False, default="OPENED")
 
     # Respostas aos pré-requisitos/formulário dinâmico da categoria
@@ -77,10 +77,22 @@ class Ticket(Base, TimestampMixin):
         Boolean, default=False, server_default=text("false"), nullable=False
     )
 
+    # Chamados vinculados (ADR-026): um nível só. O filho é um chamado comum com fila, SLA e histórico próprios.
+    parent_ticket_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sd_ticket.id", ondelete="RESTRICT"), nullable=True, index=True
+    )
+    # Etapa obrigatória: enquanto não concluída (cancelada não conta), o principal não pode ser resolvido.
+    is_required: Mapped[bool] = mapped_column(Boolean, default=True, server_default=text("true"), nullable=False)
+    # Subchamado novo que substitui uma etapa cancelada (o cancelado fica como estava, só deixa de ser obrigatório).
+    replaces_ticket_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sd_ticket.id", ondelete="RESTRICT"), nullable=True
+    )
+
     __table_args__ = (
         CheckConstraint(
             "created_by_user_id IS NOT NULL OR creator_unknown", name="ck_sd_ticket_creator_known"
         ),
+        CheckConstraint("parent_ticket_id IS NULL OR parent_ticket_id <> id", name="ck_sd_ticket_not_own_parent"),
     )
 
     # Relationships

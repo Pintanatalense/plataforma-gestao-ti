@@ -11,7 +11,7 @@ from app.core.timestamps import TimestampMixin
 from app.database import Base
 
 REOPEN_RULES = ("RESTART", "CONTINUE")
-CYCLE_STATES = ("RUNNING", "PAUSED", "MET", "BREACHED", "SUPERSEDED")
+CYCLE_STATES = ("RUNNING", "PAUSED", "MET", "BREACHED", "SUPERSEDED", "CANCELED")
 BREACH_KINDS = ("FIRST_RESPONSE", "RESOLUTION")
 
 

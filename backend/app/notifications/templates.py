@@ -14,6 +14,7 @@ STATUS_LABELS = {
     "PENDING": "Pendente",
     "RESOLVED": "Resolvido",
     "CLOSED": "Encerrado",
+    "CANCELED": "Cancelado",
 }
 PRIORITY_LABELS = {"LOW": "Baixa", "MEDIUM": "Média", "HIGH": "Alta", "CRITICAL": "Crítica"}
 
@@ -267,6 +268,66 @@ def ticket_asset_returned(p: dict[str, Any], priority: str) -> Message:
     )
 
 
+def ticket_children_created(p: dict[str, Any], priority: str) -> Message:
+    children = p.get("children") or []
+    lines = [
+        f"#{str(c.get('ticket_id', ''))[:8]} - {c.get('sector_name') or 'setor'}: {c.get('title', '')}"
+        + ("" if c.get("is_required", True) else " (não obrigatória)")
+        for c in children
+    ]
+    count = len(children)
+    return _build(
+        priority,
+        f"Chamado {_ticket_ref(p)}: {count} subchamado{'s' if count != 1 else ''} aberto{'s' if count != 1 else ''}",
+        [f"{p.get('title', '')}", *lines, "Acompanhe o andamento de cada etapa no chamado principal."],
+        p,
+    )
+
+
+def _child_ref(p: dict[str, Any]) -> str:
+    return f"#{str(p.get('child_ticket_id', ''))[:8]} {p.get('child_title', '')}".strip()
+
+
+def ticket_child_completed(p: dict[str, Any], priority: str) -> Message:
+    pending = int(p.get("required_pending") or 0)
+    status = (
+        "Todas as etapas obrigatórias foram concluídas."
+        if pending == 0
+        else f"Faltam {pending} etapa{'s' if pending != 1 else ''} obrigatória{'s' if pending != 1 else ''}."
+    )
+    return _build(
+        priority,
+        f"Chamado {_ticket_ref(p)}: etapa concluída",
+        [f"{p.get('title', '')}", f"Concluída: {_child_ref(p)}.", status],
+        p,
+    )
+
+
+def ticket_child_canceled(p: dict[str, Any], priority: str) -> Message:
+    note = (
+        "Era obrigatória: o chamado principal só pode ser resolvido depois que ela for substituída ou dispensada."
+        if p.get("is_required")
+        else "Não era obrigatória."
+    )
+    return _build(
+        priority,
+        f"Chamado {_ticket_ref(p)}: etapa cancelada",
+        [f"{p.get('title', '')}", f"Cancelada: {_child_ref(p)}.", note],
+        p,
+        quote=p.get("reason") or None,
+    )
+
+
+def ticket_canceled(p: dict[str, Any], priority: str) -> Message:
+    return _build(
+        priority,
+        f"Subchamado {_ticket_ref(p)} cancelado",
+        [f"{p.get('title', '')}", "O atendimento desta etapa foi cancelado."],
+        p,
+        quote=p.get("reason") or None,
+    )
+
+
 JOB_LABELS = {
     "retention.cleanup": "limpeza de dados antigos",
     "stock.low_check": "verificação de estoque",
@@ -320,6 +381,10 @@ TEMPLATES: dict[str, Callable[[dict[str, Any], str], Message]] = {
     "asset.warranty_expiring": asset_warranty_expiring,
     "ticket.asset_delivered": ticket_asset_delivered,
     "ticket.asset_returned": ticket_asset_returned,
+    "ticket.children_created": ticket_children_created,
+    "ticket.child_completed": ticket_child_completed,
+    "ticket.child_canceled": ticket_child_canceled,
+    "ticket.canceled": ticket_canceled,
     "job.failed": job_failed,
 }
 

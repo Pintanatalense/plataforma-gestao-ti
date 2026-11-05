@@ -136,7 +136,7 @@ Quais campos o Proxmox regenera em clone e restauração (UUID SMBIOS, `vmgenid`
 ### 3.9 Zabbix
 - Chave do evento: (conexão, id do **problema**); `{EVENT.ID}` na recuperação continua sendo o do problema; `{EVENT.RECOVERY.ID}`, `{EVENT.VALUE}`, `{EVENT.UPDATE.STATUS}`, `{TRIGGER.ID}`, `{HOST.ID}`.
 - Reenvio ⇒ `ON CONFLICT`; recuperação antes do problema ⇒ evento nasce normalizado e não abre chamado; simultâneos ⇒ chamado criado na mesma transação com `SELECT … FOR UPDATE`; severidade só sobe (configurável); oscilação (< N min, chamado aberto) ⇒ interação no existente.
-- Correlação nunca esconde: chamado filho sempre criado e visível, com `parent_ticket_id` como "possível causa" desfazível; só agrupa notificação de filhos com severidade ≤ à do principal; High e Disaster notificam sempre.
+- Correlação nunca esconde: chamado filho sempre criado e visível, com `probable_cause_ticket_id` como "possível causa" desfazível (`parent_ticket_id` é dos chamados vinculados, ADR-026); só agrupa notificação de filhos com severidade ≤ à do principal; High e Disaster notificam sempre.
 - Padrões: Warning+ abre chamado; Information ignorado (configurável); Warning→baixa, Average→média, High→alta, Disaster→crítica; host sem IC ⇒ chamado "recurso não identificado" + proposta de vínculo; normalização não fecha o chamado.
 
 ### 3.10 Proxmox (somente leitura)
