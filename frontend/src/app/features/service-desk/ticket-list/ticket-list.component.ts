@@ -108,6 +108,7 @@ export class TicketListComponent implements OnInit {
       case 'PENDING': return 'Pendente';
       case 'RESOLVED': return 'Resolvido';
       case 'CLOSED': return 'Encerrado';
+      case 'CANCELED': return 'Cancelado';
       default: return status;
     }
   }

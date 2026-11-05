@@ -26,9 +26,17 @@ import { apiErrorMessage } from '../../../core/http/api-error';
         <h3>Anexos ({{ attachments.length }})</h3>
         
         <input type="file" #fileInput (change)="onFileSelected($event)" style="display: none">
-        <button mat-stroked-button color="primary" (click)="fileInput.click()" [disabled]="isUploading">
-          <mat-icon>upload_file</mat-icon> Anexar Arquivo
-        </button>
+        <div class="upload-actions">
+          <label class="restricted-toggle" *ngIf="allowRestricted"
+                 matTooltip="Só o setor que atende o chamado vê este anexo; para os demais ele não aparece">
+            <input type="checkbox" [checked]="uploadRestricted" (change)="uploadRestricted = $any($event.target).checked"
+                   data-testid="attachment-restricted">
+            Restrito ao setor
+          </label>
+          <button mat-stroked-button color="primary" (click)="fileInput.click()" [disabled]="isUploading">
+            <mat-icon>upload_file</mat-icon> Anexar Arquivo
+          </button>
+        </div>
       </div>
 
       <div *ngIf="loadError" class="attachments-error" role="alert" data-testid="attachments-error"
@@ -52,6 +60,9 @@ import { apiErrorMessage } from '../../../core/http/api-error';
               <span class="file-name" [matTooltip]="file.filename">{{ file.filename }}</span>
               <span class="termo-badge" *ngIf="isTermo(file.filename)">
                 <mat-icon>verified</mat-icon> Termo Assinado
+              </span>
+              <span class="restricted-badge" *ngIf="file.is_internal" matTooltip="Visível só para o setor que atende">
+                <mat-icon>lock</mat-icon> Restrito
               </span>
             </div>
             <span class="file-meta">{{ formatBytes(file.size_bytes) }} • {{ file.created_at | date:'dd/MM/yy HH:mm' }}</span>
@@ -84,6 +95,21 @@ import { apiErrorMessage } from '../../../core/http/api-error';
       margin-bottom: 16px;
       
       h3 { margin: 0; font-size: 16px; font-weight: 500; }
+    }
+
+    .upload-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+
+    .restricted-toggle {
+      display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer;
+      color: var(--mat-sys-on-surface-variant);
+    }
+
+    .restricted-badge {
+      display: inline-flex; align-items: center; gap: 3px; background: #fff7ed; color: #c2410c;
+      border: 1px solid #fed7aa; border-radius: 12px; font-size: 11px; font-weight: 600; padding: 1px 7px;
+      white-space: nowrap;
+
+      mat-icon { font-size: 13px; width: 13px; height: 13px; }
     }
 
     .upload-progress {
@@ -210,7 +236,11 @@ import { apiErrorMessage } from '../../../core/http/api-error';
 export class AttachmentsComponent implements OnInit {
   @Input() entityType!: string;
   @Input() entityId!: string;
+  /** Mostra a opção "Restrito ao setor" (só para quem vê as notas internas do chamado; ADR-026). */
+  @Input() allowRestricted = false;
   @Output() attachmentsChange = new EventEmitter<Attachment[]>();
+
+  uploadRestricted = false;
 
   attachments: Attachment[] = [];
   
@@ -257,7 +287,7 @@ export class AttachmentsComponent implements OnInit {
       this.uploadProgress = 0;
       this.currentFileName = file.name;
       
-      this.attachmentsService.uploadFile(file, this.entityType, this.entityId).subscribe({
+      this.attachmentsService.uploadFile(file, this.entityType, this.entityId, this.allowRestricted && this.uploadRestricted).subscribe({
         next: (event: any) => {
           if (event.type === HttpEventType.UploadProgress) {
             this.uploadProgress = Math.round(100 * event.loaded / (event.total || file.size));

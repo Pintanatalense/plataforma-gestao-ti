@@ -1,8 +1,7 @@
 # ADR-026 — Chamados vinculados: principal e subchamados para vários setores
 
 **Status:** Aceito; implementado em partes.
-- **Feito:** 2a (vínculo, cancelamento, substituição, obrigatoriedade e avisos), 2b (idempotência), 2c (indicadores de SLA), 3 (anexos restritos) e 4 (modelos de atendimento).
-- **Próximo PR:** 5 (telas).
+- **Feito:** 2a (vínculo, cancelamento, substituição, obrigatoriedade e avisos), 2b (idempotência), 2c (indicadores de SLA), 3 (anexos restritos), 4 (modelos de atendimento) e 5 (telas).
 **Data:** 2026-11-05
 **Depende de:** criador do chamado e direcionamento por categoria (PR 1 da série), ADR-013 (outbox e notificações),
 ADR-017 (SLA).
@@ -192,7 +191,11 @@ um modelo.
 - **Indicadores de SLA.** Um ciclo `CANCELED` sai do cálculo de cumprimento.
 - **Volta da migration.** Subchamados cancelados viram `CLOSED`, e ciclos cancelados viram `SUPERSEDED`. Os vínculos se
   perdem, mas nenhum chamado é apagado.
-- **Telas.** O frontend atual ainda não mostra subchamados; isso fica para o PR 5. Até lá, a API já funciona.
+- **Telas (parte 5):**
+  - **Abertura:** campo Solicitante (com `create_on_behalf`), seção Subchamados com "Usar modelo" e a chave de idempotência por envio.
+  - **Detalhe:** painel de subchamados com progresso e as ações de cancelar, dispensar e substituir, e a faixa "Subchamado de #N".
+  - **Anexos:** opção "Restrito ao setor" para quem atende.
+  - **Modelos:** tela em *Service Desk > Modelos de Atendimento*.
 
 ## Critérios de aceite
 
