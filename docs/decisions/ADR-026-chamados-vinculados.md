@@ -1,8 +1,8 @@
 # ADR-026 — Chamados vinculados: principal e subchamados para vários setores
 
 **Status:** Aceito; implementado em partes.
-- **Feito:** 2a (vínculo, cancelamento, substituição, obrigatoriedade e avisos), 2b (idempotência), 2c (indicadores de SLA) e 3 (anexos restritos).
-- **Próximos PRs:** 4 (modelos de atendimento) e 5 (telas).
+- **Feito:** 2a (vínculo, cancelamento, substituição, obrigatoriedade e avisos), 2b (idempotência), 2c (indicadores de SLA), 3 (anexos restritos) e 4 (modelos de atendimento).
+- **Próximo PR:** 5 (telas).
 **Data:** 2026-11-05
 **Depende de:** criador do chamado e direcionamento por categoria (PR 1 da série), ADR-013 (outbox e notificações),
 ADR-017 (SLA).
@@ -162,6 +162,23 @@ para o setor dele. Anexo de ativo não pode ser restrito.
 
 **Regra central.** Tudo isso vive em `ensure_attachment_access`, o ponto único por onde passa toda rota de anexo,
 inclusive as futuras.
+
+### Modelos de atendimento (parte 4, `app/service_desk/templates.py`)
+
+**Tabelas.** `sd_ticket_templates` guarda nome, descrição e situação. `sd_ticket_template_items` guarda cada item:
+categoria, setor opcional, título, descrição, campos padrão, obrigatoriedade e ordem.
+
+**Rotas** (`/ticket-templates`):
+- qualquer usuário lê os modelos ativos;
+- quem tem `service_desk.templates.manage` cria, substitui e desativa. Desativar não apaga nada.
+
+**O modelo só pré-preenche a tela.** A abertura recebe a lista explícita de subchamados, e cada item passa pelas regras
+de sempre. Um item com setor fora do padrão da categoria é recusado para quem não tem `route_any_sector`, mesmo vindo de
+um modelo.
+
+**Rastreio.** O `template_id` do principal fica gravado e precisa estar ativo na abertura.
+
+**Nomes de processo.** Nenhum existe no código; os modelos são dados.
 
 ## Alternativas descartadas
 

@@ -114,6 +114,7 @@ async def seed() -> None:
             "service_desk.tickets.manage",
             "service_desk.tickets.route_any_sector",
         "service_desk.categories.manage",
+        "service_desk.templates.manage",
             "service_desk.interactions.internal",
             "assets.read",
             "stock.read",

@@ -292,13 +292,18 @@ class ServiceDeskService:
         solicitante (``requester_id``) é outra pessoa.
 
         ``schema.children``: subchamados criados na mesma transação (ADR-026); um filho inválido desfaz tudo.
+        ``schema.template_id``: o modelo usado pela tela (só rastreio; precisa estar ativo).
         """
+        if schema.template_id is not None:
+            from app.service_desk.templates import TicketTemplateService
+
+            await TicketTemplateService(self.session).ensure_usable(schema.template_id)
         parent = await self._create_ticket_core(
             title=schema.title, description=schema.description, priority=schema.priority,
             category_id=schema.category_id, custom_fields=schema.custom_fields,
             responsible_sector_id=schema.responsible_sector_id, asset_ids=schema.asset_ids,
             requester_id=requester_id, origin_unit_id=origin_unit_id, origin_sector_id=origin_sector_id,
-            user_id=user_id, can_route_any_sector=can_route_any_sector,
+            user_id=user_id, can_route_any_sector=can_route_any_sector, template_id=schema.template_id,
         )
         if schema.children:
             await self._create_children(
@@ -325,6 +330,7 @@ class ServiceDeskService:
         is_required: bool = True,
         replaces_ticket_id: uuid.UUID | None = None,
         child_batch_id: str | None = None,
+        template_id: uuid.UUID | None = None,
     ) -> Ticket:
         """Regras comuns a chamado e subchamado: direcionamento, formulário, SLA, auditoria e outbox. Sem commit."""
         if user_id is None:
@@ -399,6 +405,7 @@ class ServiceDeskService:
             parent_ticket_id=parent_ticket_id,
             is_required=is_required,
             replaces_ticket_id=replaces_ticket_id,
+            template_id=template_id,
         )
 
         if asset_ids:

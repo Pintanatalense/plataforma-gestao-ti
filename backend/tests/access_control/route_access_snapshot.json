@@ -16,6 +16,7 @@
   "DELETE /api/v1/sla/policies/{policy_id}": "perm:service_desk.sla.manage",
   "DELETE /api/v1/stock/categories/{category_id}": "perm:stock.write",
   "DELETE /api/v1/system/backups/{backup_id}": "perm:system.backup.manage (crítica)",
+  "DELETE /api/v1/ticket-templates/{template_id}": "perm:service_desk.templates.manage + regras no handler",
   "DELETE /api/v1/tickets/{ticket_id}/assets/{asset_id}": "token + regras no handler",
   "GET /api/v1/assets": "perm:assets.read",
   "GET /api/v1/assets/categories": "perm:assets.read",
@@ -94,6 +95,8 @@
   "GET /api/v1/system/backups/{backup_id}/verify": "perm:system.backup.manage (crítica)",
   "GET /api/v1/system/demo/preview-clean": "perm:system.demo.manage (crítica)",
   "GET /api/v1/system/demo/status": "perm:system.data.export",
+  "GET /api/v1/ticket-templates": "token + regras no handler",
+  "GET /api/v1/ticket-templates/{template_id}": "token + regras no handler",
   "GET /api/v1/tickets": "token + regras no handler",
   "GET /api/v1/tickets/categories": "token",
   "GET /api/v1/tickets/reports/summary": "token + regras no handler",
@@ -190,6 +193,7 @@
   "POST /api/v1/system/export": "perm:system.data.export",
   "POST /api/v1/system/import/analyze": "perm:system.data.import (crítica)",
   "POST /api/v1/system/import/execute": "perm:system.data.import (crítica)",
+  "POST /api/v1/ticket-templates": "perm:service_desk.templates.manage + regras no handler",
   "POST /api/v1/tickets": "token + regras no handler",
   "POST /api/v1/tickets/categories": "perm:service_desk.categories.manage + regras no handler",
   "POST /api/v1/tickets/{ticket_id}/assets/{asset_id}": "token + regras no handler",
@@ -218,5 +222,6 @@
   "PUT /api/v1/notifications/whatsapp/config": "perm:notifications.manage",
   "PUT /api/v1/stock/categories/{category_id}": "perm:stock.write",
   "PUT /api/v1/stock/items/{item_id}": "perm:stock.write",
+  "PUT /api/v1/ticket-templates/{template_id}": "perm:service_desk.templates.manage + regras no handler",
   "WS /api/v1/notifications/ws": "sem token + regras no handler"
 }

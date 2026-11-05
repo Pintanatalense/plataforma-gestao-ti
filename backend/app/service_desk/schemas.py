@@ -117,6 +117,8 @@ class TicketCreate(TicketBase):
     requester_id: uuid.UUID | None = None
     # Subchamados criados junto com o principal, na mesma transação (ADR-026).
     children: list[ChildTicketSpec] = Field(default_factory=list, max_length=MAX_CHILDREN_PER_REQUEST)
+    # Modelo usado pela tela para pré-preencher `children` (só rastreio; precisa estar ativo).
+    template_id: uuid.UUID | None = None
 
 
 class ChildrenAdd(BaseModel):
@@ -185,6 +187,7 @@ class TicketResponse(TicketBase):
     parent_ticket_id: uuid.UUID | None = None
     is_required: bool = True
     replaces_ticket_id: uuid.UUID | None = None
+    template_id: uuid.UUID | None = None
     # Só no principal (preenchido pelo roteador).
     children_progress: "ChildrenProgress | None" = None
 
@@ -222,6 +225,43 @@ class ChildTicketSummary(BaseModel):
     resolution_due_at: datetime | None = None
     overdue: bool = False
     at_risk: bool = False
+
+
+class TicketTemplateItemIn(BaseModel):
+    category_id: uuid.UUID
+    responsible_sector_id: uuid.UUID | None = None
+    title: str = Field(..., min_length=1, max_length=255)
+    description: str = Field(..., min_length=1)
+    default_custom_fields: dict = Field(default_factory=dict)
+    is_required: bool = True
+
+
+class TicketTemplateIn(BaseModel):
+    """Modelo de atendimento (ADR-026): só pré-preenche a lista de subchamados na tela."""
+
+    name: str = Field(..., min_length=1, max_length=120)
+    description: str | None = None
+    is_active: bool = True
+    items: list[TicketTemplateItemIn] = Field(..., min_length=1, max_length=MAX_CHILDREN_PER_REQUEST)
+
+
+class TicketTemplateItemOut(TicketTemplateItemIn):
+    id: uuid.UUID
+    sort: int
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class TicketTemplateOut(BaseModel):
+    id: uuid.UUID
+    name: str
+    description: str | None = None
+    is_active: bool
+    items: list[TicketTemplateItemOut]
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
 
 
 class ChildrenOverview(BaseModel):

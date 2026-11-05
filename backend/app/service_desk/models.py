@@ -101,6 +101,10 @@ class Ticket(Base, TimestampMixin):
     replaces_ticket_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("sd_ticket.id", ondelete="RESTRICT"), nullable=True
     )
+    # Modelo de atendimento usado para pré-preencher os subchamados (só rastreio; ADR-026, PR 4).
+    template_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sd_ticket_templates.id", ondelete="SET NULL"), nullable=True
+    )
 
     __table_args__ = (
         CheckConstraint(
@@ -156,6 +160,45 @@ def _create_creator_guard(target, connection, **kw) -> None:
 
     for statement in CURRENT:
         connection.exec_driver_sql(statement)
+
+
+class TicketTemplate(Base, TimestampMixin):
+    """Modelo de atendimento (ADR-026, PR 4): uma lista de subchamados que a tela usa para pré-preencher a abertura.
+
+    O backend nunca cria nada a partir do modelo: recebe a lista explícita e aplica a cada item as regras de sempre
+    (direcionamento, formulário, SLA). Nenhum nome de processo existe no código.
+    """
+
+    __tablename__ = "sd_ticket_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(120), nullable=False, unique=True)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    is_active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+
+    items: Mapped[list["TicketTemplateItem"]] = relationship(
+        "TicketTemplateItem", back_populates="template", cascade="all, delete-orphan",
+        order_by="TicketTemplateItem.sort", lazy="selectin",
+    )
+
+
+class TicketTemplateItem(Base):
+    __tablename__ = "sd_ticket_template_items"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    template_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("sd_ticket_templates.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    category_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("sd_ticket_category.id"), nullable=False)
+    # Nulo: o setor padrão da categoria, decidido na abertura.
+    responsible_sector_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sectors.id"), nullable=True)
+    title: Mapped[str] = mapped_column(String(255), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    default_custom_fields: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    is_required: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    sort: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+
+    template: Mapped["TicketTemplate"] = relationship("TicketTemplate", back_populates="items")
 
 
 class IdempotencyKey(Base):

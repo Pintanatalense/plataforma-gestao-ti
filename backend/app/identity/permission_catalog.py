@@ -117,6 +117,12 @@ CATALOG: tuple[PermissionSpec, ...] = (
         "alteracao",
     ),
     PermissionSpec(
+        "service_desk.templates.manage",
+        "Gerenciar modelos de atendimento",
+        "Criar, editar e desativar modelos com a lista de subchamados que a abertura de chamado pré-preenche",
+        "alteracao",
+    ),
+    PermissionSpec(
         "service_desk.tickets.route_any_sector",
         "Direcionar chamados a qualquer setor",
         "Escolher, ao abrir um chamado, um setor responsável diferente do definido pela categoria",
