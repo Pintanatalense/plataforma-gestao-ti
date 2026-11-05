@@ -23,6 +23,7 @@ from app.core.exceptions import (
 from app.identity.models import UserAccount
 from app.notifications.outbox import emit_event
 from app.organization.models import Employee
+from app.service_desk.access import TicketAccess, evaluate_ticket_access
 from app.service_desk.models import Ticket, TicketCategory, TicketInteraction, TicketMaterial
 from app.service_desk.repository import ServiceDeskRepository
 from app.sla.report import sla_report
@@ -123,37 +124,43 @@ class ServiceDeskService:
         sector_id: uuid.UUID | None = None
     ) -> Ticket:
         """
-        Busca um ticket e garante as regras de menor privilégio e escopo:
+        Busca um ticket e garante as regras de menor privilégio e escopo (``app.service_desk.access``):
         - Gestores ou Administradores (can_read_all=True) veem qualquer chamado.
-        - Atendentes (is_technician=True) veem chamados do seu setor responsável, atribuídos a si ou abertos por si.
-        - Solicitantes comuns só veem seus próprios chamados.
+        - Atendentes (is_technician=True) veem chamados do seu setor responsável e os atribuídos a si.
+        - Solicitante e quem abriu o chamado (criador) veem o chamado.
         """
         ticket = await self.repo.get_ticket(ticket_id)
         if not ticket:
             raise NotFoundException("Chamado", ticket_id)
-
-        if can_read_all:
+        access = await self.ticket_access(
+            ticket, user_employee_id=user_employee_id, user_id=user_id, sector_id=sector_id,
+            is_technician=is_technician, can_read_all=can_read_all,
+        )
+        if access.can_view:
             return ticket
-
         if is_technician:
-            if sector_id is None and user_employee_id is not None:
-                emp = await self.session.get(Employee, user_employee_id)
-                if emp:
-                    sector_id = emp.sector_id
-
-            if (
-                can_read_all
-                or (sector_id is not None and ticket.responsible_sector_id == sector_id)
-                or (user_id is not None and ticket.assignee_id == user_id)
-                or (user_employee_id is not None and ticket.requester_id == user_employee_id)
-            ):
-                return ticket
             raise ForbiddenException("Você não tem acesso a chamados de outros setores.")
+        raise ForbiddenException("Você não tem acesso a este chamado.")
 
-        if not user_employee_id or ticket.requester_id != user_employee_id:
-            raise ForbiddenException("Você não tem acesso a este chamado.")
-
-        return ticket
+    async def ticket_access(
+        self,
+        ticket: Ticket,
+        *,
+        user_employee_id: uuid.UUID | None,
+        user_id: uuid.UUID | None,
+        sector_id: uuid.UUID | None,
+        is_technician: bool,
+        can_read_all: bool,
+    ) -> TicketAccess:
+        """Avalia o acesso; resolve o setor do atendente pelo colaborador quando o escopo não o trouxe."""
+        if is_technician and sector_id is None and user_employee_id is not None:
+            emp = await self.session.get(Employee, user_employee_id)
+            if emp:
+                sector_id = emp.sector_id
+        return evaluate_ticket_access(
+            ticket, user_employee_id=user_employee_id, user_id=user_id, sector_id=sector_id,
+            is_technician=is_technician, can_read_all=can_read_all,
+        )
 
     async def list_tickets_for_user(
         self,
@@ -167,37 +174,85 @@ class ServiceDeskService:
         if can_read_all:
             return await self.repo.list_tickets()
 
-        # 2. Atendentes veem chamados destinados ao seu setor, atribuídos a si ou abertos por si
+        # 2. Atendentes veem chamados destinados ao seu setor, atribuídos a si, solicitados ou abertos por si
         if is_technician:
             return await self.repo.list_tickets(
                 requester_id=user_employee_id,
                 sector_id=sector_id,
                 assignee_id=user_id,
+                created_by_id=user_id,
                 is_attendant_scope=True,
             )
 
-        # 3. Solicitantes veem apenas os próprios chamados
-        if not user_employee_id:
+        # 3. Os demais veem os chamados em que são solicitantes ou que abriram
+        if not user_employee_id and not user_id:
             return []
-        return await self.repo.list_tickets(requester_id=user_employee_id)
+        return await self.repo.list_tickets(requester_id=user_employee_id, created_by_id=user_id)
+
+    async def resolve_requester(
+        self,
+        requested_employee_id: uuid.UUID | None,
+        *,
+        own_employee_id: uuid.UUID | None,
+        can_create_on_behalf: bool,
+    ) -> Employee:
+        """
+        Solicitante do chamado: sem ``requester_id`` (ou com o próprio colaborador), é quem abre; outro colaborador
+        exige ``service_desk.tickets.create_on_behalf`` e precisa existir ativo.
+        """
+        if requested_employee_id is None or requested_employee_id == own_employee_id:
+            if own_employee_id is None:
+                raise ForbiddenException("Apenas colaboradores vinculados a um Employee podem abrir chamados.")
+            own = await self.session.get(Employee, own_employee_id)
+            if own is None:
+                raise ForbiddenException("Apenas colaboradores vinculados a um Employee podem abrir chamados.")
+            return own  # como antes: quem tem conta ativa abre para si mesmo
+        if not can_create_on_behalf:
+            raise ForbiddenException(
+                "Abrir chamado em nome de outra pessoa exige a permissão Abrir chamados em nome de outra pessoa."
+            )
+        employee = await self.session.get(Employee, requested_employee_id)
+        if employee is None or not employee.is_active or employee.deleted_at is not None or employee.status == "DESLIGADO":
+            raise BusinessRuleException("Solicitante inválido ou inativo.")
+        return employee
+
+    async def resolve_responsible_sector(
+        self,
+        category: TicketCategory | None,
+        requested_sector_id: uuid.UUID | None,
+    ) -> uuid.UUID:
+        """Setor informado ou, sem ele, o padrão da categoria."""
+        sector_id = requested_sector_id or (category.default_sector_id if category is not None else None)
+        if not sector_id:
+            raise BusinessRuleException(
+                "Setor responsável não definido. Informe-o manualmente ou selecione uma categoria com roteamento automático."
+            )
+        return sector_id
 
     async def create_ticket(
-        self, 
+        self,
         schema: TicketCreate, 
         requester_id: uuid.UUID,
         origin_unit_id: uuid.UUID,
         origin_sector_id: uuid.UUID,
-        user_id: uuid.UUID | None = None
+        *,
+        user_id: uuid.UUID,
     ) -> Ticket:
-        responsible_sector_id = schema.responsible_sector_id
-        
+        """
+        ``user_id`` é quem abre (criador) e é obrigatório: todo chamado novo registra quem o abriu, mesmo quando o
+        solicitante (``requester_id``) é outra pessoa.
+        """
+        if user_id is None:
+            raise ValidationException("Todo chamado precisa registrar quem o abriu.")
+
+        cat = None
         if schema.category_id:
             cat = await self.repo.get_category(schema.category_id)
             if not cat or not cat.is_active:
                 raise BusinessRuleException("Categoria inválida ou inativa.")
-            if not responsible_sector_id:
-                responsible_sector_id = cat.default_sector_id
-            
+        responsible_sector_id = await self.resolve_responsible_sector(cat, schema.responsible_sector_id)
+
+        if cat is not None:
             # Validação dos pré-requisitos vinculados ao formulário da categoria
             if cat.form_schema:
                 provided_fields = schema.custom_fields or {}
@@ -222,9 +277,6 @@ class ServiceDeskService:
                                 raise BusinessRuleException(
                                     f"Opção '{val}' inválida para o pré-requisito '{label}'."
                                 )
-        
-        if not responsible_sector_id:
-            raise BusinessRuleException("Setor responsável não definido. Informe-o manualmente ou selecione uma categoria com roteamento automático.")
 
         # Verificar se o sistema está em modo DEMO ou se o solicitante é demo
         is_demo_ticket = False
@@ -255,7 +307,8 @@ class ServiceDeskService:
             origin_sector_id=origin_sector_id,
             responsible_sector_id=responsible_sector_id,
             status="OPENED",
-            is_demo=is_demo_ticket
+            is_demo=is_demo_ticket,
+            created_by_user_id=user_id,
         )
         
         if schema.asset_ids:
@@ -273,7 +326,9 @@ class ServiceDeskService:
                 "title": loaded_ticket.title,
                 "priority": loaded_ticket.priority,
                 "status": loaded_ticket.status,
-                "category_id": str(loaded_ticket.category_id) if loaded_ticket.category_id else None
+                "category_id": str(loaded_ticket.category_id) if loaded_ticket.category_id else None,
+                "requester_id": str(loaded_ticket.requester_id),
+                "responsible_sector_id": str(loaded_ticket.responsible_sector_id),
             },
             user_id=user_id
         )
@@ -296,19 +351,17 @@ class ServiceDeskService:
         if not ticket:
             raise NotFoundException("Chamado", ticket_id)
 
-        is_requester = (user_employee_id is not None and ticket.requester_id == user_employee_id)
-        is_sector_attendant = is_technician and (
-            can_read_all
-            or (sector_id is not None and ticket.responsible_sector_id == sector_id)
-            or (user_id is not None and ticket.assignee_id == user_id)
+        access = evaluate_ticket_access(
+            ticket, user_employee_id=user_employee_id, user_id=user_id, sector_id=sector_id,
+            is_technician=is_technician, can_read_all=can_read_all,
         )
 
         # Regras de autorização para alteração do chamado
-        if not is_sector_attendant:
-            if not is_requester:
+        if not access.is_sector_attendant:
+            if not access.is_requester_or_creator:
                 raise ForbiddenException("Apenas o atendente responsável pelo setor ou o solicitante podem gerenciar este chamado.")
-            
-            # Solicitante só tem permissão para finalizar/encerrar seu próprio chamado (RESOLVED ou CLOSED)
+
+            # Solicitante (ou quem abriu) só tem permissão para finalizar/encerrar o chamado (RESOLVED ou CLOSED)
             if (
                 schema.status not in ("RESOLVED", "CLOSED")
                 or schema.priority is not None
@@ -459,7 +512,13 @@ class ServiceDeskService:
             is_internal=schema.is_internal
         )
         created_interaction = await self.repo.create_interaction(interaction)
-        await SlaService(self.session).interaction_added(ticket, user_employee_id, schema.is_internal)
+        access = evaluate_ticket_access(
+            ticket, user_employee_id=user_employee_id, user_id=author_id, sector_id=sector_id,
+            is_technician=is_technician, can_read_all=can_read_all,
+        )
+        # Quem abriu em nome de outra pessoa está do lado do solicitante: o comentário dele não é a primeira resposta.
+        if not (access.is_creator and not access.is_sector_attendant):
+            await SlaService(self.session).interaction_added(ticket, user_employee_id, schema.is_internal)
 
         await self._record_audit_event(
             event_type="ticket.interaction_added",

@@ -86,6 +86,12 @@ português, descrição e risco) fica em `backend/app/identity/permission_catalo
 conceder críticas) não entram em perfil nem valem pelo simples "Administrador": são concedidas a cada pessoa. Ver
 `docs/09`, seção 2.
 
+**Abertura de chamados: solicitante, criador e setor.**
+* **Solicitante** é a pessoa para quem o pedido é feito; **criador** é quem abriu. Por padrão são a mesma pessoa.
+  Abrir em nome de outro colaborador exige **Abrir chamados em nome de outra pessoa**
+  (`service_desk.tickets.create_on_behalf`, sem concessão automática: marque no perfil de quem precisa). Solicitante e
+  criador acompanham o chamado, comentam em público e podem finalizá-lo; o criador fica registrado no chamado e na
+  auditoria.
 **Telas:**
 * **Perfis** (*Administração & Sistema > Perfis*): ao criar ou editar um perfil, as permissões aparecem agrupadas por
   módulo, com nome em português, descrição e o risco (Leitura, Alteração, Execução, Administração). As críticas não

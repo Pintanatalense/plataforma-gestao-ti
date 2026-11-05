@@ -167,19 +167,18 @@ async def create_ticket(
     ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
 ) -> TicketResponse:
-    # Mesmo quem não é tecnico pode abrir (o usuario atual é o requester se tiver employee_id)
-    # Requisito minimo é ter employee_id
-    if not ctx.employee_id:
-        from app.core.exceptions import ForbiddenException
-        raise ForbiddenException("Apenas colaboradores vinculados a um Employee podem abrir chamados.")
-
+    # Solicitante = o próprio colaborador, ou outro com service_desk.tickets.create_on_behalf.
+    # Quem abriu (ctx.user_id) fica registrado como criador em qualquer caso.
     service = ServiceDeskService(session)
+    requester = await service.resolve_requester(
+        schema.requester_id, own_employee_id=ctx.employee_id, can_create_on_behalf=ctx.can_create_on_behalf
+    )
     ticket = await service.create_ticket(
-        schema, 
-        requester_id=ctx.employee_id, 
-        origin_unit_id=ctx.unit_id, 
-        origin_sector_id=ctx.sector_id,
-        user_id=ctx.user_id
+        schema,
+        requester_id=requester.id,
+        origin_unit_id=requester.unit_id,
+        origin_sector_id=requester.sector_id,
+        user_id=ctx.user_id,
     )
     await SlaService(session).attach([ticket])
     await session.commit()

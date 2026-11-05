@@ -11,7 +11,7 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, Column, ForeignKey, Integer, String, Table, Text
+from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, String, Table, Text, event, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -67,6 +67,22 @@ class Ticket(Base, TimestampMixin):
     category_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("sd_ticket_category.id"), nullable=True)
     is_demo: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False, index=True)
 
+    # Quem abriu (pode ser diferente do solicitante, que é para quem o pedido é feito). Obrigatório em todo chamado
+    # novo; nulo só nos antigos que a migration não conseguiu identificar, marcados com creator_unknown (o gatilho
+    # sd_ticket_creator_guard impede um chamado novo de usar a marca).
+    created_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_accounts.id"), nullable=True, index=True
+    )
+    creator_unknown: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
+
+    __table_args__ = (
+        CheckConstraint(
+            "created_by_user_id IS NOT NULL OR creator_unknown", name="ck_sd_ticket_creator_known"
+        ),
+    )
+
     # Relationships
     category: Mapped["TicketCategory | None"] = relationship("TicketCategory")
     interactions: Mapped[list["TicketInteraction"]] = relationship("TicketInteraction", back_populates="ticket", cascade="all, delete-orphan", lazy="selectin")
@@ -74,6 +90,18 @@ class Ticket(Base, TimestampMixin):
     assets = relationship("Asset", secondary="sd_ticket_assets")
     requester: Mapped["Employee"] = relationship("Employee", foreign_keys=[requester_id], lazy="selectin")
     assignee: Mapped["UserAccount | None"] = relationship("UserAccount", foreign_keys=[assignee_id], lazy="selectin")
+    created_by: Mapped["UserAccount | None"] = relationship(
+        "UserAccount", foreign_keys=[created_by_user_id], lazy="selectin"
+    )
+
+    @property
+    def created_by_name(self) -> str | None:
+        """Nome de quem abriu; ``None`` nos chamados antigos sem criador registrado (a tela mostra "não registrado")."""
+        if self.created_by:
+            if getattr(self.created_by, "employee", None):
+                return self.created_by.employee.name
+            return self.created_by.email
+        return None
 
     @property
     def requester_name(self) -> str | None:
@@ -91,6 +119,17 @@ class Ticket(Base, TimestampMixin):
                 return self.assignee.employee.name
             return self.assignee.email
         return None
+
+
+@event.listens_for(Ticket.__table__, "after_create")
+def _create_creator_guard(target, connection, **kw) -> None:
+    """``create_all`` em PostgreSQL (testes) ganha o mesmo gatilho da migration."""
+    if connection.dialect.name != "postgresql":
+        return
+    from app.service_desk.creator_ddl import CURRENT
+
+    for statement in CURRENT:
+        connection.exec_driver_sql(statement)
 
 
 ticket_assets = Table(

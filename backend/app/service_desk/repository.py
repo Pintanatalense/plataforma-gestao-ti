@@ -67,11 +67,12 @@ class ServiceDeskRepository:
         sector_id: uuid.UUID | None = None,
         assignee_id: uuid.UUID | None = None,
         is_attendant_scope: bool = False,
+        created_by_id: uuid.UUID | None = None,
     ) -> Sequence[Ticket]:
         """
         Lista tickets com suporte a menor privilégio e escopo setorial:
-        - is_attendant_scope=True: visualiza chamados do seu setor responsável, atribuídos a si ou abertos por si.
-        - requester_id apenas: visualiza exclusivamente os chamados que o próprio solicitante abriu.
+        - is_attendant_scope=True: chamados do seu setor responsável, atribuídos a si, solicitados ou abertos por si.
+        - requester_id/created_by_id: só os chamados em que é solicitante ou que abriu (criador).
         - Sem filtros: visualização irrestrita de todos os chamados (Gestão / Administrador).
         """
         stmt = (
@@ -92,10 +93,18 @@ class ServiceDeskRepository:
                 conditions.append(Ticket.assignee_id == assignee_id)
             if requester_id:
                 conditions.append(Ticket.requester_id == requester_id)
+            if created_by_id:
+                conditions.append(Ticket.created_by_user_id == created_by_id)
             if conditions:
                 stmt = stmt.where(or_(*conditions))
-        elif requester_id:
-            stmt = stmt.where(Ticket.requester_id == requester_id)
+        elif requester_id or created_by_id:
+            from sqlalchemy import or_
+            own = []
+            if requester_id:
+                own.append(Ticket.requester_id == requester_id)
+            if created_by_id:
+                own.append(Ticket.created_by_user_id == created_by_id)
+            stmt = stmt.where(or_(*own))
             
         result = await self.session.execute(stmt)
         return result.scalars().all()

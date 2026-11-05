@@ -94,7 +94,10 @@ class TicketBase(BaseModel):
 
 class TicketCreate(TicketBase):
     asset_ids: list[uuid.UUID] = Field(default_factory=list)
+    # Omitido: vai para o setor padrão da categoria. Outro setor exige service_desk.tickets.route_any_sector.
     responsible_sector_id: uuid.UUID | None = None
+    # Omitido: o solicitante é quem abre. Outro colaborador exige service_desk.tickets.create_on_behalf.
+    requester_id: uuid.UUID | None = None
 
 class TicketUpdate(BaseModel):
     status: str | None = Field(None, pattern="^(OPENED|IN_PROGRESS|PENDING|RESOLVED|CLOSED)$")
@@ -126,6 +129,9 @@ class TicketResponse(TicketBase):
     assignee_id: uuid.UUID | None
 
     assignee_name: str | None = None
+    # Quem abriu; nulo só em chamados antigos sem esse registro (a tela mostra "não registrado").
+    created_by_user_id: uuid.UUID | None = None
+    created_by_name: str | None = None
     origin_unit_id: uuid.UUID
     origin_sector_id: uuid.UUID
     responsible_sector_id: uuid.UUID
