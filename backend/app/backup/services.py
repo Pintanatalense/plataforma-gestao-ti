@@ -2,6 +2,13 @@
 MOD-14 — Backups do Banco de Dados (Services)
 
 Geração, verificação de integridade (SHA-256), download e política de retenção de backups.
+
+Cada backup tem duas partes (Plano de Evolução, Fase 0 PR 13; S10):
+- ``backup_gestao_ti_<data>.sql.gz``: o banco inteiro (inclui o schema da Evolution);
+- ``arquivos_gestao_ti_<data>.tar.gz``: anexos (``data/attachments``) e logomarca (``app/static``), no mesmo
+  formato que ``scripts/restore-backup.sh`` aceita. Só os ``BACKUP_FILES_MAX_KEEP`` backups mais recentes guardam
+  esta parte (anexos ocupam espaço); os mais antigos ficam só com o banco.
+O ``.env`` (senhas e APP_ENCRYPTION_KEY) NUNCA entra aqui: ``scripts/backup-secrets.sh`` faz a cópia cifrada à parte.
 """
 
 import asyncio
@@ -10,8 +17,10 @@ import hashlib
 import logging
 import os
 import shutil
+import tarfile
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from urllib.parse import urlparse
 
 from sqlalchemy import select
@@ -23,6 +32,35 @@ from app.backup.models import DatabaseBackup
 
 logger = logging.getLogger(__name__)
 settings = get_settings()
+
+
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def write_files_archive(target: Path) -> tuple[int, str, int]:
+    """Empacota anexos e logomarca (sem links simbólicos). Retorna (bytes, SHA-256, arquivos incluídos)."""
+    count = 0
+
+    def _only_regular(info: tarfile.TarInfo) -> tarfile.TarInfo | None:
+        nonlocal count
+        if info.issym() or info.islnk() or not (info.isfile() or info.isdir()):
+            return None
+        if info.isfile():
+            count += 1
+        info.uid = info.gid = 0
+        info.uname = info.gname = ""
+        return info
+
+    with tarfile.open(target, "w:gz", compresslevel=6) as tar:
+        for arcname, root in (("data/attachments", settings.attachment_storage_dir), ("app/static", settings.static_dir)):
+            if root.is_dir():
+                tar.add(str(root), arcname=arcname, filter=_only_regular)
+    return target.stat().st_size, _sha256_file(target), count
 
 
 class BackupService:
@@ -48,6 +86,8 @@ class BackupService:
         now_str = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         filename = f"backup_gestao_ti_{now_str}.sql.gz"
         file_path = self.storage_dir / filename
+        files_name = f"arquivos_gestao_ti_{now_str}.tar.gz"
+        files_path = self.storage_dir / files_name
 
         success = False
         error_msg = None
@@ -65,12 +105,23 @@ class BackupService:
             size_bytes = len(compressed_bytes)
             checksum = hashlib.sha256(compressed_bytes).hexdigest()
 
+            files_fields: dict = {}
+            if settings.BACKUP_INCLUDE_FILES:
+                files_size, files_checksum, files_count = await asyncio.to_thread(write_files_archive, files_path)
+                files_fields = {
+                    "files_filename": files_name,
+                    "files_size_bytes": files_size,
+                    "files_checksum_sha256": files_checksum,
+                    "files_count": files_count,
+                }
+
             backup = DatabaseBackup(
                 filename=filename,
                 size_bytes=size_bytes,
                 checksum_sha256=checksum,
                 status="SUCCESS",
                 created_by_id=user_id,
+                **files_fields,
             )
             self.session.add(backup)
             await self.session.flush()
@@ -84,6 +135,8 @@ class BackupService:
 
         except Exception as exc:
             logger.exception("Erro ao gerar backup do banco de dados: %s", exc)
+            if files_path.exists():
+                files_path.unlink(missing_ok=True)
             if file_path.exists():
                 try:
                     file_path.unlink()
@@ -186,8 +239,7 @@ class BackupService:
 
         current_hash = hashlib.sha256(content).hexdigest()
         is_valid = (current_hash == backup.checksum_sha256)
-
-        return {
+        result = {
             "backup_id": str(backup.id),
             "filename": backup.filename,
             "exists": True,
@@ -196,6 +248,13 @@ class BackupService:
             "calculated_sha256": current_hash,
             "size_bytes": len(content)
         }
+        if backup.files_filename:
+            files_file = self.storage_dir / backup.files_filename
+            files_ok = files_file.exists() and _sha256_file(files_file) == backup.files_checksum_sha256
+            result.update(files_filename=backup.files_filename, files_valid=files_ok, is_valid=is_valid and files_ok)
+            if not files_ok:
+                result["error"] = "O pacote de anexos e logomarca não existe ou não confere com o SHA-256 registrado."
+        return result
 
     async def get_recent_valid_backup(self, max_age_hours: int = 24) -> tuple[bool, DatabaseBackup | None]:
         """Verifica se existe ao menos um backup com status SUCCESS gerado nas últimas N horas."""
@@ -229,6 +288,10 @@ class BackupService:
         )
         backups = list((await self.session.execute(stmt)).scalars().all())
 
+        # anexos e logo só nos mais recentes (ocupam espaço); o banco continua nos BACKUP_MAX_KEEP
+        for old_b in backups[max(settings.BACKUP_FILES_MAX_KEEP, 1):]:
+            self._drop_files_archive(old_b)
+
         max_keep = settings.BACKUP_MAX_KEEP
         if len(backups) > max_keep:
             to_remove = backups[max_keep:]
@@ -239,8 +302,16 @@ class BackupService:
                         old_file.unlink()
                     except Exception:
                         pass
+                self._drop_files_archive(old_b)
                 await self.session.delete(old_b)
             logger.info("Política de retenção removeu %d backups antigos.", len(to_remove))
+
+    def _drop_files_archive(self, backup: DatabaseBackup) -> None:
+        if not backup.files_filename:
+            return
+        (self.storage_dir / backup.files_filename).unlink(missing_ok=True)
+        backup.files_filename = backup.files_checksum_sha256 = None
+        backup.files_size_bytes = backup.files_count = None
 
     async def delete_backup(self, backup_id: uuid.UUID) -> None:
         backup = await self.get_backup(backup_id)
@@ -250,5 +321,6 @@ class BackupService:
                 target_file.unlink()
             except Exception:
                 pass
+        self._drop_files_archive(backup)
         await self.session.delete(backup)
         await self.session.commit()

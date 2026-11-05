@@ -83,6 +83,9 @@ class Settings(BaseSettings):
     BACKUP_STORAGE_PATH: str = "/data/backups"
     BACKUP_RETENTION_DAYS: int = 30
     BACKUP_MAX_KEEP: int = 15
+    # Anexos e logomarca entram no backup (pacote .tar.gz ao lado do .sql.gz), só nos N mais recentes
+    BACKUP_INCLUDE_FILES: bool = True
+    BACKUP_FILES_MAX_KEEP: int = 3
 
     # --- Auditoria (retenção por categoria; job audit.retention, que arquiva antes de apagar) ---
     AUDIT_RETENTION_SECURITY_DAYS: int = 1825  # mínimo: 5 anos

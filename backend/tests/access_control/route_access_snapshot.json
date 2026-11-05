@@ -77,6 +77,7 @@
   "GET /api/v1/stock/movements/item/{item_id}": "perm:stock.read",
   "GET /api/v1/system/backups": "perm:system.backup.manage (crítica)",
   "GET /api/v1/system/backups/{backup_id}/download": "perm:system.backup.download (crítica)",
+  "GET /api/v1/system/backups/{backup_id}/download-files": "perm:system.backup.download (crítica)",
   "GET /api/v1/system/backups/{backup_id}/verify": "perm:system.backup.manage (crítica)",
   "GET /api/v1/system/demo/preview-clean": "perm:system.demo.manage (crítica)",
   "GET /api/v1/system/demo/status": "perm:system.data.export",

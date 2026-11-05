@@ -59,6 +59,10 @@ export interface DbBackup {
   error_message: string | null;
   created_at: string;
   created_by_email: string | null;
+  /** Pacote de anexos e logomarca (só nos backups mais recentes). */
+  files_filename?: string | null;
+  files_size_bytes?: number | null;
+  files_count?: number | null;
 }
 
 export interface BackupVerification {
@@ -126,6 +130,12 @@ export class AdminService {
 
   downloadBackup(backupId: string): Observable<Blob> {
     return this.http.get(`${this.systemUrl}/backups/${backupId}/download`, {
+      responseType: 'blob'
+    });
+  }
+
+  downloadBackupFiles(backupId: string): Observable<Blob> {
+    return this.http.get(`${this.systemUrl}/backups/${backupId}/download-files`, {
       responseType: 'blob'
     });
   }
