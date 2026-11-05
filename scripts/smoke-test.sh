@@ -167,7 +167,11 @@ check "backup pela tela (pg_dump com o papel da aplicação) concluído" test "$
 backup_id="$(backup_field id)"
 curl -fsS -H "Authorization: Bearer $token" "$BASE/api/v1/system/backups/$backup_id/download" -o .ci-local/smoke-db.sql.gz
 curl -fsS -H "Authorization: Bearer $token" "$BASE/api/v1/system/backups/$backup_id/download-files" -o .ci-local/smoke-files.tar.gz
-files_have_proof() { tar -tzf .ci-local/smoke-files.tar.gz 2>/dev/null | grep -qx 'data/attachments/smoke/prova.txt'; }
+# lista numa variável antes do grep: com pipefail, `tar | grep -q` falha ao acaso (SIGPIPE no tar)
+files_have_proof() {
+  local listing; listing="$(tar -tzf .ci-local/smoke-files.tar.gz 2>/dev/null)"
+  grep -qx 'data/attachments/smoke/prova.txt' <<< "$listing"
+}
 check "backup leva anexos e logomarca (pacote .tar.gz no formato do restore-backup.sh)" files_have_proof
 verify_restore() {
   COMPOSE_PROJECT_NAME="$PROJECT" COMPOSE_FILE="docker-compose.yml:docker-compose.smoke.yml" COMPOSE_PATH_SEPARATOR=":" \
