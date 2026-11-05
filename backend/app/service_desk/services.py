@@ -6,22 +6,26 @@ Implementa as regras de negócio de visualização e transição de chamados.
 
 import logging
 import uuid
+from datetime import timedelta
 from typing import Sequence
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.config import get_settings
 from app.core.exceptions import (
     BusinessRuleException,
     ForbiddenException,
     NotFoundException,
     StateTransitionException,
+    ValidationException,
 )
 from app.identity.models import UserAccount
 from app.notifications.outbox import emit_event
 from app.organization.models import Employee
 from app.service_desk.models import Ticket, TicketCategory, TicketInteraction, TicketMaterial
 from app.service_desk.repository import ServiceDeskRepository
+from app.sla.service import REOPEN_TO, SlaService, _now as sla_now
 from app.service_desk.schemas import (
     TicketCreate,
     TicketInteractionCreate,
@@ -230,6 +234,7 @@ class ServiceDeskService:
             
         ticket = await self.repo.create_ticket(ticket)
         loaded_ticket = await self.repo.get_ticket(ticket.id)
+        await SlaService(self.session).start(loaded_ticket)  # sem política ativa na categoria: não faz nada
 
         await self._record_audit_event(
             event_type="ticket.created",
@@ -254,7 +259,8 @@ class ServiceDeskService:
         user_employee_id: uuid.UUID | None = None,
         user_id: uuid.UUID | None = None,
         sector_id: uuid.UUID | None = None,
-        can_read_all: bool = False
+        can_read_all: bool = False,
+        can_reopen_late: bool = False,
     ) -> Ticket:
         ticket = await self.repo.get_ticket(ticket_id)
         if not ticket:
@@ -285,6 +291,10 @@ class ServiceDeskService:
         old_status = ticket.status
         old_priority = ticket.priority
         old_assignee = ticket.assignee_id
+        old_category_id = ticket.category_id
+
+        if schema.status is not None and ticket.status == "RESOLVED" and schema.status in REOPEN_TO and not can_reopen_late:
+            await self._ensure_reopen_window(ticket)  # antes de mexer em qualquer campo do chamado
 
         if schema.category_id is not None:
             cat = await self.repo.get_category(schema.category_id)
@@ -313,6 +323,14 @@ class ServiceDeskService:
 
         await self.repo.update_ticket(ticket)
 
+        # SLA (ADR-017), na mesma transação: categoria e prioridade primeiro, depois a resposta, por fim o status
+        # (assim "responder e resolver" na mesma chamada conta a primeira resposta antes de fechar o ciclo).
+        sla = SlaService(self.session)
+        if schema.category_id is not None and schema.category_id != old_category_id:
+            await sla.category_changed(ticket)
+        if schema.priority is not None and schema.priority != old_priority:
+            await sla.priority_changed(ticket)
+
         # Se houver notas de justificativa/resolução, cria interação no chamado
         if schema.notes and schema.notes.strip():
             try:
@@ -325,6 +343,11 @@ class ServiceDeskService:
                 await self.repo.create_interaction(interaction)
             except Exception:
                 logger.exception("Falha ao registrar nota de status como interação")
+            else:
+                author = await self.session.get(UserAccount, user_id) if user_id else None
+                await sla.interaction_added(ticket, author.employee_id if author else None, False)
+        if schema.status is not None and schema.status != old_status:
+            await sla.status_changed(ticket, old_status, schema.status)
 
         # Emissão e gravação de eventos para histórico do ciclo de vida
         if schema.status is not None and schema.status != old_status:
@@ -406,6 +429,7 @@ class ServiceDeskService:
             is_internal=schema.is_internal
         )
         created_interaction = await self.repo.create_interaction(interaction)
+        await SlaService(self.session).interaction_added(ticket, user_employee_id, schema.is_internal)
 
         await self._record_audit_event(
             event_type="ticket.interaction_added",
@@ -938,6 +962,15 @@ class ServiceDeskService:
             "CLOSED": "Encerrado",
         }
         return mapping.get(status, status)
+
+    async def _ensure_reopen_window(self, ticket: Ticket) -> None:
+        """Reabrir só vale por `TICKET_REOPEN_DAYS` dias depois de resolvido (administradores podem além disso)."""
+        days = get_settings().TICKET_REOPEN_DAYS
+        resolved_at = await SlaService(self.session).resolved_at(ticket)
+        if resolved_at is not None and sla_now() - resolved_at > timedelta(days=days):
+            raise ValidationException(
+                f"O prazo para reabrir este chamado ({days} dias após a resolução) acabou. Abra um novo chamado."
+            )
 
     async def _emit_ticket_event(self, event_type: str, ticket: Ticket, actor_id: uuid.UUID | None, **extra) -> None:
         """Registra o fato no outbox (mesma transação do chamado); o worker decide quem é avisado e por onde."""

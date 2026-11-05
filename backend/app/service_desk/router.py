@@ -26,6 +26,7 @@ from app.service_desk.schemas import (
     TicketAssetInspectRequest,
 )
 from app.service_desk.services import ServiceDeskService
+from app.sla.service import SlaService
 
 router = APIRouter()
 
@@ -93,6 +94,7 @@ async def list_tickets(
         can_read_all=ctx.can_read_all
     )
     
+    await SlaService(session).attach(tickets)
     responses = []
     for t in tickets:
         resp = TicketResponse.model_validate(t)
@@ -138,6 +140,7 @@ async def get_ticket(
         sector_id=ctx.sector_id,
     )
     
+    await SlaService(session).attach([ticket])
     resp = TicketResponse.model_validate(ticket)
     if not ctx.can_internal_notes:
         resp.interactions = [i for i in resp.interactions if not i.is_internal]
@@ -170,6 +173,7 @@ async def create_ticket(
         origin_sector_id=ctx.sector_id,
         user_id=ctx.user_id
     )
+    await SlaService(session).attach([ticket])
     await session.commit()
     return ticket
 
@@ -193,8 +197,10 @@ async def update_ticket(
         user_employee_id=ctx.employee_id,
         user_id=ctx.user_id,
         sector_id=ctx.sector_id,
-        can_read_all=ctx.can_read_all
+        can_read_all=ctx.can_read_all,
+        can_reopen_late=ctx.is_admin,
     )
+    await SlaService(session).attach([ticket])
     await session.commit()
     return ticket
 

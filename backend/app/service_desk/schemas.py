@@ -6,6 +6,8 @@ import uuid
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field
 
+from app.sla.schemas import SlaInfo
+
 
 # ==============================================================================
 # TicketCategory
@@ -131,7 +133,9 @@ class TicketResponse(TicketBase):
     interactions: list[TicketInteractionResponse] = []
     materials: list[TicketMaterialResponse] = []
     assets: list[TicketAssetBrief] = []
-    
+    # Preenchido pelo roteador (`SlaService.attach`); NOT_APPLICABLE quando a categoria não tem política ativa.
+    sla: SlaInfo | None = None
+
     model_config = ConfigDict(from_attributes=True)
 
 
