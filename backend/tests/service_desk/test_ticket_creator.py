@@ -281,13 +281,14 @@ async def test_creator_guard_in_postgres():
             ok = _ticket(created_by_user_id=user.id)
             db.add(ok)
             await db.commit()
+            ok_id = ok.id  # o rollback expira o objeto; ler o id depois faria IO fora do await
             # Não dá para "envelhecer" um chamado com criador: ligar a marca é recusado...
             with pytest.raises(DBAPIError):
-                await db.execute(text("UPDATE sd_ticket SET creator_unknown = true WHERE id = :i"), {"i": ok.id})
+                await db.execute(text("UPDATE sd_ticket SET creator_unknown = true WHERE id = :i"), {"i": ok_id})
             await db.rollback()
             # ...e apagar o criador viola a CHECK.
             with pytest.raises(DBAPIError):
-                await db.execute(text("UPDATE sd_ticket SET created_by_user_id = NULL WHERE id = :i"), {"i": ok.id})
+                await db.execute(text("UPDATE sd_ticket SET created_by_user_id = NULL WHERE id = :i"), {"i": ok_id})
             await db.rollback()
 
         # Linha antiga marcada pela migration (simulada com o gatilho desligado) continua válida, e a marca pode
@@ -296,17 +297,18 @@ async def test_creator_guard_in_postgres():
             legacy = _ticket(created_by_user_id=user.id)
             db.add(legacy)
             await db.commit()
+            legacy_id, user_id = legacy.id, user.id
             await db.execute(text("ALTER TABLE sd_ticket DISABLE TRIGGER sd_ticket_creator_guard"))
             await db.execute(
                 text("UPDATE sd_ticket SET created_by_user_id = NULL, creator_unknown = true WHERE id = :i"),
-                {"i": legacy.id},
+                {"i": legacy_id},
             )
             await db.execute(text("ALTER TABLE sd_ticket ENABLE TRIGGER sd_ticket_creator_guard"))
             await db.commit()
-            await db.execute(text("UPDATE sd_ticket SET title = 'ainda válido' WHERE id = :i"), {"i": legacy.id})
+            await db.execute(text("UPDATE sd_ticket SET title = 'ainda válido' WHERE id = :i"), {"i": legacy_id})
             await db.execute(
                 text("UPDATE sd_ticket SET created_by_user_id = :u, creator_unknown = false WHERE id = :i"),
-                {"u": user.id, "i": legacy.id},
+                {"u": user_id, "i": legacy_id},
             )
             await db.commit()
     finally:
