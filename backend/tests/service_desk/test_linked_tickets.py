@@ -578,7 +578,9 @@ async def test_adding_children_and_closing_parent_are_serialized():
                 await db.commit()
                 return parent.id
 
-        async def close(parent_id: uuid.UUID, gate: asyncio.Event | None = None) -> str:
+        async def close(
+            parent_id: uuid.UUID, gate: asyncio.Event | None = None, locked: asyncio.Event | None = None
+        ) -> str:
             async with maker() as db:
                 try:
                     await ServiceDeskService(db).update_ticket(
@@ -586,6 +588,7 @@ async def test_adding_children_and_closing_parent_are_serialized():
                         user_employee_id=ctx.employee_id, user_id=ctx.user_id, sector_id=ctx.sector_id,
                     )
                     if gate is not None:
+                        locked.set()
                         await gate.wait()  # segura a trava até o outro lado tentar
                     await db.commit()
                     return "ok"
@@ -593,13 +596,16 @@ async def test_adding_children_and_closing_parent_are_serialized():
                     await db.rollback()
                     return str(exc.status_code)
 
-        async def add(parent_id: uuid.UUID, gate: asyncio.Event | None = None) -> str:
+        async def add(
+            parent_id: uuid.UUID, gate: asyncio.Event | None = None, locked: asyncio.Event | None = None
+        ) -> str:
             async with maker() as db:
                 try:
                     await ServiceDeskService(db).add_children(
                         parent_id, [ChildTicketSpec(category_id=w.cat_b.id, title="E", description="d")], ctx
                     )
                     if gate is not None:
+                        locked.set()
                         await gate.wait()
                     await db.commit()
                     return "ok"
@@ -608,11 +614,12 @@ async def test_adding_children_and_closing_parent_are_serialized():
                     return str(exc.status_code)
 
         async def race(first, second, parent_id: uuid.UUID) -> tuple[str, str]:
-            gate = asyncio.Event()
-            holder = asyncio.create_task(first(parent_id, gate))
-            await asyncio.sleep(0.3)  # o primeiro já travou a linha do principal
+            gate, locked = asyncio.Event(), asyncio.Event()
+            holder = asyncio.create_task(first(parent_id, gate, locked))
+            # Espera o primeiro terminar a operação (com a linha do principal travada), sem depender de tempo.
+            await asyncio.wait_for(locked.wait(), timeout=30)
             waiter = asyncio.create_task(second(parent_id))
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.5)
             assert not waiter.done(), "o segundo devia esperar a trava do principal"
             gate.set()
             return await holder, await waiter
