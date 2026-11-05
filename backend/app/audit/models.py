@@ -4,11 +4,15 @@ MOD-12 — Auditoria (Models)
 A trilha guarda, além do evento, QUEM (id, tipo e e-mail do ator no momento do evento), DE ONDE (IP confiável e id
 da requisição) e a CATEGORIA (segurança ou operacional, que define a retenção). ``user_id`` não tem chave estrangeira:
 apagar uma conta (por exemplo, da demonstração) não pode apagar nem alterar a trilha dela.
+
+No PostgreSQL a tabela é só de inserção (ADR-023): gatilho, selo em cadeia de hash por categoria (``chain_pos``,
+``prev_hash``, ``row_hash``, preenchidos só pela função ``audit_seal``) e retenção como único caminho de exclusão.
 """
 import uuid
 from contextvars import ContextVar
+from datetime import datetime
 
-from sqlalchemy import String, event, select
+from sqlalchemy import BigInteger, DateTime, Index, String, event, func, select
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -39,6 +43,13 @@ class AuditLog(Base, TimestampMixin):
     ip: Mapped[str | None] = mapped_column(String(50), nullable=True)
     request_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
+    # Selo da cadeia (por categoria). Nulos até o job audit.seal; a aplicação nunca os grava.
+    chain_pos: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    prev_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    row_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    __table_args__ = (Index("uq_audit_logs_category_chain_pos", "category", "chain_pos", unique=True),)
+
     user = relationship(
         "UserAccount",
         primaryjoin="foreign(AuditLog.user_id) == UserAccount.id",
@@ -57,6 +68,30 @@ class AuditLog(Base, TimestampMixin):
                 return self.user.employee.name
             return self.user.email.split("@")[0].title()
         return self.actor_email.split("@")[0].title() if self.actor_email else None
+
+
+class AuditChainState(Base):
+    """Fim e âncora de cada cadeia (a âncora é o hash do último registro apagado pela retenção)."""
+
+    __tablename__ = "audit_chain_state"
+
+    category: Mapped[str] = mapped_column(String(20), primary_key=True)
+    last_pos: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    last_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    anchor_pos: Mapped[int] = mapped_column(BigInteger, nullable=False, default=0)
+    anchor_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, server_default=func.now())
+
+
+@event.listens_for(AuditLog.__table__, "after_create")
+def _create_chain_objects(target, connection, **kw) -> None:
+    """``create_all`` em PostgreSQL (testes) ganha o mesmo gatilho e as mesmas funções da migration."""
+    if connection.dialect.name != "postgresql":
+        return
+    from app.audit.chain_ddl import CURRENT
+
+    for statement in CURRENT:
+        connection.exec_driver_sql(statement)
 
 
 @event.listens_for(AuditLog, "before_insert")

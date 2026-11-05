@@ -23,3 +23,13 @@ class AuditLogOut(BaseModel):
     ip: str | None = None
     request_id: str | None = None
     created_at: datetime
+
+
+class AuditChainStatusOut(BaseModel):
+    """Resultado da verificação da cadeia de uma categoria (``problem`` vazio = íntegra)."""
+
+    category: str
+    checked: int
+    last_pos: int
+    last_hash: str
+    problem: str | None = None

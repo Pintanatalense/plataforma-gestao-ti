@@ -9,7 +9,7 @@ Categoria de cada evento de auditoria (Plano de Evolução, Fase 0 PR 9; S4).
 SECURITY = "security"
 OPERATIONAL = "operational"
 
-_SECURITY_PREFIXES = ("identity.", "system.", "backup.", "integrations.")
+_SECURITY_PREFIXES = ("identity.", "system.", "backup.", "integrations.", "audit.")
 _SECURITY_EVENTS = {
     "notifications.email_configured",
     "notifications.email_tested",

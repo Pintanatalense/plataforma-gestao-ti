@@ -24,7 +24,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.assets.models import Asset, AssetCategory, AssetStatus
-from app.audit.models import AuditLog
 from app.attachments.models import Attachment
 from app.core.security import hash_password
 from app.database import AsyncSessionLocal
@@ -105,9 +104,8 @@ async def clean_database(session: AsyncSession) -> None:
     for model in (DeliveryAttempt, Delivery, DomainEvent, InboundMessage, ConversationSession):
         await session.execute(delete(model))
 
-    # 2. Notificações e auditoria OPERACIONAL; a trilha de segurança nunca é apagada pela demonstração (S4)
+    # 2. Notificações. A auditoria NÃO é apagada: é só de inserção e sai apenas pela retenção (ADR-023)
     await session.execute(delete(Notification))
-    await session.execute(delete(AuditLog).where(AuditLog.category == "operational"))
 
     # 3. Anexos
     await session.execute(delete(Attachment))

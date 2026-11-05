@@ -182,6 +182,20 @@ def identity_critical_changed(p: dict[str, Any], priority: str) -> Message:
     )
 
 
+def audit_integrity_failed(p: dict[str, Any], priority: str) -> Message:
+    labels = {"security": "segurança", "operational": "operacional"}
+    lines = [f"Trilha de {labels.get(i.get('category'), i.get('category'))}: {i.get('problem')}" for i in p.get("problems", [])]
+    lines.append("Alguém alterou ou apagou registros fora do sistema. Preserve o servidor e os backups e investigue.")
+    title = "Auditoria: a cadeia de integridade não confere"
+    return Message(
+        title=title,
+        body_text="\n".join([title, *lines]),
+        body_html=_html_card(title, lines, link=False),
+        priority=priority,
+        entity_type="audit_chain",
+    )
+
+
 def stock_below_minimum(p: dict[str, Any], priority: str) -> Message:
     items = p.get("items") or []
     total = int(p.get("total") or len(items))
@@ -217,6 +231,7 @@ TEMPLATES: dict[str, Callable[[dict[str, Any], str], Message]] = {
     "backup.completed": backup_completed,
     "channel.degraded": channel_degraded,
     "identity.critical_changed": identity_critical_changed,
+    "audit.integrity_failed": audit_integrity_failed,
     "stock.below_minimum": stock_below_minimum,
     "asset.warranty_expiring": asset_warranty_expiring,
 }

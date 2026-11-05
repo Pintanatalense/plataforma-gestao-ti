@@ -99,7 +99,7 @@ async def test_retention_archives_with_checksum_then_deletes_only_expired_rows(
     db_session: AsyncSession, monkeypatch, tmp_path: Path
 ):
     monkeypatch.setattr(get_settings(), "BACKUP_STORAGE_PATH", str(tmp_path))
-    now = datetime(2030, 1, 1, tzinfo=timezone.utc)
+    now = datetime.now(timezone.utc)
 
     def log(event: str, days_ago: int) -> AuditLog:
         return AuditLog(event_type=event, entity_type="x", entity_id=uuid.uuid4(), data={"n": days_ago},
@@ -111,7 +111,7 @@ async def test_retention_archives_with_checksum_then_deletes_only_expired_rows(
     ])
     await db_session.commit()
 
-    removed = await apply_audit_retention(db_session, now=now)
+    removed = await apply_audit_retention(db_session)
     assert removed == {"security": 1, "operational": 1}
     left = sorted((r.event_type, r.data["n"]) for r in (await db_session.execute(select(AuditLog))).scalars())
     assert left == [("identity.login_success", 800), ("ticket.created", 10)]
@@ -130,7 +130,8 @@ async def test_security_retention_cannot_go_below_five_years():
         Settings(SECRET_KEY="a" * 40, APP_ENCRYPTION_KEY=get_settings().APP_ENCRYPTION_KEY, AUDIT_RETENTION_SECURITY_DAYS=365)
 
 
-async def test_demo_and_qa_cleanup_keep_the_security_trail(db_session: AsyncSession):
+async def test_demo_and_qa_cleanup_keep_the_whole_trail(db_session: AsyncSession):
+    """Desde o PR 11 a auditoria só sai pela retenção (ADR-023): nem a trilha operacional é apagada."""
     from app.seed_demo import clean_database
     from app.seed_test import clean_test_database
 
@@ -142,7 +143,7 @@ async def test_demo_and_qa_cleanup_keep_the_security_trail(db_session: AsyncSess
         await clean(db_session)
         await db_session.commit()
         kinds = {r.category for r in (await db_session.execute(select(AuditLog))).scalars()}
-        assert kinds == {"security"}
+        assert kinds == {"security", "operational"}
 
 
 @pytest.mark.migrations

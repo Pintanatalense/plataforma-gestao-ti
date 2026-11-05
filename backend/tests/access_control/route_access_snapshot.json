@@ -25,6 +25,7 @@
   "GET /api/v1/attachments/{attachment_id}/download": "token + regras no handler",
   "GET /api/v1/audit": "perm:audit.read",
   "GET /api/v1/audit/event-types": "perm:audit.read",
+  "GET /api/v1/audit/integrity": "perm:audit.read",
   "GET /api/v1/audit/{entity_type}/{entity_id}": "perm:audit.read",
   "GET /api/v1/health": "sem token",
   "GET /api/v1/identity/me": "token",

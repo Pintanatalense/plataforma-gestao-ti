@@ -17,7 +17,8 @@
 #   7. IP forjado no X-Forwarded-For não é gravado (setup inicial pelo Nginx; consulta no banco descartável);
 #   8. documentação da API desligada por padrão; worker enxerga anexos e logo, sem poder gravar;
 #   9. papéis de banco (ADR-022): backend e worker sem superusuário nem DDL, tabelas do papel dono, Evolution
-#      isolada no próprio schema, e o backup pela tela (pg_dump com o papel da aplicação) funcionando.
+#      isolada no próprio schema, e o backup pela tela (pg_dump com o papel da aplicação) funcionando;
+#  10. auditoria imutável (ADR-023): a aplicação não apaga a trilha e o worker a sela numa cadeia íntegra.
 #
 # Segurança: projeto Compose próprio (`gti-smoke`), segredos gerados na hora e descartados, porta só em
 # 127.0.0.1, e tudo (contêineres e volumes do projeto) é apagado ao final. Não toca em gti-dev nem em produção.
@@ -156,6 +157,18 @@ backup_status="$(curl -s -X POST "$BASE/api/v1/system/backups/generate" -H "Auth
   | "$PY" -c 'import json, sys; print(json.load(sys.stdin).get("status"))' 2>/dev/null)"
 echo "backup pela tela: ${backup_status:-<sem resposta>}"
 check "backup pela tela (pg_dump com o papel da aplicação) concluído" test "$backup_status" = "SUCCESS"
+
+# --- 10. auditoria imutável (o job audit.seal roda a cada minuto) ---------------------------------------
+audit_state=""
+for _ in $(seq 1 45); do
+  audit_state="$(db_query "select has_table_privilege('gestao_app', 'public.audit_logs', 'DELETE')::text
+    || '|' || (select count(*) from audit_logs) || '|' || (select count(*) from audit_logs where row_hash is null)
+    || '|' || coalesce((select string_agg(coalesce(problem, 'ok'), ',') from audit_verify()), 'sem cadeia')")"
+  case "$audit_state" in false\|[1-9]*\|0\|ok*) break ;; esac
+  sleep 4
+done
+echo "auditoria (app apaga | registros | sem selo | cadeias): $audit_state"
+check "auditoria só de inserção e selada pelo worker, cadeia íntegra" sh -c "printf '%s' '$audit_state' | grep -Eq '^false\|[1-9][0-9]*\|0\|ok(,ok)*$'"
 
 if [ "$failures" -gt 0 ]; then
   echo "RESULTADO: $failures verificação(ões) falharam"

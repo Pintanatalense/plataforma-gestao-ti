@@ -145,9 +145,10 @@ async def test_fresh_install_owner_migrates_and_app_only_touches_data(cluster: C
     for table in tables:
         privileges = {p: await admin.fetchval("SELECT has_table_privilege($1, $2, $3)", spec.app.name, f"public.{table}", p)
                       for p in ("SELECT", "INSERT", "UPDATE", "DELETE", "TRUNCATE")}
-        expected_write = table != "alembic_version"
-        assert privileges == {"SELECT": True, "INSERT": expected_write, "UPDATE": expected_write,
-                              "DELETE": expected_write, "TRUNCATE": False}, table
+        insert = table not in ("alembic_version", "audit_chain_state")
+        change = insert and table != "audit_logs"  # auditoria só de inserção (ADR-023)
+        assert privileges == {"SELECT": True, "INSERT": insert, "UPDATE": change,
+                              "DELETE": change, "TRUNCATE": False}, table
     await admin.close()
 
     app = await cluster.connect(spec.app)
@@ -155,7 +156,14 @@ async def test_fresh_install_owner_migrates_and_app_only_touches_data(cluster: C
     await app.execute("UPDATE user_accounts SET token_version = 1 WHERE id = $1", uid)
     await app.execute("DELETE FROM user_accounts WHERE id = $1", uid)
     assert await app.fetchval("SELECT count(*) FROM alembic_version") == 1
-    for ddl in ("CREATE TABLE public.intruder (id int)", "ALTER TABLE user_accounts ADD COLUMN intruder int",
+    # auditoria: a aplicação insere e sela (função do dono), mas não altera nem apaga
+    await app.execute("INSERT INTO audit_logs (id, event_type, entity_type, entity_id, data, actor_kind, category, "
+                      "created_at, updated_at) VALUES (gen_random_uuid(), 'ticket.created', 'ticket', "
+                      "gen_random_uuid(), '{}', 'system', 'operational', now(), now())")
+    assert await app.fetchval("SELECT audit_seal(10)") == 1
+    assert await app.fetchval("SELECT problem FROM audit_verify()") is None
+    for ddl in ("DELETE FROM audit_logs", "UPDATE audit_logs SET ip = 'x'", "DELETE FROM audit_chain_state",
+                "CREATE TABLE public.intruder (id int)", "ALTER TABLE user_accounts ADD COLUMN intruder int",
                 "DROP TABLE audit_logs", "TRUNCATE audit_logs", "UPDATE alembic_version SET version_num = version_num",
                 f"CREATE TABLE {EVOLUTION_SCHEMA}.intruder (id int)"):
         assert await _denied(app, ddl), ddl

@@ -8,8 +8,9 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.chain import verify_chain
 from app.audit.repository import AuditRepository
-from app.audit.schemas import AuditLogOut
+from app.audit.schemas import AuditChainStatusOut, AuditLogOut
 from app.audit.services import AuditService
 from app.core.dependencies import require_permission
 from app.database import get_db
@@ -49,6 +50,15 @@ async def list_audit_event_types(
 ):
     """Tipos de evento já registrados (alimenta o filtro da tela)."""
     return await service.event_types()
+
+
+@router.get("/integrity", response_model=list[AuditChainStatusOut])
+async def audit_integrity(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = Depends(require_permission("audit.read")),
+):
+    """Recalcula a cadeia de hash de cada categoria (ADR-023). ``problem`` vazio = íntegra até ``last_pos``."""
+    return [AuditChainStatusOut(**vars(status)) for status in await verify_chain(db)]
 
 
 @router.get("/{entity_type}/{entity_id}", response_model=list[AuditLogOut])
