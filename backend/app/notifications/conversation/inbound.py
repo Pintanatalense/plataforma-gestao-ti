@@ -17,6 +17,11 @@ from app.notifications.models import Delivery, DomainEvent, InboundMessage
 
 logger = logging.getLogger(__name__)
 
+FAILURE_REPLY = (
+    "Não consegui concluir sua mensagem agora por um erro no sistema. Tente de novo em alguns minutos; "
+    "se continuar, avise a equipe de TI."
+)
+
 
 async def enqueue_replies(
     session: AsyncSession, channel: str, external_id: str, user_id: uuid.UUID | None, message_id: str, replies: list[str]
@@ -51,7 +56,12 @@ async def enqueue_replies(
 
 
 async def process_inbound(session: AsyncSession, channel: str, message_id: str, external_id: str, text: str) -> bool:
-    """Executa a mensagem uma única vez. Retorna False se já tinha sido processada (reentrega)."""
+    """Executa a mensagem uma única vez. Retorna False se já tinha sido processada (reentrega).
+
+    Uma falha no tratamento NÃO vira erro 500: o que o tratamento gravou é desfeito (savepoint), a mensagem continua
+    marcada como recebida e a pessoa recebe um aviso. Antes, o 500 desfazia até a marca de "já processada" e o
+    provedor reenviava a mesma mensagem em rajada (a Evolution tenta várias vezes), repetindo o erro a cada vez.
+    """
     try:
         async with session.begin_nested():
             session.add(InboundMessage(channel=channel, message_id=message_id, external_id=external_id))
@@ -60,6 +70,11 @@ async def process_inbound(session: AsyncSession, channel: str, message_id: str, 
         logger.info("Mensagem %s/%s já processada; ignorando reentrega.", channel, message_id)
         return False
 
-    replies, user_id = await ConversationEngine(session).handle(channel, external_id, text)
+    try:
+        async with session.begin_nested():
+            replies, user_id = await ConversationEngine(session).handle(channel, external_id, text)
+    except Exception:
+        logger.exception("Falha ao tratar a mensagem %s/%s; a pessoa recebe um aviso de erro.", channel, message_id)
+        replies, user_id = [FAILURE_REPLY], None
     await enqueue_replies(session, channel, external_id, user_id, message_id, replies)
     return True

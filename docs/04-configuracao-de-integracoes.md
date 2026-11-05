@@ -61,6 +61,10 @@ O canal tem **dois provedores** (escolha na aba **Administração > Canais de co
 
 > **Segurança da entrada de mensagens:** o caminho `/api/v1/integrations/whatsapp/evolution/` é bloqueado no Nginx (404 pela internet) e, mesmo alcançado, só vale com o segredo no cabeçalho `X-Webhook-Secret` (gerado pelo sistema, guardado cifrado). Mensagens de grupos, suas próprias e de remetentes que a Evolution só identifica por `@lid` (sem telefone) são ignoradas.
 
+> **Mensagem que falha no sistema:** se o tratamento de uma mensagem recebida der erro (banco fora do ar, por exemplo), a pessoa recebe "Não consegui concluir sua mensagem agora…" e a mensagem fica marcada como recebida: a Evolution não a reenvia em rajada e o erro vai para o log do backend. O que o fluxo tinha começado a gravar é desfeito.
+>
+> **Chamado aberto pelo bot:** fica no nome do colaborador ligado ao usuário que vinculou o número, com a descrição começando por `[Aberto via chat]`, e aparece para ele em *Chamados* (atualize a lista) e na opção `2` do bot, e para a gestão. Se não aparecer, confira se a tela aberta é a da mesma instalação em que o número foi vinculado (ex.: porta 8090 × 8080).
+
 > Neste provedor não há janela de 24 h nem template: o texto vai livre. A sessão do número fica no PostgreSQL (schema `evolution_api`) e no volume `evolution_instances`. **Homologação pendente:** os formatos exatos de erro da Evolution e o comportamento de reinício ainda precisam ser confirmados com um chip real (ADR-019, fase C5).
 
 **Meta Cloud API (oficial)** — seções 2.1 a 2.6, abaixo.

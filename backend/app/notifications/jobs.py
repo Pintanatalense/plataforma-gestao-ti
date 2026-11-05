@@ -192,7 +192,16 @@ async def job_whatsapp_health(session_factory: SessionFactory) -> None:
             await session.execute(delete(AutomationMark).where(AutomationMark.key.in_((seen_key, alerted_key))))
             await session.commit()
             return
-        state, detail = await evolution.connection_state(stored.config.get("instance_name") or evolution.DEFAULT_INSTANCE)
+        instance = stored.config.get("instance_name") or evolution.DEFAULT_INSTANCE
+        state, detail = await evolution.connection_state(instance)
+        if state == "open" and not stored.config.get("display_phone"):
+            # o número pareado alimenta o link wa.me do vínculo; a consulta de status da tela não grava
+            from app.notifications.channel_store import save_channel
+
+            phone = await evolution.owner_phone(instance)
+            if phone:
+                await save_channel(session, WHATSAPP_CHANNEL, stored.enabled, {**stored.config, "display_phone": phone},
+                                   dict(stored.secrets))
         marks = set((await session.execute(select(AutomationMark.key).where(AutomationMark.key.in_((seen_key, alerted_key))))).scalars())
         if state == "open":
             if marks:
