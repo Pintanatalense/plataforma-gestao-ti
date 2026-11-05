@@ -79,7 +79,7 @@ português, descrição e risco) fica em `backend/app/identity/permission_catalo
 | **Solicitante** | Abrir chamados, ver os próprios chamados e os próprios ativos. |
 | **Atendente** | Atender os chamados do seu setor, notas internas, categorias de chamados, ver ativos e estoque. |
 | **Gestão** | Ver todos os chamados, relatórios, inventários, auditoria, organização (leitura) e exportar dados. |
-| **Admin** | Cadastro e movimentação de ativos, categorias, importação do GLPI, estoque, organização, usuários e perfis. |
+| **Admin** | Cadastro e movimentação de ativos, categorias, importação do GLPI, estoque, organização, usuários, perfis e SLA. |
 | **Administrador** | Todas as permissões comuns. |
 
 **Permissões críticas** (backups, download de backup, dados de demonstração, zerar a base, importação de dados e
@@ -102,6 +102,25 @@ conceder críticas) não entram em perfil nem valem pelo simples "Administrador"
 | **Solicitante (`SOLICITANTE_PADRAO`)** | Visualização estrita dos chamados de sua autoria, abertura de tickets com formulários dinâmicos. | Usuários finais da organização. |
 
 ---
+
+## 3.1. SLA de chamados (prazos de atendimento)
+
+Tela *Service Desk > SLA (prazos)*, para quem tem **Gerenciar SLA** (`service_desk.sla.manage`; o perfil Administrador já tem; num perfil Admin criado antes desta versão, marque em *Perfis*). Regras completas em
+[ADR-017](decisions/ADR-017-sla.md).
+
+1. **Calendários** (aba *Calendários*): o expediente de cada dia da semana (pode ter mais de um intervalo, ex.: 08:00–12:00
+   e 13:00–18:00), o fuso e os feriados. Os prazos só correm dentro do expediente. A instalação já traz o calendário
+   "Horário comercial" (segunda a sexta, 08:00–18:00).
+2. **Políticas** (aba *Políticas*): prazo de **primeira resposta** e de **resolução** para cada prioridade, em horas úteis
+   (0,5 = 30 min); prioridade sem prazo não tem relógio. Também: o **alerta** de proximidade (padrão 80% do prazo; 0
+   desliga), o que fazer ao **reabrir** (recomeçar o prazo de resolução ou continuar de onde parou) e em quais status o
+   relógio **para** (Pendente e, se quiser, Em atendimento). A política "Padrão" vem **inativa**.
+3. **Ligar à categoria:** em *Categorias de Chamados*, campo **SLA** (padrão "Não se aplica"). A política precisa estar
+   **ativa** para ligar o relógio.
+
+Tudo vale para **chamados novos**: os que já estão abertos guardaram os prazos de quando começaram. O selo no cabeçalho
+do chamado mostra a situação (no prazo, pausado, cumprido, violado) e o próximo prazo. Os avisos (*perto de vencer* e
+*violado*) saem pelo hub de notificações; as regras ficam em *Notificações > Entregas e regras*.
 
 ## 4. Auditoria e Rastreabilidade
 

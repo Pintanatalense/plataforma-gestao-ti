@@ -210,7 +210,8 @@ export class SidebarComponent implements OnInit {
       items: [
         { icon: 'forum', label: 'Chamados', route: '/service-desk' },
         { icon: 'add_circle', label: 'Abrir Chamado', route: '/service-desk/new' },
-        { icon: 'category', label: 'Categorias de Chamados', route: '/service-desk/categories', permission: 'service_desk.categories.manage' }
+        { icon: 'category', label: 'Categorias de Chamados', route: '/service-desk/categories', permission: 'service_desk.categories.manage' },
+        { icon: 'timer', label: 'SLA (prazos)', route: '/service-desk/sla', permission: 'service_desk.sla.manage' }
       ]
     },
     {

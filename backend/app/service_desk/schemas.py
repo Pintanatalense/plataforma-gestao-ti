@@ -19,6 +19,8 @@ class TicketCategoryBase(BaseModel):
     is_active: bool = True
     default_sector_id: uuid.UUID | None = None
     form_schema: list[dict] = Field(default_factory=list)
+    # Nulo = "Não se aplica" (ADR-017). Trocar exige service_desk.sla.manage.
+    sla_policy_id: uuid.UUID | None = None
 
 class TicketCategoryCreate(TicketCategoryBase):
     pass
@@ -29,6 +31,7 @@ class TicketCategoryUpdate(BaseModel):
     is_active: bool | None = None
     default_sector_id: uuid.UUID | None = None
     form_schema: list[dict] | None = None
+    sla_policy_id: uuid.UUID | None = None  # enviar null volta para "Não se aplica"
 
 class TicketCategoryResponse(TicketCategoryBase):
     id: uuid.UUID

@@ -112,6 +112,12 @@ CATALOG: tuple[PermissionSpec, ...] = (
     PermissionSpec("service_desk.tickets.read_all", "Ver todos os chamados", "Visualizar todos os chamados da organização (Gestão)", "leitura"),
     PermissionSpec("service_desk.reports.read", "Ver relatórios de chamados", "Acessar relatórios e métricas de desempenho/SLA", "leitura"),
     PermissionSpec("service_desk.interactions.internal", "Notas internas", "Registrar e visualizar notas internas no chamado", "alteracao"),
+    PermissionSpec(
+        "service_desk.sla.manage",
+        "Gerenciar SLA",
+        "Criar e editar calendários e políticas de SLA, escolher o SLA de cada categoria e reabrir chamados fora do prazo",
+        "alteracao",
+    ),
     # Sistema, dados e backups
     PermissionSpec("system.data.export", "Exportar dados", "Exportar dados do sistema em formato CSV", "leitura"),
     PermissionSpec(

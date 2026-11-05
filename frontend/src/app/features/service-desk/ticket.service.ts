@@ -2,6 +2,8 @@ import { Injectable, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
 import { Observable } from 'rxjs';
 
+import { SlaInfo } from './sla.service';
+
 export interface CategoryFormField {
   id: string;
   label: string;
@@ -19,6 +21,8 @@ export interface TicketCategory {
   default_sector_id?: string | null;
   form_schema?: CategoryFormField[];
   is_active?: boolean;
+  /** Nulo = "Não se aplica" (sem relógio de SLA). */
+  sla_policy_id?: string | null;
 }
 
 export interface TicketInteraction {
@@ -82,6 +86,7 @@ export interface Ticket {
   updated_at: string;
   interactions: TicketInteraction[];
   materials?: TicketMaterial[];
+  sla?: SlaInfo;
 }
 
 @Injectable({
@@ -130,6 +135,7 @@ export class TicketService {
     description?: string;
     default_sector_id?: string | null;
     form_schema?: CategoryFormField[];
+    sla_policy_id?: string | null;
   }): Observable<TicketCategory> {
     return this.http.post<TicketCategory>(`${this.apiUrl}/categories`, payload);
   }
@@ -142,6 +148,7 @@ export class TicketService {
       default_sector_id?: string | null;
       form_schema?: CategoryFormField[];
       is_active?: boolean;
+      sla_policy_id?: string | null;
     }
   ): Observable<TicketCategory> {
     return this.http.patch<TicketCategory>(`${this.apiUrl}/categories/${id}`, payload);

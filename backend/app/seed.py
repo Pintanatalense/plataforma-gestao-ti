@@ -162,6 +162,7 @@ async def seed() -> None:
             "identity.roles.read",
             "identity.roles.create",
             "identity.roles.update",
+            "service_desk.sla.manage",
         ]
         await sync_role(
             name="Admin",

@@ -37,6 +37,7 @@ import { Asset, AssetService } from '../../../core/services/asset.service';
 import { HttpResponse } from '@angular/common/http';
 import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
 import { apiErrorMessage } from '../../../core/http/api-error';
+import { SlaBadgeComponent } from '../sla-badge/sla-badge.component';
 
 @Component({
   selector: 'app-ticket-detail',
@@ -61,7 +62,8 @@ import { apiErrorMessage } from '../../../core/http/api-error';
     MatTooltipModule,
     MatProgressSpinnerModule,
     AttachmentsComponent,
-    LoadStateComponent
+    LoadStateComponent,
+    SlaBadgeComponent
   ],
   templateUrl: './ticket-detail.component.html',
   styleUrls: ['./ticket-detail.component.scss']

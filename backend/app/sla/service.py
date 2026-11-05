@@ -279,6 +279,7 @@ class SlaService:
             last.resolved_at = None
             last.state = "RUNNING"
             last.resolution_due_at = add_business_minutes(now, remaining, calendar)
+            last.first_response_warned_at = last.resolution_warned_at = None  # prazo novo: o alerta vale de novo
             cycle = last
         else:
             cycle = await self._new_cycle(

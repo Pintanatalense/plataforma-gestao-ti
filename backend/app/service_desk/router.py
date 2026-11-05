@@ -26,6 +26,7 @@ from app.service_desk.schemas import (
     TicketAssetInspectRequest,
 )
 from app.service_desk.services import ServiceDeskService
+from app.sla.router import SLA_MANAGE
 from app.sla.service import SlaService
 
 router = APIRouter()
@@ -52,10 +53,11 @@ async def list_categories(
 )
 async def create_category(
     schema: TicketCategoryCreate,
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
 ) -> TicketCategoryResponse:
     service = ServiceDeskService(session)
-    cat = await service.create_category(schema)
+    cat = await service.create_category(schema, can_manage_sla=ctx.has(SLA_MANAGE))
     await session.commit()
     return cat
 
@@ -68,10 +70,11 @@ async def create_category(
 async def update_category(
     category_id: uuid.UUID,
     schema: TicketCategoryUpdate,
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
 ) -> TicketCategoryResponse:
     service = ServiceDeskService(session)
-    cat = await service.update_category(category_id, schema)
+    cat = await service.update_category(category_id, schema, can_manage_sla=ctx.has(SLA_MANAGE), user_id=ctx.user_id)
     await session.commit()
     return cat
 
@@ -198,7 +201,7 @@ async def update_ticket(
         user_id=ctx.user_id,
         sector_id=ctx.sector_id,
         can_read_all=ctx.can_read_all,
-        can_reopen_late=ctx.is_admin,
+        can_reopen_late=ctx.has(SLA_MANAGE),
     )
     await SlaService(session).attach([ticket])
     await session.commit()

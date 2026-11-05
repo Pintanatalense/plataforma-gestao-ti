@@ -128,6 +128,21 @@ async def test_priority_change_rearms_the_warning(client: AsyncClient, db_sessio
     assert len(await events(db_session, "ticket.sla_warning")) == 2
 
 
+async def test_continue_reopen_rearms_the_resolution_warning(client: AsyncClient, db_session: AsyncSession, world: World, clock: Clock):
+    world.policy.reopen_rule = "CONTINUE"
+    await db_session.commit()
+    ticket = await open_ticket(client, world)  # HIGH: resolução 480 min, vence terça 09:00; alerta a partir de seg 17:24
+    await client.post(f"/api/v1/tickets/{ticket}/interactions", json={"message": "Vendo", "is_internal": False}, headers=world.h_att)
+    assert (await check(db_session, utc(26, 17, 30))).warnings == 1
+    clock.set(utc(26, 17, 40))
+    await patch(client, world, ticket, status="RESOLVED")
+    clock.set(utc(27, 8, 30))
+    await patch(client, world, ticket, status="IN_PROGRESS")  # continua: faltavam 80 min, vence terça 09:50
+    result = await check(db_session, utc(27, 8, 35))
+    assert (result.warnings, result.breaches) == (1, 0)
+    assert [e.payload["kind"] for e in await events(db_session, "ticket.sla_warning")] == ["RESOLUTION", "RESOLUTION"]
+
+
 async def test_inactive_policy_does_not_stop_open_cycles(client: AsyncClient, db_session: AsyncSession, world: World):
     ticket = await open_ticket(client, world)
     world.policy.is_active = False
