@@ -116,6 +116,29 @@ def ticket_interaction_added(p: dict[str, Any], priority: str) -> Message:
     )
 
 
+SLA_KIND_LABELS = {"FIRST_RESPONSE": "primeira resposta", "RESOLUTION": "resolução"}
+
+
+def ticket_sla_warning(p: dict[str, Any], priority: str) -> Message:
+    kind = SLA_KIND_LABELS.get(p.get("kind", ""), "prazo")
+    return _build(
+        priority,
+        f"Chamado {_ticket_ref(p)}: prazo de {kind} perto de vencer",
+        [f"{p.get('title', '')}", f"O prazo de {kind} vence em {p.get('due_local', '-')}."],
+        p,
+    )
+
+
+def ticket_sla_breached(p: dict[str, Any], priority: str) -> Message:
+    kind = SLA_KIND_LABELS.get(p.get("kind", ""), "prazo")
+    return _build(
+        priority,
+        f"Chamado {_ticket_ref(p)}: prazo de {kind} vencido",
+        [f"{p.get('title', '')}", f"O prazo de {kind} venceu em {p.get('due_local', '-')} (SLA violado)."],
+        p,
+    )
+
+
 def backup_failed(p: dict[str, Any], priority: str) -> Message:
     err = p.get("error") or "motivo não informado"
     return Message(
@@ -227,6 +250,8 @@ TEMPLATES: dict[str, Callable[[dict[str, Any], str], Message]] = {
     "ticket.assigned": ticket_assigned,
     "ticket.status_changed": ticket_status_changed,
     "ticket.interaction_added": ticket_interaction_added,
+    "ticket.sla_warning": ticket_sla_warning,
+    "ticket.sla_breached": ticket_sla_breached,
     "backup.failed": backup_failed,
     "backup.completed": backup_completed,
     "channel.degraded": channel_degraded,

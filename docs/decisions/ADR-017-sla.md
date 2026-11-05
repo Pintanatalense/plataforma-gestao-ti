@@ -1,6 +1,6 @@
 # ADR-017 — SLA de chamados
 
-**Status:** Aceito; **implementado em parte**. P4-S1 (tabelas e cálculo de horas úteis, `backend/app/sla/`) foi entregue em 2026-10-23 (#51). P4-S2 a P4-S5 (integração com chamados, job de violações, telas, indicadores) estão pendentes: no Plano de Evolução são a Fase 2, depois da prova de conceito. Nenhum chamado usa SLA ainda. Os prazos da seção "Valores iniciais" continuam sendo sugestão a confirmar com o usuário.  
+**Status:** Aceito; **implementado em parte**. P4-S1 (tabelas e cálculo de horas úteis, `backend/app/sla/`) foi entregue em 2026-10-23 (#51); P4-S2 (relógio nos chamados) e P4-S3 (job `sla.check`, violações e alertas) estão prontos. P4-S4 (telas) e P4-S5 (indicadores) estão pendentes. Por decisão do usuário (2026-10-26), o SLA é concluído antes da prova de conceito do Plano de Evolução. Os prazos da seção "Valores iniciais" continuam sendo sugestão a confirmar com o usuário.  
 *Status anterior: Proposto (2026-10-22), revisado após revisão independente.*  
 **Data:** 2026-10-22  
 **Depende de:** ADR-013 (worker e outbox já existentes)
@@ -85,6 +85,15 @@ Decisões tomadas ao integrar com os chamados (o texto acima continua valendo):
 - **Chamado encerrado** (`RESOLVED`/`CLOSED`) nunca ganha relógio por troca de categoria. A janela de reabertura é checada **antes** de qualquer campo ser alterado.
 - **Pendências conhecidas (menores):** dois pedidos simultâneos de troca de categoria num chamado sem ciclo podem colidir no único `(ticket_id, cycle)` (um deles falha com 500 e pode repetir); no ciclo reaberto por `RESTART` o intervalo "resolvido" entre ciclos conta como consumido numa troca de categoria posterior; a suíte desta etapa roda em SQLite — a validação em PostgreSQL (`FOR UPDATE`, datas com fuso) fica para o CI do PR.
 - **Fora desta etapa (P4-S3):** o job `sla.check`, os alertas de proximidade e o registro de violações de chamados que ninguém tocou.
+
+## Registro de implementação — P4-S3 (2026-10-27)
+
+- **Job `sla.check`** (a cada 5 minutos, `app/sla/checker.py`): ciclo `RUNNING` com prazo vencido (`agora > vencimento`) ganha a violação, com o mesmo único `(ciclo, tipo)` das transições. Ciclo pausado não tem prazo e fica de fora; política desativada não para ciclos abertos.
+- **Alerta de proximidade:** `ticket.sla_warning` quando faltam `100 - %` do alvo da prioridade (padrão: passou de 80%), **uma vez por prazo** (`first_response_warned_at`/`resolution_warned_at`). A troca de prioridade rearma o alerta. `%` fora de 1–99 desliga o alerta.
+- **Aviso de violação:** `ticket.sla_breached` para **toda** violação ainda não avisada (`sla_breaches.notified_at`), venha do job ou de uma transição (ex.: primeira resposta atrasada). A migration marca as violações antigas como avisadas.
+- **Quem recebe** (regras semeadas, editáveis em Notificações): alerta → atendente responsável; sem responsável → atendentes do setor (`payload_equals: {"assigned": false}`); violação → responsável, atendentes do setor e o perfil "Gestão".
+- **Concorrência:** os ciclos e as violações são lidos com `FOR UPDATE SKIP LOCKED`; um chamado sendo alterado na mesma hora fica para a execução seguinte. Evento no outbox e marca de aviso gravam na mesma transação.
+- **Lote:** até 500 ciclos e 500 avisos por execução (o resto vai na próxima).
 
 ## Entrega em PRs
 
