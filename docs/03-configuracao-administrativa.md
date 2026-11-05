@@ -77,7 +77,7 @@ português, descrição e risco) fica em `backend/app/identity/permission_catalo
 | Perfil | O que acrescenta |
 | :--- | :--- |
 | **Solicitante** | Abrir chamados, ver os próprios chamados e os próprios ativos. |
-| **Atendente** | Atender os chamados do seu setor, notas internas, categorias de chamados, ver ativos e estoque. |
+| **Atendente** | Atender os chamados do seu setor, direcionar chamados a qualquer setor, notas internas, categorias de chamados, ver ativos e estoque. |
 | **Gestão** | Ver todos os chamados, relatórios, inventários, auditoria, organização (leitura) e exportar dados. |
 | **Admin** | Cadastro e movimentação de ativos, categorias, importação do GLPI, estoque, organização, usuários, perfis e SLA. |
 | **Administrador** | Todas as permissões comuns. |
@@ -92,6 +92,10 @@ conceder críticas) não entram em perfil nem valem pelo simples "Administrador"
   (`service_desk.tickets.create_on_behalf`, sem concessão automática: marque no perfil de quem precisa). Solicitante e
   criador acompanham o chamado, comentam em público e podem finalizá-lo; o criador fica registrado no chamado e na
   auditoria.
+* **Setor responsável:** a categoria define o setor. Escolher outro setor exige **Direcionar chamados a qualquer setor**
+  (`service_desk.tickets.route_any_sector`), que vem no perfil Atendente (e nos que herdam dele). Categoria sem setor
+  padrão exige que o setor seja informado, e ele precisa estar ativo.
+
 **Telas:**
 * **Perfis** (*Administração & Sistema > Perfis*): ao criar ou editar um perfil, as permissões aparecem agrupadas por
   módulo, com nome em português, descrição e o risco (Leitura, Alteração, Execução, Administração). As críticas não

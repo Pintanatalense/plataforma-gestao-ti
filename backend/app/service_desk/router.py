@@ -179,6 +179,7 @@ async def create_ticket(
         origin_unit_id=requester.unit_id,
         origin_sector_id=requester.sector_id,
         user_id=ctx.user_id,
+        can_route_any_sector=ctx.can_route_any_sector,
     )
     await SlaService(session).attach([ticket])
     await session.commit()

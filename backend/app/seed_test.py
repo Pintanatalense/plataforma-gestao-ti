@@ -124,6 +124,7 @@ async def sync_roles_and_permissions(session: AsyncSession) -> dict[str, Role]:
 
     atendente_codes = solicitante_codes + [
         "service_desk.tickets.manage",
+        "service_desk.tickets.route_any_sector",
     "service_desk.categories.manage",
         "service_desk.interactions.internal",
         "assets.read",

@@ -116,6 +116,12 @@ CATALOG: tuple[PermissionSpec, ...] = (
         "Abrir chamados informando outro colaborador como solicitante (quem abriu fica registrado)",
         "alteracao",
     ),
+    PermissionSpec(
+        "service_desk.tickets.route_any_sector",
+        "Direcionar chamados a qualquer setor",
+        "Escolher, ao abrir um chamado, um setor responsável diferente do definido pela categoria",
+        "alteracao",
+    ),
     PermissionSpec("service_desk.reports.read", "Ver relatórios de chamados", "Acessar relatórios e métricas de desempenho/SLA", "leitura"),
     PermissionSpec("service_desk.interactions.internal", "Notas internas", "Registrar e visualizar notas internas no chamado", "alteracao"),
     PermissionSpec(

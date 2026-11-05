@@ -220,14 +220,33 @@ class ServiceDeskService:
         self,
         category: TicketCategory | None,
         requested_sector_id: uuid.UUID | None,
+        *,
+        can_route_any_sector: bool,
     ) -> uuid.UUID:
-        """Setor informado ou, sem ele, o padrão da categoria."""
-        sector_id = requested_sector_id or (category.default_sector_id if category is not None else None)
-        if not sector_id:
+        """
+        Direcionamento por categoria, único para chamados e subchamados:
+        - categoria com setor padrão: vai para ele; outro setor só com ``service_desk.tickets.route_any_sector``;
+        - categoria sem setor padrão, ou sem categoria: o setor informado é obrigatório e precisa existir ativo.
+        """
+        from app.organization.models import Sector
+
+        default_sector_id = category.default_sector_id if category is not None else None
+        if default_sector_id is not None:
+            if requested_sector_id is None or requested_sector_id == default_sector_id:
+                return default_sector_id
+            if not can_route_any_sector:
+                raise ForbiddenException(
+                    "Esta categoria é direcionada a um setor definido. Escolher outro setor exige a permissão "
+                    "Direcionar chamados a qualquer setor."
+                )
+        if requested_sector_id is None:
             raise BusinessRuleException(
                 "Setor responsável não definido. Informe-o manualmente ou selecione uma categoria com roteamento automático."
             )
-        return sector_id
+        sector = await self.session.get(Sector, requested_sector_id)
+        if sector is None or not sector.is_active or sector.deleted_at is not None:
+            raise BusinessRuleException("Setor responsável inválido ou inativo.")
+        return requested_sector_id
 
     async def create_ticket(
         self,
@@ -237,6 +256,7 @@ class ServiceDeskService:
         origin_sector_id: uuid.UUID,
         *,
         user_id: uuid.UUID,
+        can_route_any_sector: bool = False,
     ) -> Ticket:
         """
         ``user_id`` é quem abre (criador) e é obrigatório: todo chamado novo registra quem o abriu, mesmo quando o
@@ -250,7 +270,9 @@ class ServiceDeskService:
             cat = await self.repo.get_category(schema.category_id)
             if not cat or not cat.is_active:
                 raise BusinessRuleException("Categoria inválida ou inativa.")
-        responsible_sector_id = await self.resolve_responsible_sector(cat, schema.responsible_sector_id)
+        responsible_sector_id = await self.resolve_responsible_sector(
+            cat, schema.responsible_sector_id, can_route_any_sector=can_route_any_sector
+        )
 
         if cat is not None:
             # Validação dos pré-requisitos vinculados ao formulário da categoria

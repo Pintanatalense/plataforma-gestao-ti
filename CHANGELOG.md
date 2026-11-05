@@ -4,6 +4,10 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 
 ## [Não lançado]
 
+### Mudanças de comportamento
+
+- **Só quem tem permissão troca o setor que a categoria define.** Ao abrir um chamado de uma categoria com setor padrão, escolher outro setor passou a exigir **Direcionar chamados a qualquer setor** (`service_desk.tickets.route_any_sector`); sem ela, a abertura é recusada (403). Antes qualquer pessoa trocava. Categoria sem setor padrão continua exigindo que o setor seja informado, agora ativo. **Atualização:** os perfis que já tinham *Atender chamados* recebem a permissão nova; a tela de abertura não oferecia a troca, então quem abre pela tela não percebe diferença.
+
 ### Funcionalidades
 
 - **Chamados: quem abriu fica registrado e abertura em nome de outra pessoa.** Todo chamado guarda o **criador** (quem abriu) separado do **solicitante** (para quem é o pedido); a resposta da API traz `created_by_user_id` e `created_by_name`. Com a nova permissão **Abrir chamados em nome de outra pessoa** (`service_desk.tickets.create_on_behalf`, sem concessão automática), o campo `requester_id` informa outro colaborador ativo; solicitante e criador acompanham o chamado, comentam em público e podem finalizá-lo. O comentário de quem abriu em nome de outra pessoa não conta como primeira resposta do SLA. **Atualização:** o criador dos chamados existentes vem da auditoria (`ticket.created`); os que não têm esse registro ficam como "não registrado". Um chamado novo sem criador é recusado pelo banco (`CHECK` e gatilho `sd_ticket_creator_guard`). Faça backup verificado antes de atualizar: a migration preenche dados.
