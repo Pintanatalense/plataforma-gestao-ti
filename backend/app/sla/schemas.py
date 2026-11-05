@@ -25,6 +25,44 @@ class SlaInfo(BaseModel):
     paused: bool = False
     # Tipos de violação já registrados neste ciclo: FIRST_RESPONSE e/ou RESOLUTION.
     breaches: list[str] = []
+    # Calculados na leitura (P4-S5): prazo pendente já vencido (antes de o job registrar) ou acima do % de alerta.
+    overdue: bool = False
+    at_risk: bool = False
+
+
+# --- Indicadores (P4-S5) ------------------------------------------------------------------------------------------
+
+
+class SlaGroup(BaseModel):
+    """Ciclos encerrados no período. Cumprimento = MET / (MET + BREACHED); médias em minutos úteis."""
+
+    key: str
+    label: str
+    met: int = 0
+    breached: int = 0
+    compliance_percent: float | None = None
+    avg_first_response_minutes: int | None = None
+    avg_resolution_minutes: int | None = None
+
+
+class SlaAttention(BaseModel):
+    ticket_id: uuid.UUID
+    title: str
+    priority: str
+    kind: str
+    due_at: datetime
+    overdue: bool
+
+
+class SlaReport(BaseModel):
+    total: SlaGroup
+    by_category: list[SlaGroup] = []
+    by_priority: list[SlaGroup] = []
+    # Situação AGORA (não depende do período): chamados com relógio aberto, em risco e atrasados.
+    open: int = 0
+    at_risk: int = 0
+    overdue: int = 0
+    attention: list[SlaAttention] = []
 
 
 # --- Administração (P4-S4): calendários e políticas ---------------------------------------------------------------

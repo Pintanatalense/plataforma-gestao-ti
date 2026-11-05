@@ -41,6 +41,27 @@ describe('SlaBadgeComponent', () => {
     expect(badge?.className).toContain('breached');
   });
 
+  it('flags overdue and at-risk tickets before the job registers anything', async () => {
+    const overdue = await render({ state: 'RUNNING', resolution_due_at: '2026-10-27T14:00:00Z', overdue: true });
+    expect(overdue?.textContent).toContain('Atrasado');
+    expect(overdue?.className).toContain('breached');
+    TestBed.resetTestingModule();
+    const risky = await render({ state: 'RUNNING', resolution_due_at: '2026-10-27T14:00:00Z', at_risk: true });
+    expect(risky?.textContent).toContain('Em risco');
+    expect(risky?.className).toContain('at-risk');
+  });
+
+  it('drops the "SLA:" prefix in compact mode', async () => {
+    await TestBed.configureTestingModule({ imports: [SlaBadgeComponent] }).compileComponents();
+    const fixture = TestBed.createComponent(SlaBadgeComponent);
+    fixture.componentRef.setInput('sla', { state: 'MET' });
+    fixture.componentRef.setInput('compact', true);
+    fixture.detectChanges();
+    const text = fixture.nativeElement.querySelector('[data-testid="sla-badge"]').textContent;
+    expect(text).toContain('Cumprido');
+    expect(text).not.toContain('SLA:');
+  });
+
   it('shows paused and met without a deadline', async () => {
     expect((await render({ state: 'PAUSED', paused: true }))?.textContent).toContain('Pausado');
     TestBed.resetTestingModule();

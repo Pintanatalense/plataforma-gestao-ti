@@ -6,9 +6,16 @@ import { MatIconModule } from '@angular/material/icon';
 import { MatChipsModule } from '@angular/material/chips';
 import { MatTooltipModule } from '@angular/material/tooltip';
 import { Router, RouterModule } from '@angular/router';
+import { MatButtonToggleModule } from '@angular/material/button-toggle';
 import { Ticket, TicketService } from '../ticket.service';
+import { SlaBadgeComponent } from '../sla-badge/sla-badge.component';
 import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
 import { apiErrorMessage } from '../../../core/http/api-error';
+
+/** Filtro de SLA da lista: todos, só os que pedem atenção (atrasados, violados em aberto, em risco) ou violados. */
+export type SlaFilter = 'all' | 'attention' | 'breached';
+
+const OPEN_STATES = ['RUNNING', 'PAUSED'];
 
 @Component({
   selector: 'app-ticket-list',
@@ -20,8 +27,10 @@ import { apiErrorMessage } from '../../../core/http/api-error';
     MatIconModule,
     MatChipsModule,
     MatTooltipModule,
+    MatButtonToggleModule,
     RouterModule,
-    LoadStateComponent
+    LoadStateComponent,
+    SlaBadgeComponent
   ],
   templateUrl: './ticket-list.component.html',
   styleUrls: ['./ticket-list.component.scss']
@@ -32,9 +41,32 @@ export class TicketListComponent implements OnInit {
   private cdr = inject(ChangeDetectorRef);
 
   tickets: Ticket[] = [];
-  displayedColumns: string[] = ['title', 'requester', 'status', 'priority', 'created_at', 'actions'];
+  visibleTickets: Ticket[] = [];
+  slaFilter: SlaFilter = 'all';
+  displayedColumns: string[] = ['title', 'requester', 'status', 'priority', 'sla', 'created_at', 'actions'];
   isLoading = false;
   loadError: string | null = null;
+
+  /** Algum chamado da lista tem SLA? Sem nenhum, o filtro não aparece. */
+  get hasSla(): boolean {
+    return this.tickets.some((t) => t.sla && t.sla.state !== 'NOT_APPLICABLE');
+  }
+
+  setSlaFilter(filter: SlaFilter) {
+    this.slaFilter = filter;
+    this.applyFilter();
+  }
+
+  private applyFilter() {
+    this.visibleTickets = this.tickets.filter((t) => {
+      const s = t.sla;
+      if (this.slaFilter === 'all') return true;
+      if (!s || s.state === 'NOT_APPLICABLE') return false;
+      const violated = s.state === 'BREACHED' || (s.breaches?.length ?? 0) > 0;
+      if (this.slaFilter === 'breached') return violated || !!s.overdue;
+      return OPEN_STATES.includes(s.state) && (violated || !!s.overdue || !!s.at_risk);
+    });
+  }
 
   ngOnInit() {
     this.loadTickets();
@@ -46,6 +78,7 @@ export class TicketListComponent implements OnInit {
     this.ticketService.listTickets().subscribe({
       next: (data) => {
         this.tickets = [...data];
+        this.applyFilter();
         this.isLoading = false;
         this.cdr.markForCheck();
       },

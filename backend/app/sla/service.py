@@ -49,6 +49,28 @@ def _target(cycle: TicketSlaCycle, priority: str) -> dict | None:
     return (cycle.snapshot.get("targets") or {}).get((priority or "").upper())
 
 
+def pending_deadlines(cycle: TicketSlaCycle) -> list[tuple[str, str, datetime]]:
+    """Prazos ainda abertos de um ciclo `RUNNING`: (tipo, atributo, vencimento). Pausado não tem prazo."""
+    if cycle.state != "RUNNING":
+        return []
+    pending = []
+    if cycle.first_response_at is None and cycle.first_response_due_at is not None:
+        pending.append((FIRST_RESPONSE, "first_response", _aware(cycle.first_response_due_at)))
+    if cycle.resolved_at is None and cycle.resolution_due_at is not None:
+        pending.append((RESOLUTION, "resolution", _aware(cycle.resolution_due_at)))
+    return pending
+
+
+def in_alert_zone(cycle: TicketSlaCycle, attr: str, due_at: datetime, now: datetime) -> bool:
+    """Faltam no máximo `100 - alert_percent`% do alvo; `alert_percent` fora de 1–99 desliga o alerta."""
+    percent = int(cycle.snapshot.get("alert_percent") or 0)
+    target = _target(cycle, cycle.priority)
+    if not 0 < percent < 100 or target is None or not target.get(attr):
+        return False
+    left = business_minutes_between(now, due_at, _calendar(cycle))
+    return left * 100 <= target[attr] * (100 - percent)
+
+
 class SlaService:
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
@@ -392,12 +414,19 @@ class SlaService:
             if cycle_ids:
                 for breach in (await self.session.execute(select(SlaBreach).where(SlaBreach.cycle_id.in_(cycle_ids)))).scalars():
                     breaches.setdefault(breach.cycle_id, []).append(breach.kind)
+        now = _now()
         for ticket in tickets:
             history = by_ticket.get(ticket.id, [])
             cycle = history[-1] if history and history[-1].state != "SUPERSEDED" else None  # substituído = sem relógio
-            ticket.sla = SlaInfo() if cycle is None else SlaInfo(
+            if cycle is None:
+                ticket.sla = SlaInfo()
+                continue
+            pending = pending_deadlines(cycle)
+            overdue = any(now > due for _, _, due in pending)
+            ticket.sla = SlaInfo(
                 state=cycle.state, policy_name=cycle.snapshot.get("policy_name"), cycle=cycle.cycle, priority=cycle.priority,
                 first_response_due_at=cycle.first_response_due_at, resolution_due_at=cycle.resolution_due_at,
                 first_response_at=cycle.first_response_at, resolved_at=cycle.resolved_at, paused=cycle.state == "PAUSED",
-                breaches=sorted(breaches.get(cycle.id, [])),
+                breaches=sorted(breaches.get(cycle.id, [])), overdue=overdue,
+                at_risk=not overdue and any(in_alert_zone(cycle, attr, due, now) for _, attr, due in pending),
             )

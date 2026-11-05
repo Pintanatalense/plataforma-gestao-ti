@@ -3,10 +3,10 @@ MOD-04 — Service Desk (Schemas)
 """
 
 import uuid
-from datetime import datetime
+from datetime import date, datetime
 from pydantic import BaseModel, ConfigDict, Field
 
-from app.sla.schemas import SlaInfo
+from app.sla.schemas import SlaInfo, SlaReport
 
 
 # ==============================================================================
@@ -171,3 +171,25 @@ class TicketAssetInspectRequest(BaseModel):
     approved: bool = True
     notes: str | None = Field(default=None, max_length=1000)
     send_to_maintenance: bool = False
+
+
+# ==============================================================================
+# Relatório gerencial (ADR-017 P4-S5)
+# ==============================================================================
+
+class CategoryCount(BaseModel):
+    category: str
+    count: int
+
+
+class TicketsReport(BaseModel):
+    """Contagens dos chamados CRIADOS no período; `sla` usa os ciclos ENCERRADOS no período (ver `app.sla.report`)."""
+
+    start: date | None = None
+    end: date | None = None
+    total_tickets: int
+    resolution_rate_percent: float
+    by_status: dict[str, int]
+    by_priority: dict[str, int]
+    by_category: list[CategoryCount]
+    sla: SlaReport

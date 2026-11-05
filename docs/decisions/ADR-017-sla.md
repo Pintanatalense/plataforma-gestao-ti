@@ -1,6 +1,6 @@
 # ADR-017 — SLA de chamados
 
-**Status:** Aceito; **implementado em parte**. P4-S1 (tabelas e cálculo de horas úteis, `backend/app/sla/`) foi entregue em 2026-10-23 (#51); P4-S2 (relógio nos chamados), P4-S3 (job `sla.check`, violações e alertas) e P4-S4 (telas de administração e SLA na categoria) estão prontos. Falta o P4-S5 (indicadores e relatório). Por decisão do usuário (2026-10-26), o SLA é concluído antes da prova de conceito do Plano de Evolução. Os prazos da seção "Valores iniciais" continuam sendo sugestão a confirmar com o usuário.  
+**Status:** Aceito; **implementado** (aguardando publicação). P4-S1 (tabelas e cálculo de horas úteis, `backend/app/sla/`) foi entregue em 2026-10-23 (#51); P4-S2 (relógio nos chamados), P4-S3 (job `sla.check`, violações e alertas), P4-S4 (telas de administração e SLA na categoria) e P4-S5 (indicadores e relatório) estão prontos. Por decisão do usuário (2026-10-26), o SLA é concluído antes da prova de conceito do Plano de Evolução. Os prazos da seção "Valores iniciais" continuam sendo sugestão a confirmar com o usuário.  
 *Status anterior: Proposto (2026-10-22), revisado após revisão independente.*  
 **Data:** 2026-10-22  
 **Depende de:** ADR-013 (worker e outbox já existentes)
@@ -103,6 +103,15 @@ Decisões tomadas ao integrar com os chamados (o texto acima continua valendo):
 - **Categoria:** campo `sla_policy_id` (nulo = "Não se aplica"). Escolher ou trocar exige `service_desk.sla.manage` (403 sem ela, mesmo com `categories.manage`); política inexistente = 422. A troca é auditada (`ticket_category.sla_changed`) e vale para chamados novos.
 - **Permissão** `service_desk.sla.manage` ("Gerenciar SLA", risco Alteração, não crítica): entra sozinha no perfil Administrador (todas as comuns) e no Admin de **instalações novas**. Em instalações existentes o perfil Admin é preservado (regra do seed: perfil existente não é sobrescrito) e só ganha a permissão se alguém marcar em *Perfis*; antes dela só administradores mexiam nisso. Substitui o "só administradores" da reabertura fora do prazo (P4-S2).
 - **Telas:** *Service Desk > SLA (prazos)* (`/service-desk/sla`), com abas Políticas (prazos por prioridade em horas úteis, alerta, reabertura, pausa, ativar/desativar) e Calendários (expediente por dia com mais de um intervalo, feriados); campo e coluna "SLA" em *Categorias de Chamados*; selo de SLA no cabeçalho do chamado (no prazo, pausado, cumprido ou violado, com o próximo prazo). Indicadores nas listas e relatório ficam no P4-S5.
+
+## Registro de implementação — P4-S5 (2026-10-27)
+
+- **Relatório** `GET /api/v1/tickets/reports/summary?start=AAAA-MM-DD&end=AAAA-MM-DD` (mesma rota e mesma permissão `service_desk.reports.read`, agora com período e resposta tipada `TicketsReport`). Datas são dias no fuso `APP_TIMEZONE`, com o último dia incluído; sem datas, todo o histórico; início depois do fim = 422. As contagens por status, prioridade e categoria saem agregadas do banco (antes carregava todos os chamados) e contam os chamados **criados** no período.
+- **Indicadores de SLA** (`app/sla/report.py`), só com os fatos gravados: ciclos `MET`/`BREACHED` **resolvidos** no período; cumprimento `MET / (MET + BREACHED)`, nulo sem ciclo encerrado (não vira 100%); por categoria (a atual do chamado) e por prioridade (a do ciclo). Cada ciclo conta uma vez (reabertura com `RESTART` conta de novo); `SUPERSEDED` fica fora.
+- **Tempos médios** em minutos úteis do calendário guardado no ciclo: resolução = início do ciclo → resolução, menos as pausas; primeira resposta = início do ciclo → primeira resposta, só quando ela aconteceu no próprio ciclo. Simplificação aceita: a pausa **antes** da primeira resposta conta como tempo gasto na média (o ciclo guarda só o total pausado).
+- **Agora** (independe do período): ciclos abertos, **atrasados** (prazo pendente vencido, mesmo antes de o job registrar a violação) e **em risco** (acima do `% de alerta`, mesma regra do aviso do job), com a lista dos 50 mais urgentes.
+- **`sla` de cada chamado** ganha `overdue` e `at_risk`, calculados na leitura. A lista de chamados mostra a coluna SLA (selo compacto: no prazo, em risco, atrasado, pausado, cumprido, violado) e o filtro *Todos / Pedem atenção / Violados* (aparece só quando algum chamado da lista tem SLA).
+- **Tela** *Service Desk > Relatório de Chamados* (`/service-desk/reports`, `service_desk.reports.read`): período (padrão: mês atual; atalhos 30 dias e todo o histórico), cartões, tabela "Agora" com link para o chamado e tabelas de SLA por prioridade e por categoria.
 
 ## Entrega em PRs
 
