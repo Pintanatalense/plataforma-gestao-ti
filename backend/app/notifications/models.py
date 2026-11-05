@@ -7,7 +7,7 @@ entregas com retentativa, regras de roteamento, configuração de canais e agend
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -151,6 +151,43 @@ class ScheduledJob(Base):
     last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Tentativas seguidas que falharam (a próxima nova tentativa é a de número retry_attempt + 1); 0 = em dia.
+    retry_attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=0, server_default="0")
+
+
+class JobRun(Base):
+    """Uma execução de um job (Plano de Evolução, Fase 0 PR 12).
+
+    ``running`` com concessão (``lease_until``) renovada enquanto roda; no máximo uma ``running`` por job (índice
+    único parcial). Concessão vencida = o worker caiu ou travou: a execução vira ``interrupted`` e entra na fila de
+    nova tentativa. Status finais: ``ok``, ``error``, ``timeout`` (passou do tempo máximo e foi encerrada) e
+    ``interrupted``.
+    """
+
+    __tablename__ = "job_runs"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    job_name: Mapped[str] = mapped_column(String(100), nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    isolated: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    worker_id: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    started_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    lease_until: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    __table_args__ = (
+        Index(
+            "uq_job_runs_one_running",
+            "job_name",
+            unique=True,
+            postgresql_where=text("status = 'running'"),
+            sqlite_where=text("status = 'running'"),
+        ),
+        Index("ix_job_runs_job_started", "job_name", "started_at"),
+    )
 
 
 class UserNotificationPref(Base, TimestampMixin):

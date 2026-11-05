@@ -13,6 +13,10 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 - **Telegram e Slack: *Enviar teste para mim*.** Cada aba manda uma mensagem agora para a conta que o próprio administrador vinculou (nunca para um destino digitado); sem vínculo, o sistema orienta a vincular. Até 5 testes por hora.
 - **WhatsApp: vínculo e menu pela Evolution, sem URL pública.** A pessoa envia `vincular CÓDIGO` ao número da empresa e passa a receber alertas e usar o menu de chamados. A entrada de mensagens chega pela rede interna do Docker, autenticada por segredo, e o caminho é bloqueado no Nginx.
 
+### Confiabilidade
+
+- **Worker: job lento ou preso não atrasa mais notificações** ([ADR-024](docs/decisions/ADR-024-worker-agenda.md)). Entregas e agenda viraram laços independentes (`WORKER_ROLE=all|delivery|jobs`, cada um com heartbeat; `/api/v1/health` mostra `scheduler`). Cada execução fica em `job_runs` com concessão renovada: nunca roda em dobro e, se o worker cair no meio, a execução vira `interrupted` e é retomada. Backup, retenção e verificação da auditoria e limpeza rodam em subprocesso com tempo máximo e são encerrados (com o `pg_dump`) se passarem dele. Falhas ganham nova tentativa em 1 e 2 minutos (até 3 tentativas). Histórico em `GET /notifications/admin/jobs/<nome>/runs`.
+
 ### Segurança
 
 - **Auditoria imutável** ([ADR-023](docs/decisions/ADR-023-auditoria-imutavel.md)): a aplicação só insere e lê a trilha; um gatilho no banco recusa alterar, apagar ou truncar `audit_logs`, inclusive para o dono das tabelas. Cada registro é selado numa cadeia de hash por categoria (job `audit.seal`, a cada minuto); a verificação diária (`audit.verify`) avisa os administradores se a cadeia não conferir, e `GET /api/v1/audit/integrity` mostra o resultado. A retenção virou o único caminho de exclusão, pela função `audit_purge`, que impõe o prazo mínimo. Limpar a demonstração ou a carga de QA não apaga mais nenhuma auditoria.

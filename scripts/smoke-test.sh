@@ -8,7 +8,7 @@
 #   SMOKE_BACKEND_IMAGE=... SMOKE_NGINX_IMAGE=... scripts/smoke-test.sh
 #
 # Verifica (pelo Nginx, como um navegador chegaria):
-#   1. /api/v1/health: JSON com status "healthy", banco "healthy", worker "healthy" e a versão do pyproject;
+#   1. /api/v1/health: JSON com status "healthy", banco, worker (entregas) e agenda "healthy" e a versão do pyproject;
 #   2. migrations na última versão (alembic current = head) e seed concluído;
 #   3. rota pública que lê o banco (/api/v1/organization/company/public) responde JSON;
 #   4. o frontend é servido (index com <app-root>) e uma rota do SPA cai no index;
@@ -76,7 +76,7 @@ fi
 health=""
 for _ in $(seq 1 30); do
   health="$(curl -fsS "$BASE/api/v1/health" 2>/dev/null || true)"
-  printf '%s' "$health" | grep -q '"worker":"healthy"' && break
+  printf '%s' "$health" | grep -q '"worker":"healthy"' && printf '%s' "$health" | grep -q '"scheduler":"healthy"' && break
   sleep 2
 done
 echo "health: $health"
@@ -89,11 +89,12 @@ problems = []
 if h.get("status") != "healthy": problems.append("status=" + str(h.get("status")))
 if h.get("components", {}).get("database") != "healthy": problems.append("banco não está healthy")
 if h.get("components", {}).get("worker") != "healthy": problems.append("worker não está healthy")
+if h.get("components", {}).get("scheduler") != "healthy": problems.append("agenda do worker não está healthy")
 if h.get("version") != expected: problems.append("versão " + str(h.get("version")) + " != " + expected)
 if problems: print("  " + "; ".join(problems)); sys.exit(1)
 ' "$expected_version"
 }
-check "health: status, banco, worker e versão $expected_version" health_ok
+check "health: status, banco, worker, agenda e versão $expected_version" health_ok
 
 # --- 2. migrations e seed -------------------------------------------------------------------------------
 # A saída vai para uma variável antes do grep: com pipefail, `comando | grep -q` falha ao acaso quando o grep sai no

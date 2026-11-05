@@ -86,7 +86,7 @@ O assistente só funciona enquanto não existe usuário; depois disso responde 4
 
 ```bash
 docker compose ps                         # todos "healthy" (o worker leva ~40 s)
-curl -s http://localhost/api/v1/health    # "status": "healthy"; components.worker = "healthy"
+curl -s http://localhost/api/v1/health    # "status": "healthy"; components.worker e components.scheduler = "healthy"
 ```
 
 Volumes persistentes (não apague com `down -v`): `postgres_data`, `attachments_data`, `backups_data`.
