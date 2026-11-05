@@ -10,8 +10,11 @@
 #               Não é oficial: use um chip dedicado. Sobe com:  docker compose --profile whatsapp up -d
 #               NÃO publica porta no host; só o backend e o worker a alcançam, pela rede do Compose.
 #
-# Pré-requisito: copiar .env.example para .env e preencher POSTGRES_PASSWORD
-# SECRET_KEY e APP_ENCRYPTION_KEY (o compose se recusa a subir sem eles).
+# Pré-requisito: copiar .env.example para .env e preencher POSTGRES_PASSWORD, DB_OWNER_PASSWORD, DB_APP_PASSWORD,
+# DB_EVOLUTION_PASSWORD, SECRET_KEY e APP_ENCRYPTION_KEY (o compose se recusa a subir sem eles).
+#
+# Papéis de banco (ADR-022): só o db-init conhece a senha do superusuário. Ele cria os papéis dono (migrations),
+# aplicação (backend e worker) e Evolution (schema evolution_api) e roda as migrations como dono, a cada "up".
 #
 # Uso:
 #   docker compose up -d --build
@@ -37,13 +40,44 @@ services:
       timeout: 5s
       retries: 5
 
+  # Tarefa única a cada "up": cria/atualiza os papéis de banco (ADR-022) e aplica as migrations como dono.
+  # É o ÚNICO serviço com a senha do superusuário. Backend e Evolution só sobem depois dele terminar bem.
+  db-init:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    restart: "no"
+    entrypoint: []
+    # de novo depois das migrations: a tabela alembic_version (só leitura para a aplicação) nasce na primeira
+    command: ["sh", "-c", "python -m app.db_roles && alembic upgrade head && python -m app.db_roles"]
+    environment:
+      POSTGRES_HOST: postgres
+      POSTGRES_DB: ${POSTGRES_DB:-gestao_ti}
+      POSTGRES_USER: ${POSTGRES_USER:-postgres}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}
+      DB_OWNER_USER: ${DB_OWNER_USER:-gestao_owner}
+      DB_OWNER_PASSWORD: ${DB_OWNER_PASSWORD:?Defina DB_OWNER_PASSWORD no .env (openssl rand -hex 16)}
+      DB_APP_USER: ${DB_APP_USER:-gestao_app}
+      DB_APP_PASSWORD: ${DB_APP_PASSWORD:?Defina DB_APP_PASSWORD no .env (openssl rand -hex 16)}
+      DB_EVOLUTION_USER: ${DB_EVOLUTION_USER:-gestao_evolution}
+      DB_EVOLUTION_PASSWORD: ${DB_EVOLUTION_PASSWORD:?Defina DB_EVOLUTION_PASSWORD no .env (openssl rand -hex 16)}
+      # migrations rodam como DONO (as tabelas são dele; a aplicação não tem DDL)
+      DATABASE_URL: postgresql+asyncpg://${DB_OWNER_USER:-gestao_owner}:${DB_OWNER_PASSWORD:?Defina DB_OWNER_PASSWORD no .env (openssl rand -hex 16)}@postgres:5432/${POSTGRES_DB:-gestao_ti}
+      SECRET_KEY: ${SECRET_KEY:?Defina SECRET_KEY no .env (openssl rand -hex 32)}
+      APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?Defina APP_ENCRYPTION_KEY no .env (veja .env.example)}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
   backend:
     build:
       context: ./backend
       dockerfile: Dockerfile
     restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}@postgres:5432/${POSTGRES_DB:-gestao_ti}
+      # papel da APLICAÇÃO: lê e grava dados, sem DDL (as migrations já rodaram no db-init)
+      DATABASE_URL: postgresql+asyncpg://${DB_APP_USER:-gestao_app}:${DB_APP_PASSWORD:?Defina DB_APP_PASSWORD no .env (openssl rand -hex 16)}@postgres:5432/${POSTGRES_DB:-gestao_ti}
+      RUN_MIGRATIONS: "false"
       SECRET_KEY: ${SECRET_KEY:?Defina SECRET_KEY no .env (openssl rand -hex 32)}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?Defina APP_ENCRYPTION_KEY no .env (veja .env.example)}
       APP_TIMEZONE: ${APP_TIMEZONE:-America/Fortaleza}
@@ -61,8 +95,8 @@ services:
       - backups_data:/data/backups
       - static_data:/app/static
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
     healthcheck:
       test: ["CMD", "python", "-c", "import httpx; r = httpx.get('http://localhost:8000/api/v1/health'); r.raise_for_status()"]
       interval: 30s
@@ -80,7 +114,7 @@ services:
     entrypoint: []
     command: ["python", "-m", "app.worker"]
     environment:
-      DATABASE_URL: postgresql+asyncpg://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}@postgres:5432/${POSTGRES_DB:-gestao_ti}
+      DATABASE_URL: postgresql+asyncpg://${DB_APP_USER:-gestao_app}:${DB_APP_PASSWORD:?Defina DB_APP_PASSWORD no .env (openssl rand -hex 16)}@postgres:5432/${POSTGRES_DB:-gestao_ti}
       SECRET_KEY: ${SECRET_KEY:?Defina SECRET_KEY no .env (openssl rand -hex 32)}
       APP_ENCRYPTION_KEY: ${APP_ENCRYPTION_KEY:?Defina APP_ENCRYPTION_KEY no .env (veja .env.example)}
       APP_TIMEZONE: ${APP_TIMEZONE:-America/Fortaleza}
@@ -127,7 +161,8 @@ services:
       SERVER_URL: http://evolution:8080
       AUTHENTICATION_API_KEY: ${EVOLUTION_API_KEY:-}
       DATABASE_PROVIDER: postgresql
-      DATABASE_CONNECTION_URI: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:?Defina POSTGRES_PASSWORD no .env}@postgres:5432/${POSTGRES_DB:-gestao_ti}?schema=evolution_api
+      # papel próprio, dono só do schema evolution_api (ADR-022): não lê nem altera os dados do sistema
+      DATABASE_CONNECTION_URI: postgresql://${DB_EVOLUTION_USER:-gestao_evolution}:${DB_EVOLUTION_PASSWORD:?Defina DB_EVOLUTION_PASSWORD no .env (openssl rand -hex 16)}@postgres:5432/${POSTGRES_DB:-gestao_ti}?schema=evolution_api
       DATABASE_CONNECTION_CLIENT_NAME: gestao_ti_evolution
       CACHE_REDIS_ENABLED: "false"
       CACHE_LOCAL_ENABLED: "true"
@@ -137,8 +172,8 @@ services:
     volumes:
       - evolution_instances:/evolution/instances
     depends_on:
-      postgres:
-        condition: service_healthy
+      db-init:
+        condition: service_completed_successfully
 
   nginx:
     build:

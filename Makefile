@@ -39,14 +39,15 @@ rebuild:
 	docker compose up -d --build
 
 # --- Banco de Dados ---
+# migrations rodam no db-init, com o papel dono (ADR-022): o backend não tem permissão de alterar a estrutura
 migrate:
-	docker compose exec backend alembic upgrade head
+	docker compose run --rm db-init
 
 migration:
 	docker compose exec backend alembic revision --autogenerate -m "$(MSG)"
 
 rollback:
-	docker compose exec backend alembic downgrade -1
+	docker compose run --rm db-init alembic downgrade -1
 
 db-shell:
 	docker compose exec postgres psql -U postgres -d gestao_ti

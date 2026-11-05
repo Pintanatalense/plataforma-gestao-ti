@@ -297,6 +297,14 @@ if (Test-Path .env) {
   $generated = $true
 }
 
+# Papéis de banco (ADR-022): também numa instalação existente, gera só as senhas que faltam (atualização).
+foreach ($rolePassword in 'DB_OWNER_PASSWORD', 'DB_APP_PASSWORD', 'DB_EVOLUTION_PASSWORD') {
+  if ((Get-EnvValue $rolePassword) -eq '') {
+    Set-EnvValue $rolePassword (New-Hex 16) $true
+    Say "Senha gerada no .env: $rolePassword (papéis de banco separados, ADR-022)."
+  }
+}
+
 if ($Port -gt 0) { Set-EnvValue 'HTTP_PORT' "$Port" $false }
 
 if ($Https) {
@@ -309,7 +317,7 @@ if ($Https) {
   Set-EnvValue 'COMPOSE_FILE' 'docker-compose.yml:docker-compose.https.yml' $false
 }
 
-foreach ($required in 'POSTGRES_PASSWORD', 'SECRET_KEY', 'APP_ENCRYPTION_KEY') {
+foreach ($required in 'POSTGRES_PASSWORD', 'DB_OWNER_PASSWORD', 'DB_APP_PASSWORD', 'DB_EVOLUTION_PASSWORD', 'SECRET_KEY', 'APP_ENCRYPTION_KEY') {
   if ((Get-EnvValue $required) -eq '') { Fail "$required está vazio no .env. Preencha (veja os comentários do arquivo) e rode de novo." }
 }
 

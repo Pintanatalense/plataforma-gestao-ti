@@ -30,16 +30,31 @@ git fetch origin
 git pull origin main
 ```
 
+### Passo 2.1 (uma vez): papéis de banco separados (ADR-022)
+A partir desta versão o backend, o worker e a Evolution **não usam mais o superusuário** do PostgreSQL. O `.env` precisa de três senhas novas; sem elas o `docker compose up` para com `Defina DB_..._PASSWORD no .env`. Escolha um caminho:
+
+* rode o instalador de novo (`scripts/install.sh` ou `scripts/install.ps1`): ele mantém o `.env` e só **acrescenta** as senhas que faltam; ou
+* acrescente à mão (gere cada uma com `openssl rand -hex 16`):
+  ```bash
+  DB_OWNER_PASSWORD=...
+  DB_APP_PASSWORD=...
+  DB_EVOLUTION_PASSWORD=...
+  ```
+
+No próximo `up`, o serviço `db-init` cria os papéis `gestao_owner` (dono das tabelas), `gestao_app` (backend e worker) e `gestao_evolution` (schema `evolution_api`), passa a posse das tabelas existentes ao dono e aplica as permissões. Nenhum dado é alterado. Guarde as senhas junto com o `.env` (cópia fora do servidor).
+
 ### Passo 3: Rebuild e Subida dos Containers
 ```bash
 docker compose up -d --build
 ```
 
-### Passo 4: Aplicação de Migrações do Banco de Dados
-O processo de migração do Alembic é idempotente e estritamente aditivo:
+### Passo 4: Migrações do Banco de Dados
+As migrations rodam **sozinhas** no serviço `db-init`, com o papel dono, antes de o backend subir (o backend não tem permissão de alterar a estrutura). Para conferir:
 ```bash
-docker compose exec backend alembic upgrade head
+docker compose logs db-init          # "Papéis de banco: ..." e as migrations aplicadas
+docker compose exec backend alembic current   # deve terminar em (head)
 ```
+Para rodar de novo sem reiniciar o resto: `docker compose run --rm db-init` (ou `make migrate`).
 
 ### Passo 5: Verificação Pós-Atualização
 ```bash
@@ -72,13 +87,31 @@ docker compose up -d --build
 Se a versão com falha aplicou migrações de esquema incompatíveis com a versão estável:
 
 ```bash
-# Opção A: Downgrade via Alembic (se o script de downgrade existir)
-docker compose exec backend alembic downgrade -1
+# Opção A: Downgrade via Alembic (se o script de downgrade existir), com o papel dono
+docker compose run --rm db-init alembic downgrade -1
 
 # Opção B: Restauração do Backup Pré-Atualização (Método Recomendado)
 # com o backup copiado para o host (baixado pela tela de Backups):
 scripts/restore-backup.sh /caminho/backup_gestao_ti_PRE_ATUALIZACAO.sql.gz
 ```
+
+Voltar o **código** para uma versão anterior aos papéis separados funciona sem passo extra: a versão antiga conecta com o superusuário, que acessa tudo independentemente do dono das tabelas.
+
+### 3.3. Voltar a usar o superusuário (papéis de banco)
+Se os papéis separados (ADR-022) causarem um problema que precise de contorno imediato, sem mexer em dados: no `.env`, use o superusuário nos três papéis e suba de novo.
+
+```bash
+DB_OWNER_USER=postgres          # o mesmo valor de POSTGRES_USER
+DB_OWNER_PASSWORD=<POSTGRES_PASSWORD>
+DB_APP_USER=postgres
+DB_APP_PASSWORD=<POSTGRES_PASSWORD>
+DB_EVOLUTION_USER=postgres
+DB_EVOLUTION_PASSWORD=<POSTGRES_PASSWORD>
+```
+```bash
+docker compose up -d
+```
+O `db-init` ignora papel igual ao superusuário. Para voltar aos papéis separados, restaure os valores anteriores e rode `docker compose up -d`: posse e permissões são corrigidas sozinhas.
 
 ---
 
