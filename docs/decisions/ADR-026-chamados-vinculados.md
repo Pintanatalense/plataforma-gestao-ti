@@ -1,8 +1,8 @@
 # ADR-026 — Chamados vinculados: principal e subchamados para vários setores
 
-**Status:** Aceito; implementado em partes. A parte 2a (vínculo, cancelamento, substituição, obrigatoriedade e avisos)
-está neste PR. Ficam para os próximos PRs: 2b (idempotência), 2c (indicadores de SLA por tipo), 3 (anexos restritos),
-4 (modelos de atendimento) e 5 (telas).
+**Status:** Aceito; implementado em partes.
+- **Feito:** 2a (vínculo, cancelamento, substituição, obrigatoriedade e avisos) e 2b (idempotência).
+- **Próximos PRs:** 2c (indicadores de SLA por tipo), 3 (anexos restritos), 4 (modelos de atendimento) e 5 (telas).
 **Data:** 2026-11-05
 **Depende de:** criador do chamado e direcionamento por categoria (PR 1 da série), ADR-013 (outbox e notificações),
 ADR-017 (SLA).
@@ -112,6 +112,28 @@ filho. A migration só muda essa regra se ela ainda está como veio de fábrica.
 
 **`ticket.child_completed`.** Vai ao responsável, ao solicitante e ao criador do principal. Quando zera as etapas
 obrigatórias, vai também ao setor do principal, por uma segunda regra com `all_required_done = true`.
+
+### Idempotência (parte 2b, `app/service_desk/idempotency.py`)
+
+**Cabeçalho.** `POST /tickets` e `POST /tickets/{id}/children` aceitam o cabeçalho `Idempotency-Key`, um UUID por
+intenção de envio. A tela repete a mesma chave nas novas tentativas.
+
+**Tabela `sd_idempotency_keys`.** A unicidade é `UNIQUE (user_id, key)`, válida em todas as rotas. Cada linha guarda:
+- a operação: `endpoint` e `target_id`;
+- o hash do corpo;
+- os chamados criados.
+
+**Fluxo.** A chave é reservada **antes** de criar qualquer coisa, com
+`INSERT … ON CONFLICT (user_id, key) DO NOTHING RETURNING id`. Assim não há erro de unicidade nem transação abortada.
+- **Reserva vazia:** outra requisição tem a chave. A linha é lida com `FOR SHARE`, que espera a outra terminar:
+  - mesma operação e mesmo corpo: devolve os mesmos chamados, com 200 e `Idempotent-Replay: true`;
+  - outra rota, outro principal ou outro corpo: 422;
+  - a outra desfez a reserva: tenta reservar mais uma vez.
+- **Reserva feita:** a requisição cria os chamados e grava o resultado na mesma transação. Um erro desfaz tudo, inclusive
+  a chave.
+- **Sem cabeçalho:** o comportamento é o de antes.
+
+**Limpeza.** O job `retention.cleanup` apaga as chaves com mais de 48 h.
 
 ## Alternativas descartadas
 

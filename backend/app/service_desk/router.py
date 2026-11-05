@@ -6,7 +6,7 @@ import uuid
 from datetime import date
 from typing import Sequence
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.access import AccessContext
@@ -32,6 +32,7 @@ from app.service_desk.schemas import (
     TicketAssetInspectRequest,
     TicketsReport,
 )
+from app.service_desk import idempotency
 from app.service_desk.services import ServiceDeskService
 from app.sla.router import SLA_MANAGE
 from app.sla.service import SlaService
@@ -184,12 +185,18 @@ async def get_ticket(
 )
 async def create_ticket(
     schema: TicketCreate,
+    response: Response,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
 ) -> TicketResponse:
     # Solicitante = o próprio colaborador, ou outro com service_desk.tickets.create_on_behalf.
     # Quem abriu (ctx.user_id) fica registrado como criador em qualquer caso.
     service = ServiceDeskService(session)
+    claimed = await _claim(session, ctx, idempotency_key, idempotency.CREATE_TICKET, None, schema)
+    if claimed and claimed.replay_ids is not None:
+        [ticket] = await _replay(session, service, response, claimed.replay_ids)
+        return ticket
     requester = await service.resolve_requester(
         schema.requester_id, own_employee_id=ctx.employee_id, can_create_on_behalf=ctx.can_create_on_behalf
     )
@@ -201,9 +208,31 @@ async def create_ticket(
         user_id=ctx.user_id,
         can_route_any_sector=ctx.can_route_any_sector,
     )
+    if claimed:
+        await idempotency.record(session, claimed, [ticket.id])
     await SlaService(session).attach([ticket])
     await session.commit()
     return ticket
+
+
+async def _claim(session, ctx: AccessContext, raw_key, endpoint, target_id, body):
+    """Reserva a ``Idempotency-Key`` (ver ``app.service_desk.idempotency``); sem cabeçalho, ``None``."""
+    key = idempotency.parse_key(raw_key)
+    if key is None:
+        return None
+    return await idempotency.claim(
+        session, user_id=ctx.user_id, key=key, endpoint=endpoint, target_id=target_id,
+        body_hash=idempotency.request_hash(body.model_dump(mode="json")),
+    )
+
+
+async def _replay(session, service: ServiceDeskService, response: Response, ids) -> list:
+    """Pedido repetido: devolve os chamados já criados, com 200 e ``Idempotent-Replay: true``."""
+    tickets = [await service.repo.get_ticket(i) for i in ids]
+    await SlaService(session).attach(tickets)
+    response.status_code = status.HTTP_200_OK
+    response.headers["Idempotent-Replay"] = "true"
+    return tickets
 
 
 @router.patch(
@@ -255,10 +284,18 @@ async def list_children(
 async def add_children(
     ticket_id: uuid.UUID,
     body: ChildrenAdd,
+    response: Response,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db),
 ) -> list[TicketResponse]:
-    children = await ServiceDeskService(session).add_children(ticket_id, body.children, ctx)
+    service = ServiceDeskService(session)
+    claimed = await _claim(session, ctx, idempotency_key, idempotency.ADD_CHILDREN, ticket_id, body)
+    if claimed and claimed.replay_ids is not None:
+        return await _replay(session, service, response, claimed.replay_ids)
+    children = await service.add_children(ticket_id, body.children, ctx)
+    if claimed:
+        await idempotency.record(session, claimed, [c.id for c in children])
     await SlaService(session).attach(children)
     await session.commit()
     return children

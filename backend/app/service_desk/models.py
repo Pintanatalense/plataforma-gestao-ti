@@ -11,7 +11,21 @@ import uuid
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Boolean, CheckConstraint, Column, ForeignKey, Integer, String, Table, Text, event, text
+from sqlalchemy import (
+    Boolean,
+    CheckConstraint,
+    Column,
+    DateTime,
+    ForeignKey,
+    Integer,
+    String,
+    Table,
+    Text,
+    UniqueConstraint,
+    event,
+    func,
+    text,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -142,6 +156,29 @@ def _create_creator_guard(target, connection, **kw) -> None:
 
     for statement in CURRENT:
         connection.exec_driver_sql(statement)
+
+
+class IdempotencyKey(Base):
+    """Chave de idempotência das rotas de criação de chamados (ADR-026, PR 2b).
+
+    A linha é reservada antes de criar qualquer coisa e gravada na mesma transação da criação: um rollback leva a
+    chave junto. Presa a uma operação (``endpoint`` + ``target_id``): a mesma chave em outra operação é recusada.
+    """
+
+    __tablename__ = "sd_idempotency_keys"
+    __table_args__ = (UniqueConstraint("user_id", "key", name="uq_sd_idempotency_keys_user_key"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False)
+    key: Mapped[str] = mapped_column(String(100), nullable=False)
+    # Modelo da rota ("POST /tickets", "POST /tickets/{id}/children") e o principal, quando houver.
+    endpoint: Mapped[str] = mapped_column(String(60), nullable=False)
+    target_id: Mapped[uuid.UUID | None] = mapped_column(nullable=True)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, server_default=func.now(), index=True
+    )
 
 
 ticket_assets = Table(
