@@ -12,11 +12,12 @@ import { CHANNEL_NAMES, ChannelsComponent, channelState } from './channels.compo
 import { DeliveriesComponent } from './deliveries.component';
 import { RulesComponent, apiErrorMessage, parseList } from './rules.component';
 
-function delivery(id: string, status: string): DeliveryItem {
+function delivery(id: string, status: string, extra: Partial<DeliveryItem> = {}): DeliveryItem {
   return {
     id, event_id: 'e', event_type: 'ticket.created', channel: 'email', status, priority: 'normal',
     recipient_email: `${id}@x.y`, address: 'a', title: 't', attempts: 1, max_attempts: 5, last_error: null,
-    next_attempt_at: '2026-10-17T12:00:00Z', created_at: '2026-10-17T12:00:00Z', sent_at: null
+    next_attempt_at: '2026-10-17T12:00:00Z', created_at: '2026-10-17T12:00:00Z', sent_at: null,
+    provider_status: null, provider_status_at: null, origin: 'rule', ...extra
   };
 }
 
@@ -91,6 +92,39 @@ describe('DeliveriesComponent', () => {
     const detail = fixture.nativeElement.querySelector('[data-testid="delivery-detail"]');
     expect(detail.textContent).toContain('550 sem caixa');
     expect(detail.textContent).toContain('permanent');
+  });
+
+  it('tells "accepted by the gateway" apart from what the provider confirmed', async () => {
+    const api = {
+      listDeliveries: vi.fn().mockReturnValue(of({ total: 2, items: [
+        delivery('a', 'SENT', { channel: 'whatsapp', provider_status: 'read', provider_status_at: '2026-10-17T12:05:00Z' }),
+        delivery('b', 'SENT')
+      ] })),
+      getDelivery: vi.fn().mockReturnValue(of({ ...delivery('b', 'SENT', { origin: 'direct' }), attempt_log: [], event_payload: {} }))
+    };
+    const fixture = await mount(DeliveriesComponent, api);
+    const rows: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="delivery-row"]'));
+    expect(rows[0].textContent).toContain('Aceita pelo gateway');
+    expect(rows[0].querySelector('[data-testid="provider-status"]')?.textContent).toContain('Lida');
+    expect(rows[0].textContent).toContain('WhatsApp');
+    expect(rows[1].querySelector('[data-testid="provider-status"]')?.textContent).toContain('—');
+
+    rows[1].click();
+    fixture.detectChanges();
+    const detail = fixture.nativeElement.querySelector('[data-testid="delivery-detail"]');
+    expect(detail.textContent).toContain('Mensagem direta');
+    expect(detail.querySelector('[data-testid="detail-confirmation"]').textContent).toContain('aceita pelo gateway');
+  });
+
+  it('sends the new filters (origin, confirmation, address, text) to the API', async () => {
+    const api = { listDeliveries: vi.fn().mockReturnValue(of({ total: 0, items: [] })) };
+    const fixture = await mount(DeliveriesComponent, api);
+    const c = fixture.componentInstance;
+    Object.assign(c.filters, { origin: 'direct', provider_status: 'none', address: '8590', q: 'AnyDesk' });
+    c.search();
+    expect(api.listDeliveries).toHaveBeenLastCalledWith(
+      expect.objectContaining({ origin: 'direct', provider_status: 'none', address: '8590', q: 'AnyDesk', offset: 0 })
+    );
   });
 
   it('shows an error when listing fails', async () => {

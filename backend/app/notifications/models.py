@@ -79,6 +79,8 @@ class Delivery(Base):
         Index("ix_deliveries_dispatch", "status", "next_attempt_at"),
         # teto por pessoa por hora do WhatsApp (contagem de enviadas por canal, endereço e hora do envio)
         Index("ix_deliveries_channel_address_sent", "channel", "address", "sent_at"),
+        # confirmação do provedor chega pelo webhook com o id da mensagem (ADR-025 M1)
+        Index("ix_deliveries_channel_provider_message", "channel", "provider_message_id"),
     )
 
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
@@ -102,6 +104,10 @@ class Delivery(Base):
     next_attempt_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
     locked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     provider_message_id: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # O que o provedor confirmou depois do envio: accepted, delivered, read, failed (ADR-025 §2). SENT só diz que o
+    # gateway aceitou; nulo = o canal não informa ou ainda não informou.
+    provider_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    provider_status_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)

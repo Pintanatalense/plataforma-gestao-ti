@@ -8,11 +8,11 @@ import hashlib
 import re
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query
 from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.repository import AuditRepository
@@ -61,6 +61,36 @@ async def _audit(db: AsyncSession, event_type: str, entity_id: uuid.UUID | None,
 # --- Entregas -------------------------------------------------------------------------------------
 
 
+def _like_escape(text: str) -> str:
+    """Só o texto digitado: % e _ do usuário não viram curinga (mesmo cuidado da busca da auditoria)."""
+    return text.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _origin_of(rule_id: object, event_type: str | None) -> str:
+    """De onde veio a entrega: regra, mensagem direta de uma pessoa, resposta do robô ou outra rotina do sistema."""
+    if rule_id is not None:
+        return "rule"
+    if event_type and event_type.endswith(".direct_message"):
+        return "direct"
+    if event_type == "conversation.reply":
+        return "conversation"
+    return "system"
+
+
+def _origin_clause(origin: str):
+    if origin == "rule":
+        return Delivery.rule_id.is_not(None)
+    if origin == "direct":
+        return and_(Delivery.rule_id.is_(None), DomainEvent.event_type.like("%.direct_message"))
+    if origin == "conversation":
+        return and_(Delivery.rule_id.is_(None), DomainEvent.event_type == "conversation.reply")
+    return and_(
+        Delivery.rule_id.is_(None),
+        DomainEvent.event_type.not_like("%.direct_message"),
+        DomainEvent.event_type != "conversation.reply",
+    )
+
+
 def _delivery_out(d: Delivery, event_type: str | None, email: str | None) -> dict[str, Any]:
     return {
         "id": str(d.id),
@@ -78,6 +108,9 @@ def _delivery_out(d: Delivery, event_type: str | None, email: str | None) -> dic
         "next_attempt_at": d.next_attempt_at,
         "created_at": d.created_at,
         "sent_at": d.sent_at,
+        "provider_status": d.provider_status,
+        "provider_status_at": d.provider_status_at,
+        "origin": _origin_of(d.rule_id, event_type),
     }
 
 
@@ -90,6 +123,12 @@ async def list_deliveries(
     recipient: str | None = Query(None, description="trecho do e-mail do destinatário"),
     date_from: date | None = None,
     date_to: date | None = None,
+    origin: Literal["rule", "direct", "conversation", "system"] | None = None,
+    provider_status: Literal["accepted", "delivered", "read", "failed", "none"] | None = Query(
+        None, description="confirmação do provedor; 'none' = sem confirmação"
+    ),
+    address: str | None = Query(None, max_length=255, description="trecho do endereço (e-mail, telefone, chat)"),
+    q: str | None = Query(None, max_length=100, description="trecho do título ou do texto da mensagem"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -110,6 +149,22 @@ async def list_deliveries(
         base = base.where(Delivery.created_at >= datetime.combine(date_from, time.min, tzinfo=timezone.utc))
     if date_to:
         base = base.where(Delivery.created_at < datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=timezone.utc))
+    if origin:
+        base = base.where(_origin_clause(origin))
+    if provider_status == "none":
+        base = base.where(Delivery.provider_status.is_(None))
+    elif provider_status:
+        base = base.where(Delivery.provider_status == provider_status)
+    if address and address.strip():
+        base = base.where(Delivery.address.ilike(f"%{_like_escape(address)}%", escape="\\"))
+    if q and q.strip():
+        pattern = f"%{_like_escape(q)}%"
+        base = base.where(
+            or_(
+                Delivery.message["title"].as_string().ilike(pattern, escape="\\"),
+                Delivery.message["body_text"].as_string().ilike(pattern, escape="\\"),
+            )
+        )
 
     total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
     rows = (await db.execute(base.order_by(Delivery.created_at.desc()).limit(limit).offset(offset))).all()

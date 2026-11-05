@@ -155,3 +155,25 @@ seção "Validação".
 - Nenhum código de produção alterado. Observado na caracterização: o responsável que também é atendente do setor
   recebe "novo chamado" e "SLA perto de vencer (sem responsável)" como atendente; a violação de SLA chega uma vez só
   a quem é responsável e atendente ao mesmo tempo (deduplicação por pessoa e canal).
+
+### M1 — histórico e estados confirmados (2026-10-27)
+
+- Migration `d1e2f3a4b5c6d`: `deliveries.provider_status`, `provider_status_at` e índice
+  `(channel, provider_message_id)`. Só acrescenta; downgrade remove o índice e as colunas.
+- `notifications/receipts.py`: `apply_receipts` acha a entrega por canal e id da mensagem no provedor; o estado só
+  avança (accepted < delivered < read) e `failed` não desfaz uma entrega. `deliveries.status` não muda.
+- Evolution: o webhook passa a ser registrado com `MESSAGES_UPSERT` e `MESSAGES_UPDATE`; `parse_receipts` lê só as
+  mensagens que enviamos (`fromMe`) na nossa instância (SERVER_ACK → accepted, DELIVERY_ACK → delivered, READ/PLAYED →
+  read, ERROR → failed). **Instalações já pareadas** passam a receber confirmações depois de clicar *Conectar número*
+  outra vez (com o número conectado isso só registra o webhook de novo, sem novo QR). Formato conferido no código da
+  v2.3.7; homologação real pendente no C5 do ADR-019.
+- Meta: o webhook assinado lê `statuses` (sent → accepted, delivered, read, failed) do nosso `phone_number_id`.
+- Painel: `GET /notifications/admin/deliveries` aceita `origin` (rule, direct, conversation, system),
+  `provider_status` (inclusive `none`), `address` e `q` (título ou texto; `%` e `_` digitados não são curinga); cada
+  item ganhou `provider_status`, `provider_status_at` e `origin` (só acréscimos; o contrato do M0 foi ampliado).
+  A tela de entregas mostra SENT como **"Aceita pelo gateway"**, a coluna *Confirmação* e os filtros novos; o filtro de
+  canal lista todos os canais.
+- **Correção do diagnóstico:** o estado do circuito já era visível (`worker_heartbeat.info.open_circuits`, coluna
+  `circuit_open` em `/admin/channels`); não foi preciso mudar nada.
+- Limitação aceita: uma confirmação que chega antes de o worker gravar o id da mensagem (milissegundos) é ignorada;
+  a seguinte corrige o estado.

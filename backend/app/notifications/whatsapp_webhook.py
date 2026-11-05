@@ -9,6 +9,7 @@ import hashlib
 import hmac
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request, Response
@@ -20,6 +21,7 @@ from app.database import get_db
 from app.notifications.channel_store import load_channel
 from app.notifications.channels.whatsapp import WHATSAPP_CHANNEL
 from app.notifications.conversation.inbound import process_inbound
+from app.notifications.receipts import Receipt, apply_receipts
 from app.notifications.telegram_poller import SenderRateLimiter
 
 logger = logging.getLogger(__name__)
@@ -48,6 +50,29 @@ def extract_messages(payload: dict[str, Any], phone_number_id: str | None) -> li
                 text = (message.get("text") or {}).get("body")
                 if message.get("type") == "text" and isinstance(text, str) and message.get("id") and message.get("from"):
                     found.append((str(message["id"]), "".join(ch for ch in str(message["from"]) if ch.isdigit()), text))
+    return found
+
+
+META_RECEIPT_STATUS = {"sent": "accepted", "delivered": "delivered", "read": "read", "failed": "failed"}
+
+
+def extract_receipts(payload: dict[str, Any], phone_number_id: str | None) -> list[Receipt]:
+    """Confirmações (`statuses`) das mensagens que o nosso número enviou: sent, delivered, read, failed."""
+    found: list[Receipt] = []
+    for entry in payload.get("entry") or []:
+        for change in entry.get("changes") or []:
+            value = change.get("value") or {}
+            if phone_number_id and (value.get("metadata") or {}).get("phone_number_id") != phone_number_id:
+                continue
+            for item in value.get("statuses") or []:
+                status = META_RECEIPT_STATUS.get(str(item.get("status") or ""))
+                if not status or not item.get("id"):
+                    continue
+                try:
+                    at = datetime.fromtimestamp(int(item.get("timestamp")), tz=timezone.utc)
+                except (TypeError, ValueError, OverflowError):
+                    at = None
+                found.append(Receipt(str(item["id"]), status, at))
     return found
 
 
@@ -85,5 +110,9 @@ async def receive_webhook(request: Request, db: Annotated[AsyncSession, Depends(
             logger.warning("WhatsApp: remetente %s acima do limite; mensagem descartada.", phone)
             continue
         await process_inbound(db, WHATSAPP_CHANNEL, message_id, phone, text)
+        await db.commit()
+    receipts = extract_receipts(payload, stored.config.get("phone_number_id"))
+    if receipts:
+        await apply_receipts(db, WHATSAPP_CHANNEL, receipts)
         await db.commit()
     return {"status": "ok"}

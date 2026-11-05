@@ -18,6 +18,10 @@ export interface DeliveryItem {
   next_attempt_at: string;
   created_at: string;
   sent_at: string | null;
+  /** Confirmação do provedor depois do envio; null = o canal não informa ou ainda não informou (ADR-025). */
+  provider_status: 'accepted' | 'delivered' | 'read' | 'failed' | null;
+  provider_status_at: string | null;
+  origin: 'rule' | 'direct' | 'conversation' | 'system';
 }
 
 export interface DeliveryDetail extends DeliveryItem {
@@ -32,6 +36,10 @@ export interface DeliveryFilters {
   recipient?: string;
   date_from?: string;
   date_to?: string;
+  origin?: string;
+  provider_status?: string;
+  address?: string;
+  q?: string;
   limit?: number;
   offset?: number;
 }
