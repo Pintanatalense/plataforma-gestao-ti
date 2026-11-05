@@ -199,6 +199,9 @@ class ChildrenProgress(BaseModel):
     canceled: int = 0
     required_pending: int = 0
     overdue: int = 0
+    # Dois sinais separados (ADR-026): etapas obrigatórias atrasadas e o SLA do próprio principal vencido.
+    steps_overdue: int = 0
+    process_overdue: bool = False
 
 
 class ChildTicketSummary(BaseModel):

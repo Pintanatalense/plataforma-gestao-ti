@@ -542,14 +542,17 @@ class ServiceDeskService:
         if children is None:
             children = await self.repo.list_children(parent.id)
             await SlaService(self.session).attach(children)
-        progress = ChildrenProgress(total=len(children))
+        parent_sla = getattr(parent, "sla", None)
+        progress = ChildrenProgress(total=len(children), process_overdue=bool(parent_sla and parent_sla.overdue))
         for child in children:
             done = child.status in CLOSED_STATUSES
             progress.done += done
             progress.canceled += child.status == "CANCELED"
             progress.required_pending += child.is_required and not done
             sla = getattr(child, "sla", None)
-            progress.overdue += bool(sla and sla.overdue)
+            late = bool(sla and sla.overdue)
+            progress.overdue += late
+            progress.steps_overdue += late and child.is_required
         return progress
 
     async def list_children_for_user(self, parent_id: uuid.UUID, ctx: "AccessContext") -> ChildrenOverview:
@@ -559,7 +562,7 @@ class ServiceDeskService:
             can_read_all=ctx.can_read_all, user_id=ctx.user_id, sector_id=ctx.sector_id,
         )
         children = await self.repo.list_children(parent.id)
-        await SlaService(self.session).attach(children)
+        await SlaService(self.session).attach([parent, *children])
         sector_names = await self._sector_names({c.responsible_sector_id for c in children})
         replaced_by = {c.replaces_ticket_id: c.id for c in children if c.replaces_ticket_id}
         summaries = [

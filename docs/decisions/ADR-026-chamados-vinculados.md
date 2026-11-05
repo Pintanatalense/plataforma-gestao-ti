@@ -1,8 +1,8 @@
 # ADR-026 — Chamados vinculados: principal e subchamados para vários setores
 
 **Status:** Aceito; implementado em partes.
-- **Feito:** 2a (vínculo, cancelamento, substituição, obrigatoriedade e avisos) e 2b (idempotência).
-- **Próximos PRs:** 2c (indicadores de SLA por tipo), 3 (anexos restritos), 4 (modelos de atendimento) e 5 (telas).
+- **Feito:** 2a (vínculo, cancelamento, substituição, obrigatoriedade e avisos), 2b (idempotência) e 2c (indicadores de SLA).
+- **Próximos PRs:** 3 (anexos restritos), 4 (modelos de atendimento) e 5 (telas).
 **Data:** 2026-11-05
 **Depende de:** criador do chamado e direcionamento por categoria (PR 1 da série), ADR-013 (outbox e notificações),
 ADR-017 (SLA).
@@ -135,6 +135,20 @@ intenção de envio. A tela repete a mesma chave nas novas tentativas.
 
 **Limpeza.** O job `retention.cleanup` apaga as chaves com mais de 48 h.
 
+### Indicadores de SLA (parte 2c, `app/sla/report.py`)
+
+**Indicadores do período.** O relatório separa os ciclos encerrados no período:
+- **por tipo** (`by_kind`): avulso, principal e subchamado. O tempo total do processo é o do principal, quando a
+  categoria dele tem política. Recomendação: usar no principal uma política que pause em `PENDING` enquanto espera os
+  filhos; isso não é automático.
+- **subchamados por setor responsável** (`child_by_sector`): o tempo de atendimento de cada departamento.
+
+**Situação atual dos principais abertos** (`processes`). São dois sinais separados:
+- `process_overdue`: o SLA do próprio principal venceu;
+- `steps_overdue`: há etapa obrigatória atrasada.
+
+O `children_progress` de cada principal traz os mesmos dois sinais.
+
 ## Alternativas descartadas
 
 - **Tabela de vínculo N:N.** Permitiria vários níveis e vários pais, que não são necessários. Um nível simplifica a
@@ -144,8 +158,7 @@ intenção de envio. A tela repete a mesma chave nas novas tentativas.
 
 ## Consequências
 
-- **Indicadores de SLA.** Um ciclo `CANCELED` sai do cálculo de cumprimento. A separação por tipo (avulso, principal ou
-  subchamado) entra na parte 2c.
+- **Indicadores de SLA.** Um ciclo `CANCELED` sai do cálculo de cumprimento.
 - **Volta da migration.** Subchamados cancelados viram `CLOSED`, e ciclos cancelados viram `SUPERSEDED`. Os vínculos se
   perdem, mas nenhum chamado é apagado.
 - **Telas.** O frontend atual ainda não mostra subchamados; isso fica para o PR 5. Até lá, a API já funciona.

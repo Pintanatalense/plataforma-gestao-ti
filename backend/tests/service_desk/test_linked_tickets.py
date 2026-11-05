@@ -210,7 +210,10 @@ async def test_progress_appears_in_parent_detail(client: AsyncClient, db_session
     w = await _world(db_session)
     parent = await _open(client, w, [_child(w.cat_b), _child(w.cat_c, is_required=False)])
     progress = (await client.get(f"{API}/{parent['id']}", headers=_h(w.requester))).json()["children_progress"]
-    assert progress == {"total": 2, "done": 0, "canceled": 0, "required_pending": 1, "overdue": 0}
+    assert progress == {
+        "total": 2, "done": 0, "canceled": 0, "required_pending": 1, "overdue": 0, "steps_overdue": 0,
+        "process_overdue": False,
+    }
 
 
 # --- 2. Criador diferente do solicitante ---------------------------------------------------------------------
