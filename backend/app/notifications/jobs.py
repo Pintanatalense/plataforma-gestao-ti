@@ -28,6 +28,7 @@ DEFAULT_JOBS: dict[str, str] = {
     "stock.low_check": "every:30",
     "assets.warranty_check": "daily:08:00",
     "whatsapp.health_check": "every:5",
+    "audit.retention": "daily:04:00",
 }
 
 
@@ -119,6 +120,16 @@ async def job_retention_cleanup(session_factory: SessionFactory) -> None:
         await session.commit()
 
 
+async def job_audit_retention(session_factory: SessionFactory) -> None:
+    """Arquiva e apaga a auditoria vencida (segurança: 5 anos ou mais; operacional: 2 anos por padrão)."""
+    from app.audit.retention import apply_audit_retention
+
+    async with session_factory() as session:
+        removed = await apply_audit_retention(session)
+    if any(removed.values()):
+        logger.info("Retenção da auditoria: %s", removed)
+
+
 async def job_whatsapp_health(session_factory: SessionFactory) -> None:
     """Avisa os administradores quando a sessão do WhatsApp (Evolution) cai, mesmo sem tráfego de mensagens.
 
@@ -163,6 +174,7 @@ JOBS: dict[str, Callable[[SessionFactory], Awaitable[None]]] = {
     "stock.low_check": job_stock_low_check,
     "assets.warranty_check": job_warranty_check,
     "whatsapp.health_check": job_whatsapp_health,
+    "audit.retention": job_audit_retention,
 }
 
 

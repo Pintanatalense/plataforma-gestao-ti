@@ -88,6 +88,9 @@ services:
       EVOLUTION_API_KEY: ${EVOLUTION_API_KEY:-}
       BACKUP_STORAGE_PATH: /data/backups
       ATTACHMENT_STORAGE_PATH: /data/attachments
+      # Retenção da auditoria (job audit.retention, que arquiva em /data/backups/audit-archive antes de apagar)
+      AUDIT_RETENTION_SECURITY_DAYS: ${AUDIT_RETENTION_SECURITY_DAYS:-1825}
+      AUDIT_RETENTION_OPERATIONAL_DAYS: ${AUDIT_RETENTION_OPERATIONAL_DAYS:-730}
     volumes:
       - backups_data:/data/backups
       # Só leitura: o worker lê anexos e logo (backup completo); quem grava é o backend.

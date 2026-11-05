@@ -28,10 +28,11 @@ class AuditService:
         date_to: datetime | None,
         limit: int,
         offset: int,
+        category: str | None = None,
     ) -> tuple[list[AuditLogOut], int]:
         logs, total = await self.repository.search(
             event_type=event_type, entity_type=entity_type, user=user,
-            date_from=date_from, date_to=date_to, limit=limit, offset=offset,
+            date_from=date_from, date_to=date_to, category=category, limit=limit, offset=offset,
         )
         return [AuditLogOut.model_validate(log) for log in logs], total
 
