@@ -4,6 +4,7 @@ concorrente."""
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
 from types import SimpleNamespace
+from zoneinfo import ZoneInfo
 
 import pytest
 from httpx import AsyncClient
@@ -223,7 +224,9 @@ async def test_single_send_finishes_the_schedule(client, world, db_session, fact
 
 
 async def test_occurrence_late_beyond_tolerance_is_skipped_and_recorded(client, world, db_session, factory):
-    created = (await _create(client, world)).json()
+    # Horário 12 h longe de agora: com 09:00 fixo, rodar entre 09:00 e 10:00 achava a ocorrência de hoje dentro da tolerância.
+    far = (datetime.now(ZoneInfo(TZ)) + timedelta(hours=12)).strftime("%H:00")
+    created = (await _create(client, world, time_of_day=far)).json()
     await _due(db_session, created["id"], datetime.now(timezone.utc) - timedelta(hours=3))
     result = await sched.run_due_schedules(factory)
     assert result.sent == 0 and result.missed >= 1

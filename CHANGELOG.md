@@ -4,6 +4,10 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 
 ## [Não lançado]
 
+## [0.2.0] — 2026-11-06
+
+Central de Mensagens completa (envio, agendamento, gateways, escalonamento), chamados vinculados entre setores, SLA nos chamados, worker com agenda independente, backup com anexos e restauração testada.
+
 ### Mudanças de comportamento
 
 - **Só quem tem permissão troca o setor que a categoria define.** Ao abrir um chamado de uma categoria com setor padrão, escolher outro setor passou a exigir **Direcionar chamados a qualquer setor** (`service_desk.tickets.route_any_sector`); sem ela, a abertura é recusada (403). Antes qualquer pessoa trocava. Categoria sem setor padrão continua exigindo que o setor seja informado, agora ativo. **Atualização:** os perfis que já tinham *Atender chamados* recebem a permissão nova; a tela de abertura não oferecia a troca, então quem abre pela tela não percebe diferença.
