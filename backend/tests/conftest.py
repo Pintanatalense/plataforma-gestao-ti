@@ -82,6 +82,10 @@ async def setup_database():
         await conn.run_sync(Base.metadata.create_all)
     yield
     async with test_engine.begin() as conn:
+        if conn.dialect.name == "sqlite":
+            # Algum teste liga `PRAGMA foreign_keys=ON` na conexão em memória (compartilhada). Com ela ligada, o DROP do
+            # SQLite apaga linha a linha e esbarra nas FKs RESTRICT do chamado para o próprio principal (ADR-026).
+            await conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
         await conn.run_sync(Base.metadata.drop_all)
 
 

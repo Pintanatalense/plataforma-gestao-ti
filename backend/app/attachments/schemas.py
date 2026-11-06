@@ -11,6 +11,7 @@ class AttachmentOut(BaseModel):
     entity_type: str
     entity_id: uuid.UUID
     uploaded_by_id: uuid.UUID | None
+    is_internal: bool = False
     created_at: datetime
     updated_at: datetime
 

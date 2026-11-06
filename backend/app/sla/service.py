@@ -280,6 +280,17 @@ class SlaService:
         else:
             self._resume(active, now)
 
+    async def canceled(self, ticket) -> None:
+        """Subchamado cancelado (ADR-026): o ciclo aberto termina como `CANCELED`, fora dos indicadores de cumprimento.
+
+        Violações já registradas ficam no ciclo; nenhuma nova é registrada no cancelamento.
+        """
+        cycles = await self._cycles(ticket.id, lock=True)
+        if cycles and cycles[-1].state in ACTIVE_STATES:
+            cycle = cycles[-1]
+            self._resume(cycle, _now())
+            cycle.state = "CANCELED"
+
     async def _resolve(self, cycle: TicketSlaCycle, now: datetime) -> None:
         self._resume(cycle, now)  # resolvido enquanto pausado: o tempo parado não conta contra o prazo
         await self._register_overdue(cycle, now)

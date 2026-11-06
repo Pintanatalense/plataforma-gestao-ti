@@ -105,7 +105,7 @@ async def job_backup(session_factory: SessionFactory) -> None:
 
 
 async def job_retention_cleanup(session_factory: SessionFactory) -> None:
-    """Apaga eventos/entregas antigos já tratados e notificações lidas antigas."""
+    """Apaga eventos/entregas antigos já tratados, notificações lidas antigas e chaves de idempotência vencidas."""
     now = datetime.now(timezone.utc)
     events_cutoff = now - timedelta(days=EVENT_RETENTION_DAYS)
     notif_cutoff = now - timedelta(days=READ_NOTIFICATION_RETENTION_DAYS)
@@ -121,6 +121,10 @@ async def job_retention_cleanup(session_factory: SessionFactory) -> None:
         await session.execute(
             delete(Notification).where(Notification.is_read.is_(True), Notification.created_at < notif_cutoff)
         )
+        # Chaves de idempotência dos chamados (48 h). Import tardio: o hub não importa models de chamados (ADR-004).
+        from app.service_desk.idempotency import purge_expired
+
+        await purge_expired(session, now)
         await session.commit()
 
 

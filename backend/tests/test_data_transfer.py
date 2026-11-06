@@ -67,6 +67,7 @@ async def setup_data_transfer_fixtures(db_session: AsyncSession):
         priority="HIGH",
         status="OPENED",
         requester_id=emp.id,
+        created_by_user_id=user_admin.id,
         origin_unit_id=unit.id,
         origin_sector_id=sector.id,
         responsible_sector_id=sector.id,

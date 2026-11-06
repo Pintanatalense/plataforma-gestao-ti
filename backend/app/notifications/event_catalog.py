@@ -9,6 +9,7 @@ from dataclasses import asdict, dataclass, field
 
 AUDIENCE_LABELS = {
     "requester": "Solicitante do chamado",
+    "creator": "Quem abriu o chamado",
     "assignee": "Atendente responsável",
     "sector_attendants": "Atendentes do setor responsável",
     "counterpart": "O outro lado da conversa do chamado",
@@ -38,6 +39,10 @@ CATALOG: tuple[EventSpec, ...] = (
     EventSpec("ticket.interaction_added", "Nova mensagem no chamado", "Chamados", (*_TICKET_KEYS, "is_internal")),
     EventSpec("ticket.sla_warning", "SLA perto de vencer", "Chamados", (*_TICKET_KEYS, "kind", "assigned"), escalation=True),
     EventSpec("ticket.sla_breached", "SLA violado", "Chamados", (*_TICKET_KEYS, "kind", "assigned"), escalation=True),
+    EventSpec("ticket.children_created", "Subchamados incluídos (aviso consolidado)", "Chamados", _TICKET_KEYS),
+    EventSpec("ticket.child_completed", "Subchamado concluído", "Chamados", (*_TICKET_KEYS, "all_required_done")),
+    EventSpec("ticket.child_canceled", "Subchamado cancelado (no principal)", "Chamados", (*_TICKET_KEYS, "is_required")),
+    EventSpec("ticket.canceled", "Subchamado cancelado (no próprio subchamado)", "Chamados", _TICKET_KEYS),
     EventSpec("ticket.asset_delivered", "Equipamento entregue pelo chamado", "Chamados", _TICKET_KEYS),
     EventSpec("ticket.asset_returned", "Equipamento devolvido pelo chamado", "Chamados", _TICKET_KEYS),
     EventSpec("asset.warranty_expiring", "Garantia perto de vencer", "Patrimônio"),

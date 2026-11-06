@@ -7,7 +7,7 @@ Implementa as regras de negócio de visualização e transição de chamados.
 import logging
 import uuid
 from datetime import date, datetime, time, timedelta
-from typing import Sequence
+from typing import TYPE_CHECKING, Sequence
 
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -15,6 +15,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.core.exceptions import (
     BusinessRuleException,
+    ConflictException,
     ForbiddenException,
     NotFoundException,
     StateTransitionException,
@@ -23,12 +24,17 @@ from app.core.exceptions import (
 from app.identity.models import UserAccount
 from app.notifications.outbox import emit_event
 from app.organization.models import Employee
+from app.service_desk.access import TicketAccess, evaluate_ticket_access
 from app.service_desk.models import Ticket, TicketCategory, TicketInteraction, TicketMaterial
 from app.service_desk.repository import ServiceDeskRepository
 from app.sla.report import sla_report
 from app.sla.service import REOPEN_TO, SlaService, _now as sla_now
 from app.service_desk.schemas import (
     CategoryCount,
+    ChildrenOverview,
+    ChildrenProgress,
+    ChildTicketSpec,
+    ChildTicketSummary,
     TicketsReport,
     TicketCreate,
     TicketInteractionCreate,
@@ -38,7 +44,12 @@ from app.service_desk.schemas import (
     TicketMaterialCreate,
 )
 
+if TYPE_CHECKING:
+    from app.core.access import AccessContext
+
 logger = logging.getLogger(__name__)
+
+CLOSED_STATUSES = ("RESOLVED", "CLOSED")
 
 
 class ServiceDeskService:
@@ -123,37 +134,62 @@ class ServiceDeskService:
         sector_id: uuid.UUID | None = None
     ) -> Ticket:
         """
-        Busca um ticket e garante as regras de menor privilégio e escopo:
+        Busca um ticket e garante as regras de menor privilégio e escopo (``app.service_desk.access``):
         - Gestores ou Administradores (can_read_all=True) veem qualquer chamado.
-        - Atendentes (is_technician=True) veem chamados do seu setor responsável, atribuídos a si ou abertos por si.
-        - Solicitantes comuns só veem seus próprios chamados.
+        - Atendentes (is_technician=True) veem chamados do seu setor responsável e os atribuídos a si.
+        - Solicitante e quem abriu o chamado (criador) veem o chamado.
         """
         ticket = await self.repo.get_ticket(ticket_id)
         if not ticket:
             raise NotFoundException("Chamado", ticket_id)
-
-        if can_read_all:
+        access = await self.ticket_access(
+            ticket, user_employee_id=user_employee_id, user_id=user_id, sector_id=sector_id,
+            is_technician=is_technician, can_read_all=can_read_all,
+        )
+        if access.can_view:
             return ticket
-
         if is_technician:
-            if sector_id is None and user_employee_id is not None:
-                emp = await self.session.get(Employee, user_employee_id)
-                if emp:
-                    sector_id = emp.sector_id
-
-            if (
-                can_read_all
-                or (sector_id is not None and ticket.responsible_sector_id == sector_id)
-                or (user_id is not None and ticket.assignee_id == user_id)
-                or (user_employee_id is not None and ticket.requester_id == user_employee_id)
-            ):
-                return ticket
             raise ForbiddenException("Você não tem acesso a chamados de outros setores.")
+        raise ForbiddenException("Você não tem acesso a este chamado.")
 
-        if not user_employee_id or ticket.requester_id != user_employee_id:
-            raise ForbiddenException("Você não tem acesso a este chamado.")
+    async def ticket_access(
+        self,
+        ticket: Ticket,
+        *,
+        user_employee_id: uuid.UUID | None,
+        user_id: uuid.UUID | None,
+        sector_id: uuid.UUID | None,
+        is_technician: bool,
+        can_read_all: bool,
+    ) -> TicketAccess:
+        """Avalia o acesso; resolve o setor do atendente pelo colaborador quando o escopo não o trouxe."""
+        if is_technician and sector_id is None and user_employee_id is not None:
+            emp = await self.session.get(Employee, user_employee_id)
+            if emp:
+                sector_id = emp.sector_id
+        return evaluate_ticket_access(
+            ticket, user_employee_id=user_employee_id, user_id=user_id, sector_id=sector_id,
+            is_technician=is_technician, can_read_all=can_read_all,
+            parent_created_by_user_id=await self._parent_creator(ticket),
+        )
 
-        return ticket
+    async def can_see_internal(self, ticket: Ticket, can_internal_notes: bool, **scope) -> bool:
+        """Notas internas: a permissão de sempre; num subchamado, só para o setor dele (ADR-026, nível ``internal``)."""
+        if not can_internal_notes:
+            return False
+        if ticket.parent_ticket_id is None:
+            return True
+        return (await self.ticket_access(ticket, **scope)).is_sector_attendant
+
+    async def visible_parent_ids(self, tickets: Sequence[Ticket], **scope) -> set[uuid.UUID]:
+        """Principais que quem pede pode ver: o campo ``parent_ticket_id`` só aparece para eles."""
+        parent_ids = {t.parent_ticket_id for t in tickets if t.parent_ticket_id}
+        visible = set()
+        for parent_id in parent_ids:
+            parent = await self.repo.get_ticket(parent_id)
+            if parent is not None and (await self.ticket_access(parent, **scope)).can_view:
+                visible.add(parent_id)
+        return visible
 
     async def list_tickets_for_user(
         self,
@@ -167,40 +203,152 @@ class ServiceDeskService:
         if can_read_all:
             return await self.repo.list_tickets()
 
-        # 2. Atendentes veem chamados destinados ao seu setor, atribuídos a si ou abertos por si
+        # 2. Atendentes veem chamados destinados ao seu setor, atribuídos a si, solicitados ou abertos por si
         if is_technician:
             return await self.repo.list_tickets(
                 requester_id=user_employee_id,
                 sector_id=sector_id,
                 assignee_id=user_id,
+                created_by_id=user_id,
                 is_attendant_scope=True,
             )
 
-        # 3. Solicitantes veem apenas os próprios chamados
-        if not user_employee_id:
+        # 3. Os demais veem os chamados em que são solicitantes ou que abriram
+        if not user_employee_id and not user_id:
             return []
-        return await self.repo.list_tickets(requester_id=user_employee_id)
+        return await self.repo.list_tickets(requester_id=user_employee_id, created_by_id=user_id)
+
+    async def resolve_requester(
+        self,
+        requested_employee_id: uuid.UUID | None,
+        *,
+        own_employee_id: uuid.UUID | None,
+        can_create_on_behalf: bool,
+    ) -> Employee:
+        """
+        Solicitante do chamado: sem ``requester_id`` (ou com o próprio colaborador), é quem abre; outro colaborador
+        exige ``service_desk.tickets.create_on_behalf`` e precisa existir ativo.
+        """
+        if requested_employee_id is None or requested_employee_id == own_employee_id:
+            if own_employee_id is None:
+                raise ForbiddenException("Apenas colaboradores vinculados a um Employee podem abrir chamados.")
+            own = await self.session.get(Employee, own_employee_id)
+            if own is None:
+                raise ForbiddenException("Apenas colaboradores vinculados a um Employee podem abrir chamados.")
+            return own  # como antes: quem tem conta ativa abre para si mesmo
+        if not can_create_on_behalf:
+            raise ForbiddenException(
+                "Abrir chamado em nome de outra pessoa exige a permissão Abrir chamados em nome de outra pessoa."
+            )
+        employee = await self.session.get(Employee, requested_employee_id)
+        if employee is None or not employee.is_active or employee.deleted_at is not None or employee.status == "DESLIGADO":
+            raise BusinessRuleException("Solicitante inválido ou inativo.")
+        return employee
+
+    async def resolve_responsible_sector(
+        self,
+        category: TicketCategory | None,
+        requested_sector_id: uuid.UUID | None,
+        *,
+        can_route_any_sector: bool,
+    ) -> uuid.UUID:
+        """
+        Direcionamento por categoria, único para chamados e subchamados:
+        - categoria com setor padrão: vai para ele; outro setor só com ``service_desk.tickets.route_any_sector``;
+        - categoria sem setor padrão, ou sem categoria: o setor informado é obrigatório e precisa existir ativo.
+        """
+        from app.organization.models import Sector
+
+        default_sector_id = category.default_sector_id if category is not None else None
+        if default_sector_id is not None:
+            if requested_sector_id is None or requested_sector_id == default_sector_id:
+                return default_sector_id
+            if not can_route_any_sector:
+                raise ForbiddenException(
+                    "Esta categoria é direcionada a um setor definido. Escolher outro setor exige a permissão "
+                    "Direcionar chamados a qualquer setor."
+                )
+        if requested_sector_id is None:
+            raise BusinessRuleException(
+                "Setor responsável não definido. Informe-o manualmente ou selecione uma categoria com roteamento automático."
+            )
+        sector = await self.session.get(Sector, requested_sector_id)
+        if sector is None or not sector.is_active or sector.deleted_at is not None:
+            raise BusinessRuleException("Setor responsável inválido ou inativo.")
+        return requested_sector_id
 
     async def create_ticket(
-        self, 
+        self,
         schema: TicketCreate, 
         requester_id: uuid.UUID,
         origin_unit_id: uuid.UUID,
         origin_sector_id: uuid.UUID,
-        user_id: uuid.UUID | None = None
+        *,
+        user_id: uuid.UUID,
+        can_route_any_sector: bool = False,
     ) -> Ticket:
-        responsible_sector_id = schema.responsible_sector_id
-        
-        if schema.category_id:
-            cat = await self.repo.get_category(schema.category_id)
+        """
+        ``user_id`` é quem abre (criador) e é obrigatório: todo chamado novo registra quem o abriu, mesmo quando o
+        solicitante (``requester_id``) é outra pessoa.
+
+        ``schema.children``: subchamados criados na mesma transação (ADR-026); um filho inválido desfaz tudo.
+        ``schema.template_id``: o modelo usado pela tela (só rastreio; precisa estar ativo).
+        """
+        if schema.template_id is not None:
+            from app.service_desk.templates import TicketTemplateService
+
+            await TicketTemplateService(self.session).ensure_usable(schema.template_id)
+        parent = await self._create_ticket_core(
+            title=schema.title, description=schema.description, priority=schema.priority,
+            category_id=schema.category_id, custom_fields=schema.custom_fields,
+            responsible_sector_id=schema.responsible_sector_id, asset_ids=schema.asset_ids,
+            requester_id=requester_id, origin_unit_id=origin_unit_id, origin_sector_id=origin_sector_id,
+            user_id=user_id, can_route_any_sector=can_route_any_sector, template_id=schema.template_id,
+        )
+        if schema.children:
+            await self._create_children(
+                parent, schema.children, user_id=user_id, can_route_any_sector=can_route_any_sector
+            )
+        return parent
+
+    async def _create_ticket_core(
+        self,
+        *,
+        title: str,
+        description: str,
+        priority: str,
+        category_id: uuid.UUID | None,
+        custom_fields: dict | None,
+        responsible_sector_id: uuid.UUID | None,
+        asset_ids: list[uuid.UUID] | None,
+        requester_id: uuid.UUID,
+        origin_unit_id: uuid.UUID,
+        origin_sector_id: uuid.UUID,
+        user_id: uuid.UUID,
+        can_route_any_sector: bool,
+        parent_ticket_id: uuid.UUID | None = None,
+        is_required: bool = True,
+        replaces_ticket_id: uuid.UUID | None = None,
+        child_batch_id: str | None = None,
+        template_id: uuid.UUID | None = None,
+    ) -> Ticket:
+        """Regras comuns a chamado e subchamado: direcionamento, formulário, SLA, auditoria e outbox. Sem commit."""
+        if user_id is None:
+            raise ValidationException("Todo chamado precisa registrar quem o abriu.")
+
+        cat = None
+        if category_id:
+            cat = await self.repo.get_category(category_id)
             if not cat or not cat.is_active:
                 raise BusinessRuleException("Categoria inválida ou inativa.")
-            if not responsible_sector_id:
-                responsible_sector_id = cat.default_sector_id
-            
+        responsible_sector_id = await self.resolve_responsible_sector(
+            cat, responsible_sector_id, can_route_any_sector=can_route_any_sector
+        )
+
+        if cat is not None:
             # Validação dos pré-requisitos vinculados ao formulário da categoria
             if cat.form_schema:
-                provided_fields = schema.custom_fields or {}
+                provided_fields = custom_fields or {}
                 for field in cat.form_schema:
                     field_id = field.get("id") or field.get("name") or field.get("key")
                     label = field.get("label") or field_id or "Campo"
@@ -222,9 +370,6 @@ class ServiceDeskService:
                                 raise BusinessRuleException(
                                     f"Opção '{val}' inválida para o pré-requisito '{label}'."
                                 )
-        
-        if not responsible_sector_id:
-            raise BusinessRuleException("Setor responsável não definido. Informe-o manualmente ou selecione uma categoria com roteamento automático.")
 
         # Verificar se o sistema está em modo DEMO ou se o solicitante é demo
         is_demo_ticket = False
@@ -245,41 +390,343 @@ class ServiceDeskService:
             pass
 
         ticket = Ticket(
-            title=schema.title,
-            description=schema.description,
-            priority=schema.priority,
-            category_id=schema.category_id,
-            custom_fields=schema.custom_fields or {},
+            title=title,
+            description=description,
+            priority=priority,
+            category_id=category_id,
+            custom_fields=custom_fields or {},
             requester_id=requester_id,
             origin_unit_id=origin_unit_id,
             origin_sector_id=origin_sector_id,
             responsible_sector_id=responsible_sector_id,
             status="OPENED",
-            is_demo=is_demo_ticket
+            is_demo=is_demo_ticket,
+            created_by_user_id=user_id,
+            parent_ticket_id=parent_ticket_id,
+            is_required=is_required,
+            replaces_ticket_id=replaces_ticket_id,
+            template_id=template_id,
         )
-        
-        if schema.asset_ids:
-            assets = await self.repo.get_assets_by_ids(schema.asset_ids)
+
+        if asset_ids:
+            assets = await self.repo.get_assets_by_ids(asset_ids)
             ticket.assets = list(assets)
-            
+
         ticket = await self.repo.create_ticket(ticket)
         loaded_ticket = await self.repo.get_ticket(ticket.id)
         await SlaService(self.session).start(loaded_ticket)  # sem política ativa na categoria: não faz nada
 
+        audit_data = {
+            "title": loaded_ticket.title,
+            "priority": loaded_ticket.priority,
+            "status": loaded_ticket.status,
+            "category_id": str(loaded_ticket.category_id) if loaded_ticket.category_id else None,
+            "requester_id": str(loaded_ticket.requester_id),
+            "responsible_sector_id": str(loaded_ticket.responsible_sector_id),
+        }
+        if parent_ticket_id is not None:
+            audit_data["parent_ticket_id"] = str(parent_ticket_id)
+            audit_data["is_required"] = is_required
+        if replaces_ticket_id is not None:
+            audit_data["replaces_ticket_id"] = str(replaces_ticket_id)
         await self._record_audit_event(
-            event_type="ticket.created",
-            ticket_id=loaded_ticket.id,
-            data={
-                "title": loaded_ticket.title,
-                "priority": loaded_ticket.priority,
-                "status": loaded_ticket.status,
-                "category_id": str(loaded_ticket.category_id) if loaded_ticket.category_id else None
-            },
-            user_id=user_id
+            event_type="ticket.created", ticket_id=loaded_ticket.id, data=audit_data, user_id=user_id
         )
-        await self._emit_ticket_event("ticket.created", loaded_ticket, user_id)
+        extra = {"child_batch_id": child_batch_id} if child_batch_id else {}
+        await self._emit_ticket_event("ticket.created", loaded_ticket, user_id, **extra)
 
         return loaded_ticket
+
+    # ==========================================================================
+    # Chamados vinculados (ADR-026)
+    # ==========================================================================
+
+    async def _create_children(
+        self,
+        parent: Ticket,
+        specs: list[ChildTicketSpec],
+        *,
+        user_id: uuid.UUID,
+        can_route_any_sector: bool,
+        replaces: Ticket | None = None,
+    ) -> list[Ticket]:
+        """Cria os filhos de um lote: herdam o solicitante e a origem do principal; o criador é quem os acrescenta.
+
+        Registra ``ticket.children_added`` no principal e emite ``ticket.children_created`` (um aviso por lote ao
+        solicitante e ao criador do principal). O ``ticket.created`` de cada filho leva ``parent_ticket_id``, que a
+        regra do solicitante ignora.
+        """
+        if parent.parent_ticket_id is not None:
+            raise BusinessRuleException("Um subchamado não pode ter subchamados (um nível só).")
+        batch_id = str(uuid.uuid4())
+        children = []
+        for spec in specs:
+            children.append(await self._create_ticket_core(
+                title=spec.title, description=spec.description, priority=spec.priority or parent.priority,
+                category_id=spec.category_id, custom_fields=spec.custom_fields,
+                responsible_sector_id=spec.responsible_sector_id, asset_ids=None,
+                requester_id=parent.requester_id, origin_unit_id=parent.origin_unit_id,
+                origin_sector_id=parent.origin_sector_id, user_id=user_id, can_route_any_sector=can_route_any_sector,
+                parent_ticket_id=parent.id, is_required=True if replaces else spec.is_required,
+                replaces_ticket_id=replaces.id if replaces else None, child_batch_id=batch_id,
+            ))
+
+        sector_names = await self._sector_names({c.responsible_sector_id for c in children})
+        items = [
+            {
+                "ticket_id": str(c.id),
+                "title": c.title[:200],
+                "is_required": c.is_required,
+                "responsible_sector_id": str(c.responsible_sector_id),
+                "sector_name": sector_names.get(c.responsible_sector_id, ""),
+                "category_name": c.category.name if c.category else "",
+            }
+            for c in children
+        ]
+        await self._record_audit_event(
+            event_type="ticket.children_added", ticket_id=parent.id, data={"children": items}, user_id=user_id
+        )
+        await self._emit_ticket_event(
+            "ticket.children_created", parent, user_id, child_batch_id=batch_id, children=items
+        )
+        return children
+
+    async def _sector_names(self, sector_ids: set[uuid.UUID]) -> dict[uuid.UUID, str]:
+        from app.organization.models import Sector
+
+        if not sector_ids:
+            return {}
+        rows = await self.session.execute(select(Sector.id, Sector.name).where(Sector.id.in_(sector_ids)))
+        return {row.id: row.name for row in rows.all()}
+
+    async def _parent_creator(self, ticket: Ticket) -> uuid.UUID | None:
+        if ticket.parent_ticket_id is None:
+            return None
+        return (
+            await self.session.execute(select(Ticket.created_by_user_id).where(Ticket.id == ticket.parent_ticket_id))
+        ).scalar_one_or_none()
+
+    async def _access_for(self, ticket: Ticket, ctx: "AccessContext") -> TicketAccess:
+        return await self.ticket_access(
+            ticket, user_employee_id=ctx.employee_id, user_id=ctx.user_id, sector_id=ctx.sector_id,
+            is_technician=ctx.is_technician, can_read_all=ctx.can_read_all,
+        )
+
+    async def _load_child_and_parent(self, child_id: uuid.UUID) -> tuple[Ticket, Ticket]:
+        child = await self.repo.get_ticket(child_id)
+        if not child:
+            raise NotFoundException("Chamado", child_id)
+        if child.parent_ticket_id is None:
+            raise BusinessRuleException("Esta ação vale só para subchamados.")
+        # Trava o principal antes de ler o estado dos filhos: serializa com o encerramento e com novas inclusões.
+        await self.repo.lock_ticket_status(child.parent_ticket_id)
+        parent = await self.repo.get_ticket(child.parent_ticket_id, populate_existing=True)
+        child = await self.repo.get_ticket(child_id, populate_existing=True)
+        return child, parent
+
+    @staticmethod
+    def _ensure_parent_open(parent: Ticket) -> None:
+        if parent.status in CLOSED_STATUSES:
+            raise ConflictException("O chamado principal já foi resolvido ou encerrado.")
+
+    async def add_children(
+        self, parent_id: uuid.UUID, specs: list[ChildTicketSpec], ctx: "AccessContext"
+    ) -> list[Ticket]:
+        """Inclui subchamados depois da abertura: solicitante ou criador do principal, ou atendente do setor dele."""
+        status = await self.repo.lock_ticket_status(parent_id)
+        if status is None:
+            raise NotFoundException("Chamado", parent_id)
+        parent = await self.repo.get_ticket(parent_id, populate_existing=True)
+        access = await self._access_for(parent, ctx)
+        if not (access.is_requester_or_creator or access.is_sector_attendant):
+            raise ForbiddenException("Só o solicitante, quem abriu ou o setor do chamado incluem subchamados.")
+        self._ensure_parent_open(parent)
+        return await self._create_children(
+            parent, specs, user_id=ctx.user_id, can_route_any_sector=ctx.can_route_any_sector
+        )
+
+    async def children_progress(self, parent: Ticket, children: Sequence[Ticket] | None = None) -> ChildrenProgress:
+        if children is None:
+            children = await self.repo.list_children(parent.id)
+            await SlaService(self.session).attach(children)
+        parent_sla = getattr(parent, "sla", None)
+        progress = ChildrenProgress(total=len(children), process_overdue=bool(parent_sla and parent_sla.overdue))
+        for child in children:
+            done = child.status in CLOSED_STATUSES
+            progress.done += done
+            progress.canceled += child.status == "CANCELED"
+            progress.required_pending += child.is_required and not done
+            sla = getattr(child, "sla", None)
+            late = bool(sla and sla.overdue)
+            progress.overdue += late
+            progress.steps_overdue += late and child.is_required
+        return progress
+
+    async def list_children_for_user(self, parent_id: uuid.UUID, ctx: "AccessContext") -> ChildrenOverview:
+        """Resumo dos filhos (nível ``track``): quem pode ver o principal."""
+        parent = await self.get_ticket_for_user(
+            parent_id, user_employee_id=ctx.employee_id, is_technician=ctx.is_technician,
+            can_read_all=ctx.can_read_all, user_id=ctx.user_id, sector_id=ctx.sector_id,
+        )
+        children = await self.repo.list_children(parent.id)
+        await SlaService(self.session).attach([parent, *children])
+        sector_names = await self._sector_names({c.responsible_sector_id for c in children})
+        replaced_by = {c.replaces_ticket_id: c.id for c in children if c.replaces_ticket_id}
+        summaries = [
+            ChildTicketSummary(
+                id=c.id, title=c.title, status=c.status, is_required=c.is_required,
+                responsible_sector_id=c.responsible_sector_id,
+                responsible_sector_name=sector_names.get(c.responsible_sector_id),
+                category_id=c.category_id, category_name=c.category.name if c.category else None,
+                assignee_name=c.assignee_name, created_at=c.created_at, replaces_ticket_id=c.replaces_ticket_id,
+                replaced_by_ticket_id=replaced_by.get(c.id),
+                resolution_due_at=c.sla.resolution_due_at if c.sla else None,
+                overdue=bool(c.sla and c.sla.overdue), at_risk=bool(c.sla and c.sla.at_risk),
+            )
+            for c in children
+        ]
+        return ChildrenOverview(progress=await self.children_progress(parent, children), children=summaries)
+
+    async def can_view_ticket(self, ticket_id: uuid.UUID, ctx: "AccessContext") -> bool:
+        ticket = await self.repo.get_ticket(ticket_id)
+        return ticket is not None and (await self._access_for(ticket, ctx)).can_view
+
+    async def cancel_child(self, child_id: uuid.UUID, reason: str, ctx: "AccessContext") -> Ticket:
+        """Cancela uma etapa: atendente do setor do filho ou do setor do principal, sempre com justificativa.
+
+        Cancelado não conta como concluído: uma etapa obrigatória cancelada continua travando o principal até ser
+        substituída ou dispensada.
+        """
+        child, parent = await self._load_child_and_parent(child_id)
+        if child.status in CLOSED_STATUSES or child.status == "CANCELED":
+            raise ConflictException("Este subchamado já foi concluído ou cancelado.")
+        child_access = await self._access_for(child, ctx)
+        parent_access = await self._access_for(parent, ctx)
+        if not (child_access.is_sector_attendant or parent_access.is_sector_attendant):
+            raise ForbiddenException("Só o setor do subchamado ou o do chamado principal cancelam uma etapa.")
+
+        actor_sector_id = await self._actor_sector(ctx)
+        old_status = child.status
+        await self.repo.create_interaction(TicketInteraction(
+            ticket_id=child.id, author_id=ctx.user_id, message=f"Etapa cancelada. Motivo: {reason}", is_internal=False
+        ))
+        child.status = "CANCELED"
+        await self.repo.update_ticket(child)
+        await SlaService(self.session).canceled(child)
+
+        await self._record_audit_event(
+            event_type="ticket.canceled", ticket_id=child.id,
+            data={
+                "reason": reason, "old_status": old_status,
+                "canceled_by_sector_id": str(actor_sector_id) if actor_sector_id else None,
+                "parent_ticket_id": str(parent.id),
+            },
+            user_id=ctx.user_id,
+        )
+        await self._record_audit_event(
+            event_type="ticket.child_canceled", ticket_id=parent.id,
+            data={"child_ticket_id": str(child.id), "title": child.title, "is_required": child.is_required,
+                  "reason": reason},
+            user_id=ctx.user_id,
+        )
+        await self._emit_ticket_event("ticket.canceled", child, ctx.user_id, reason=reason[:300])
+        await self._emit_ticket_event(
+            "ticket.child_canceled", parent, ctx.user_id, child_ticket_id=str(child.id),
+            child_title=child.title[:200], is_required=child.is_required, reason=reason[:300],
+        )
+        return await self.repo.get_ticket(child.id)
+
+    async def replace_child(
+        self, child_id: uuid.UUID, reason: str, spec: ChildTicketSpec, ctx: "AccessContext"
+    ) -> Ticket:
+        """Substitui uma etapa cancelada por um subchamado novo e obrigatório. O cancelado fica como estava."""
+        child, parent = await self._load_child_and_parent(child_id)
+        if not (await self._access_for(parent, ctx)).is_sector_attendant:
+            raise ForbiddenException("Só o setor do chamado principal substitui uma etapa.")
+        if child.status != "CANCELED":
+            raise ConflictException("Só um subchamado cancelado pode ser substituído.")
+        if any(c.replaces_ticket_id == child.id for c in await self.repo.list_children(parent.id)):
+            raise ConflictException("Este subchamado já foi substituído.")
+        self._ensure_parent_open(parent)
+
+        [new_child] = await self._create_children(
+            parent, [spec], user_id=ctx.user_id, can_route_any_sector=ctx.can_route_any_sector, replaces=child
+        )
+        was_required = child.is_required
+        child.is_required = False
+        await self.repo.update_ticket(child)
+        await self._record_audit_event(
+            event_type="ticket.requirement_changed", ticket_id=child.id,
+            data={"is_required": False, "was_required": was_required,
+                  "reason": f"Substituído por #{str(new_child.id)[:8]}. {reason}",
+                  "replaced_by_ticket_id": str(new_child.id)},
+            user_id=ctx.user_id,
+        )
+        await self._record_audit_event(
+            event_type="ticket.child_replaced", ticket_id=parent.id,
+            data={"old_ticket_id": str(child.id), "new_ticket_id": str(new_child.id), "reason": reason},
+            user_id=ctx.user_id,
+        )
+        return new_child
+
+    async def set_child_requirement(
+        self, child_id: uuid.UUID, is_required: bool, reason: str, ctx: "AccessContext"
+    ) -> Ticket:
+        """Torna uma etapa obrigatória ou não (setor do principal, com justificativa). Nada do filho é apagado."""
+        child, parent = await self._load_child_and_parent(child_id)
+        if not (await self._access_for(parent, ctx)).is_sector_attendant:
+            raise ForbiddenException("Só o setor do chamado principal muda a obrigatoriedade de uma etapa.")
+        self._ensure_parent_open(parent)
+        if is_required and child.status == "CANCELED":
+            raise ConflictException("Uma etapa cancelada não volta a ser obrigatória: substitua-a por outra.")
+        if child.is_required == is_required:
+            return child
+        child.is_required = is_required
+        await self.repo.update_ticket(child)
+        data = {"is_required": is_required, "was_required": not is_required, "reason": reason,
+                "child_ticket_id": str(child.id)}
+        await self._record_audit_event(
+            event_type="ticket.requirement_changed", ticket_id=child.id, data=data, user_id=ctx.user_id
+        )
+        await self._record_audit_event(
+            event_type="ticket.requirement_changed", ticket_id=parent.id, data=data, user_id=ctx.user_id
+        )
+        return await self.repo.get_ticket(child.id)
+
+    async def _actor_sector(self, ctx: "AccessContext") -> uuid.UUID | None:
+        if ctx.sector_id is not None or ctx.employee_id is None:
+            return ctx.sector_id
+        emp = await self.session.get(Employee, ctx.employee_id)
+        return emp.sector_id if emp else None
+
+    async def _ensure_children_done(self, parent: Ticket) -> None:
+        """Recusa resolver ou encerrar o principal com etapa obrigatória pendente (cancelada inclusive)."""
+        pending = [
+            c for c in await self.repo.list_children(parent.id) if c.is_required and c.status not in CLOSED_STATUSES
+        ]
+        if pending:
+            listed = "; ".join(f"#{str(c.id)[:8]} {c.title} ({self._translate_status(c.status)})" for c in pending)
+            raise BusinessRuleException(
+                f"Há subchamados obrigatórios pendentes: {listed}. Conclua, substitua ou dispense essas etapas antes.",
+                rule="required_children_pending",
+            )
+
+    async def _child_completed(self, child: Ticket, user_id: uuid.UUID | None) -> None:
+        """Um filho concluiu: avisa o principal; quando zera os obrigatórios, avisa também o setor do principal."""
+        parent = await self.repo.get_ticket(child.parent_ticket_id)
+        if parent is None:
+            return
+        progress = await self.children_progress(parent)
+        await self._record_audit_event(
+            event_type="ticket.child_completed", ticket_id=parent.id,
+            data={"child_ticket_id": str(child.id), "title": child.title, "status": child.status,
+                  "required_pending": progress.required_pending},
+            user_id=user_id,
+        )
+        await self._emit_ticket_event(
+            "ticket.child_completed", parent, user_id, child_ticket_id=str(child.id), child_title=child.title[:200],
+            required_pending=progress.required_pending, all_required_done=progress.required_pending == 0,
+        )
 
     async def update_ticket(
         self, 
@@ -296,19 +743,20 @@ class ServiceDeskService:
         if not ticket:
             raise NotFoundException("Chamado", ticket_id)
 
-        is_requester = (user_employee_id is not None and ticket.requester_id == user_employee_id)
-        is_sector_attendant = is_technician and (
-            can_read_all
-            or (sector_id is not None and ticket.responsible_sector_id == sector_id)
-            or (user_id is not None and ticket.assignee_id == user_id)
+        access = await self.ticket_access(
+            ticket, user_employee_id=user_employee_id, user_id=user_id, sector_id=sector_id,
+            is_technician=is_technician, can_read_all=can_read_all,
         )
 
         # Regras de autorização para alteração do chamado
-        if not is_sector_attendant:
-            if not is_requester:
+        if not access.is_sector_attendant:
+            if ticket.parent_ticket_id is not None:
+                # Subchamado (ADR-026): só o setor dele atende; solicitante e criadores acompanham e comentam.
+                raise ForbiddenException("Só o setor responsável altera um subchamado.")
+            if not access.is_requester_or_creator:
                 raise ForbiddenException("Apenas o atendente responsável pelo setor ou o solicitante podem gerenciar este chamado.")
-            
-            # Solicitante só tem permissão para finalizar/encerrar seu próprio chamado (RESOLVED ou CLOSED)
+
+            # Solicitante (ou quem abriu) só tem permissão para finalizar/encerrar o chamado (RESOLVED ou CLOSED)
             if (
                 schema.status not in ("RESOLVED", "CLOSED")
                 or schema.priority is not None
@@ -326,6 +774,12 @@ class ServiceDeskService:
         if schema.status is not None and ticket.status == "RESOLVED" and schema.status in REOPEN_TO and not can_reopen_late:
             await self._ensure_reopen_window(ticket)  # antes de mexer em qualquer campo do chamado
 
+        closing = schema.status in CLOSED_STATUSES and old_status not in CLOSED_STATUSES
+        if closing and ticket.parent_ticket_id is None:
+            # Trava o principal antes de olhar os filhos: uma inclusão simultânea espera e depois vê o encerramento.
+            await self.repo.lock_ticket_status(ticket.id)
+            await self._ensure_children_done(ticket)
+
         if schema.category_id is not None:
             cat = await self.repo.get_category(schema.category_id)
             if not cat or not cat.is_active:
@@ -341,6 +795,8 @@ class ServiceDeskService:
         if schema.status is not None:
             # Regras de máquina de estados simples:
             if ticket.status == "CLOSED" and schema.status != "CLOSED":
+                raise StateTransitionException("Chamado", ticket.status, schema.status)
+            if ticket.status == "CANCELED":
                 raise StateTransitionException("Chamado", ticket.status, schema.status)
             ticket.status = schema.status
 
@@ -419,6 +875,9 @@ class ServiceDeskService:
             )
             await self._emit_ticket_event("ticket.assigned", ticket, user_id)
 
+        if closing and ticket.parent_ticket_id is not None:
+            await self._child_completed(ticket, user_id)
+
         return await self.repo.get_ticket(ticket.id)
 
     # ==========================================================================
@@ -445,10 +904,17 @@ class ServiceDeskService:
             sector_id=sector_id,
         )
 
-        if ticket.status == "CLOSED":
+        if ticket.status in ("CLOSED", "CANCELED"):
             raise BusinessRuleException("Não é possível adicionar interações a um chamado fechado.")
 
+        access = await self.ticket_access(
+            ticket, user_employee_id=user_employee_id, user_id=author_id, sector_id=sector_id,
+            is_technician=is_technician, can_read_all=can_read_all,
+        )
         can_internal = is_technician or can_internal_notes
+        if ticket.parent_ticket_id is not None:
+            # Subchamado (ADR-026): nota interna só do setor dele, nunca de quem só acompanha.
+            can_internal = can_internal and access.is_sector_attendant
         if schema.is_internal and not can_internal:
             raise ForbiddenException("Apenas técnicos ou gestores podem criar notas internas.")
 
@@ -459,7 +925,9 @@ class ServiceDeskService:
             is_internal=schema.is_internal
         )
         created_interaction = await self.repo.create_interaction(interaction)
-        await SlaService(self.session).interaction_added(ticket, user_employee_id, schema.is_internal)
+        # Quem abriu em nome de outra pessoa está do lado do solicitante: o comentário dele não é a primeira resposta.
+        if not ((access.is_creator or access.is_parent_creator) and not access.is_sector_attendant):
+            await SlaService(self.session).interaction_added(ticket, user_employee_id, schema.is_internal)
 
         await self._record_audit_event(
             event_type="ticket.interaction_added",
@@ -889,7 +1357,10 @@ class ServiceDeskService:
         res = await self.session.execute(stmt)
         logs = list(res.scalars().all())
 
-        can_view_int = is_technician or can_see_internal
+        can_view_int = await self.can_see_internal(
+            ticket, is_technician or can_see_internal, user_employee_id=user_employee_id, user_id=user_id,
+            sector_id=sector_id, is_technician=is_technician, can_read_all=can_read_all,
+        )
         history = []
         for log in logs:
             if not can_view_int and log.event_type == "ticket.interaction_added" and log.data.get("is_internal"):
@@ -943,7 +1414,7 @@ class ServiceDeskService:
                 stmt = stmt.where(Ticket.created_at < end_at)
             return stmt
 
-        status_counts = {"OPENED": 0, "IN_PROGRESS": 0, "PENDING": 0, "RESOLVED": 0, "CLOSED": 0}
+        status_counts = {"OPENED": 0, "IN_PROGRESS": 0, "PENDING": 0, "RESOLVED": 0, "CLOSED": 0, "CANCELED": 0}
         priority_counts = {"LOW": 0, "MEDIUM": 0, "HIGH": 0, "CRITICAL": 0}
         for column, counts in ((Ticket.status, status_counts), (Ticket.priority, priority_counts)):
             rows = await self.session.execute(in_period(select(column, func.count()).group_by(column)))
@@ -1015,6 +1486,21 @@ class ServiceDeskService:
         elif event_type == "ticket.asset_inspected":
             aprovado = "Aprovado e liberado para estoque" if data.get("approved") else "Reprovado (encaminhado para manutenção)"
             return "Inspeção Técnica de Ativo", f"Conferência concluída: {aprovado}{by_user}."
+        elif event_type == "ticket.children_added":
+            children = data.get("children") or []
+            sectors = ", ".join(c.get("sector_name") or "?" for c in children)
+            return "Subchamados Incluídos", f"{len(children)} subchamado(s) incluído(s){by_user}: {sectors}."
+        elif event_type == "ticket.child_completed":
+            return "Etapa Concluída", f"Subchamado '{data.get('title', '')}' concluído."
+        elif event_type == "ticket.child_canceled":
+            return "Etapa Cancelada", f"Subchamado '{data.get('title', '')}' cancelado{by_user}. Motivo: {data.get('reason', '')}"
+        elif event_type == "ticket.canceled":
+            return "Cancelamento", f"Subchamado cancelado{by_user}. Motivo: {data.get('reason', '')}"
+        elif event_type == "ticket.child_replaced":
+            return "Etapa Substituída", f"Etapa cancelada substituída por outro subchamado{by_user}. Motivo: {data.get('reason', '')}"
+        elif event_type == "ticket.requirement_changed":
+            kind = "obrigatória" if data.get("is_required") else "não obrigatória"
+            return "Obrigatoriedade", f"Etapa marcada como {kind}{by_user}. Motivo: {data.get('reason', '')}"
         return event_type, f"Ação '{event_type}' executada{by_user}."
 
     def _translate_status(self, status: str) -> str:
@@ -1024,6 +1510,7 @@ class ServiceDeskService:
             "PENDING": "Pendente",
             "RESOLVED": "Resolvido",
             "CLOSED": "Encerrado",
+            "CANCELED": "Cancelado",
         }
         return mapping.get(status, status)
 
@@ -1047,6 +1534,9 @@ class ServiceDeskService:
             "requester_employee_id": str(ticket.requester_id),
             "assignee_id": str(ticket.assignee_id) if ticket.assignee_id else None,
             "responsible_sector_id": str(ticket.responsible_sector_id),
+            # Seletor `creator` e regra do solicitante (ignora o `ticket.created` de cada subchamado), ADR-026.
+            "created_by_user_id": str(ticket.created_by_user_id) if ticket.created_by_user_id else None,
+            "parent_ticket_id": str(ticket.parent_ticket_id) if ticket.parent_ticket_id else None,
             **extra,
         }
         await emit_event(

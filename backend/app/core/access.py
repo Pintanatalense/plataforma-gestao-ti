@@ -22,6 +22,8 @@ TICKETS_MANAGE = "service_desk.tickets.manage"
 TICKETS_READ_ALL = "service_desk.tickets.read_all"
 INTERNAL_NOTES = "service_desk.interactions.internal"
 TICKET_REPORTS = "service_desk.reports.read"
+CREATE_ON_BEHALF = "service_desk.tickets.create_on_behalf"
+ROUTE_ANY_SECTOR = "service_desk.tickets.route_any_sector"
 
 
 def has_permission(is_admin: bool, permissions: frozenset[str] | set[str] | list[str], code: str) -> bool:
@@ -63,6 +65,16 @@ class AccessContext:
     @property
     def can_view_reports(self) -> bool:
         return self.has(TICKET_REPORTS)
+
+    @property
+    def can_create_on_behalf(self) -> bool:
+        """Abrir chamado com outro colaborador como solicitante."""
+        return self.has(CREATE_ON_BEHALF)
+
+    @property
+    def can_route_any_sector(self) -> bool:
+        """Escolher setor responsável diferente do definido pela categoria."""
+        return self.has(ROUTE_ANY_SECTOR)
 
     def ticket_scope(self) -> dict:
         """Argumentos de escopo que os serviços de chamados recebem."""

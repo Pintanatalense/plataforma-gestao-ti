@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from app.sla.business_time import _MAX_MINUTES as MAX_MINUTES
 
-SlaState = Literal["NOT_APPLICABLE", "RUNNING", "PAUSED", "MET", "BREACHED"]
+SlaState = Literal["NOT_APPLICABLE", "RUNNING", "PAUSED", "MET", "BREACHED", "CANCELED"]
 
 
 class SlaInfo(BaseModel):
@@ -54,15 +54,30 @@ class SlaAttention(BaseModel):
     overdue: bool
 
 
+class SlaProcesses(BaseModel):
+    """Chamados principais com subchamados (ADR-026), AGORA: abertos e os dois sinais de atraso, separados."""
+
+    open: int = 0
+    # O SLA do próprio principal venceu (só quando a categoria dele tem política).
+    process_overdue: int = 0
+    # Ao menos um subchamado obrigatório está atrasado.
+    steps_overdue: int = 0
+
+
 class SlaReport(BaseModel):
     total: SlaGroup
     by_category: list[SlaGroup] = []
     by_priority: list[SlaGroup] = []
+    # Chamados vinculados (ADR-026): avulso, principal (tempo total do processo) e subchamado (cada etapa).
+    by_kind: list[SlaGroup] = []
+    # Subchamados por setor responsável: o tempo de atendimento de cada departamento.
+    child_by_sector: list[SlaGroup] = []
     # Situação AGORA (não depende do período): chamados com relógio aberto, em risco e atrasados.
     open: int = 0
     at_risk: int = 0
     overdue: int = 0
     attention: list[SlaAttention] = []
+    processes: SlaProcesses = SlaProcesses()
 
 
 # --- Administração (P4-S4): calendários e políticas ---------------------------------------------------------------

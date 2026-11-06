@@ -110,6 +110,24 @@ CATALOG: tuple[PermissionSpec, ...] = (
     PermissionSpec("service_desk.tickets.create", "Abrir chamados", "Abrir novos chamados de suporte", "alteracao"),
     PermissionSpec("service_desk.tickets.read", "Ver os próprios chamados", "Visualizar próprios chamados", "leitura"),
     PermissionSpec("service_desk.tickets.read_all", "Ver todos os chamados", "Visualizar todos os chamados da organização (Gestão)", "leitura"),
+    PermissionSpec(
+        "service_desk.tickets.create_on_behalf",
+        "Abrir chamados em nome de outra pessoa",
+        "Abrir chamados informando outro colaborador como solicitante (quem abriu fica registrado)",
+        "alteracao",
+    ),
+    PermissionSpec(
+        "service_desk.templates.manage",
+        "Gerenciar modelos de atendimento",
+        "Criar, editar e desativar modelos com a lista de subchamados que a abertura de chamado pré-preenche",
+        "alteracao",
+    ),
+    PermissionSpec(
+        "service_desk.tickets.route_any_sector",
+        "Direcionar chamados a qualquer setor",
+        "Escolher, ao abrir um chamado, um setor responsável diferente do definido pela categoria",
+        "alteracao",
+    ),
     PermissionSpec("service_desk.reports.read", "Ver relatórios de chamados", "Acessar relatórios e métricas de desempenho/SLA", "leitura"),
     PermissionSpec("service_desk.interactions.internal", "Notas internas", "Registrar e visualizar notas internas no chamado", "alteracao"),
     PermissionSpec(

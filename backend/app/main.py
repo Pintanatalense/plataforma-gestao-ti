@@ -165,6 +165,8 @@ def _mount_routers(app: FastAPI) -> None:
 
     from app.service_desk.router import router as service_desk_router
     app.include_router(service_desk_router, prefix=f"{prefix}/tickets", tags=["Service Desk"])
+    from app.service_desk.templates_router import router as ticket_templates_router
+    app.include_router(ticket_templates_router, prefix=f"{prefix}/ticket-templates", tags=["Service Desk"])
 
     from app.assets.router import router as assets_router
     app.include_router(assets_router, prefix=f"{prefix}/assets", tags=["Ativos"])

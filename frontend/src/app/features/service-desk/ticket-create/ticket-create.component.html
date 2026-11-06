@@ -191,6 +191,69 @@
         </mat-form-field>
       </div>
 
+      <!-- Solicitante (abertura em nome de outra pessoa) -->
+      <div class="section-card" *ngIf="canOpenOnBehalf" data-testid="requester-section">
+        <div class="section-header">
+          <mat-icon color="primary">person_add</mat-icon>
+          <div>
+            <h3>Solicitante</h3>
+            <p class="section-subtitle">Abra em nome de outro colaborador. Você fica registrado como quem abriu e acompanha o chamado.</p>
+          </div>
+        </div>
+        <mat-form-field appearance="outline" class="full-width">
+          <mat-label>Para quem é o pedido</mat-label>
+          <mat-select [(ngModel)]="requesterId" [ngModelOptions]="{ standalone: true }">
+            <mat-option [value]="null">Eu mesmo</mat-option>
+            <mat-option *ngFor="let emp of employees" [value]="emp.id">{{ emp.name }} ({{ emp.registration }})</mat-option>
+          </mat-select>
+        </mat-form-field>
+      </div>
+
+      <!-- Subchamados (chamados vinculados, ADR-026) -->
+      <div class="section-card" data-testid="children-section">
+        <div class="section-header">
+          <mat-icon color="primary">account_tree</mat-icon>
+          <div>
+            <h3>Subchamados (Opcional)</h3>
+            <p class="section-subtitle">Etapas para outros setores, cada uma com fila e prazo próprios. O chamado principal só é resolvido quando as obrigatórias terminarem.</p>
+          </div>
+        </div>
+
+        <mat-form-field appearance="outline" class="full-width" *ngIf="templates.length > 0">
+          <mat-label>Usar modelo</mat-label>
+          <mat-select [ngModel]="selectedTemplateId" (ngModelChange)="applyTemplate($event)" [ngModelOptions]="{ standalone: true }">
+            <mat-option [value]="null">Nenhum</mat-option>
+            <mat-option *ngFor="let tpl of templates" [value]="tpl.id">{{ tpl.name }}</mat-option>
+          </mat-select>
+          <mat-hint>O modelo só preenche as linhas abaixo; você pode editar antes de abrir.</mat-hint>
+        </mat-form-field>
+
+        <div class="child-row" *ngFor="let spec of childSpecs; let i = index" data-testid="child-spec-row">
+          <mat-form-field appearance="outline" class="child-cat">
+            <mat-label>Categoria</mat-label>
+            <mat-select [(ngModel)]="spec.category_id" [ngModelOptions]="{ standalone: true }">
+              <mat-option *ngFor="let cat of categories" [value]="cat.id">{{ cat.name }}</mat-option>
+            </mat-select>
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="child-title">
+            <mat-label>Título</mat-label>
+            <input matInput [(ngModel)]="spec.title" [ngModelOptions]="{ standalone: true }" maxlength="255">
+          </mat-form-field>
+          <mat-form-field appearance="outline" class="child-desc">
+            <mat-label>Descrição</mat-label>
+            <input matInput [(ngModel)]="spec.description" [ngModelOptions]="{ standalone: true }">
+          </mat-form-field>
+          <mat-checkbox [(ngModel)]="spec.is_required" [ngModelOptions]="{ standalone: true }" color="primary">Obrigatória</mat-checkbox>
+          <button mat-icon-button type="button" (click)="removeChildRow(i)" matTooltip="Remover etapa">
+            <mat-icon>close</mat-icon>
+          </button>
+        </div>
+
+        <button mat-stroked-button type="button" (click)="addChildRow()" data-testid="add-child-row">
+          <mat-icon>add</mat-icon> Adicionar subchamado
+        </button>
+      </div>
+
       <!-- Anexos e Evidências -->
       <div class="section-card attachments-card">
         <div class="section-header">
@@ -234,7 +297,7 @@
         <button mat-stroked-button type="button" routerLink="/service-desk" class="cancel-btn" [disabled]="isSubmitting">
           Cancelar
         </button>
-        <button mat-flat-button color="primary" type="submit" class="submit-btn" [disabled]="ticketForm.invalid || (prerequisiteFields.length > 0 && customFieldsForm.invalid) || isSubmitting">
+        <button mat-flat-button color="primary" type="submit" class="submit-btn" [disabled]="ticketForm.invalid || (prerequisiteFields.length > 0 && customFieldsForm.invalid) || !childrenValid() || isSubmitting">
           <mat-icon *ngIf="!isSubmitting">send</mat-icon>
           <span>{{ isSubmitting ? 'Abrindo Chamado...' : 'Abrir Chamado' }}</span>
         </button>

@@ -1,6 +1,6 @@
 import { Component, OnInit, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { FormBuilder, FormGroup, ReactiveFormsModule, Validators, FormControl } from '@angular/forms';
+import { FormBuilder, FormGroup, FormsModule, ReactiveFormsModule, Validators, FormControl } from '@angular/forms';
 import { ActivatedRoute, Router, RouterModule } from '@angular/router';
 import { MatButtonModule } from '@angular/material/button';
 import { MatInputModule } from '@angular/material/input';
@@ -15,7 +15,15 @@ import { MatTooltipModule } from '@angular/material/tooltip';
 import { HttpResponse } from '@angular/common/http';
 import { filter, firstValueFrom } from 'rxjs';
 
-import { TicketService, TicketCategory, CategoryFormField } from '../ticket.service';
+import {
+  TicketService,
+  TicketCategory,
+  CategoryFormField,
+  ChildTicketSpec,
+  TicketTemplate,
+  newIdempotencyKey
+} from '../ticket.service';
+import { Employee, OrganizationService } from '../../../core/services/organization.service';
 import { Asset, AssetService } from '../../../core/services/asset.service';
 import { AuthService } from '../../../core/auth/auth.service';
 import { AttachmentsService } from '../../../core/services/attachments.service';
@@ -26,6 +34,7 @@ import { apiErrorMessage } from '../../../core/http/api-error';
   standalone: true,
   imports: [
     CommonModule,
+    FormsModule,
     ReactiveFormsModule,
     RouterModule,
     MatButtonModule,
@@ -47,6 +56,7 @@ export class TicketCreateComponent implements OnInit {
   private ticketService = inject(TicketService);
   private assetService = inject(AssetService);
   private attachmentsService = inject(AttachmentsService);
+  private orgService = inject(OrganizationService);
   private router = inject(Router);
   private route = inject(ActivatedRoute);
   private snackBar = inject(MatSnackBar);
@@ -60,6 +70,17 @@ export class TicketCreateComponent implements OnInit {
   prerequisiteFields: CategoryFormField[] = [];
 
   selectedFiles: File[] = [];
+
+  // Chamados vinculados (ADR-026): subchamados opcionais, pré-preenchidos por um modelo.
+  templates: TicketTemplate[] = [];
+  selectedTemplateId: string | null = null;
+  childSpecs: ChildTicketSpec[] = [];
+  // Abertura em nome de outra pessoa (permissão service_desk.tickets.create_on_behalf).
+  canOpenOnBehalf = false;
+  employees: Employee[] = [];
+  requesterId: string | null = null;
+  // Uma chave por intenção de envio: um clique repetido ou uma nova tentativa não duplica o chamado.
+  private idempotencyKey = newIdempotencyKey();
   isSubmitting = false;
   uploadProgressText = '';
 
@@ -105,6 +126,19 @@ export class TicketCreateComponent implements OnInit {
       });
     }
 
+    this.ticketService.listTemplates().subscribe({
+      next: (templates) => (this.templates = templates),
+      error: () => {}
+    });
+
+    this.canOpenOnBehalf = this.authService.hasPermission('service_desk.tickets.create_on_behalf');
+    if (this.canOpenOnBehalf) {
+      this.orgService.getEmployees().subscribe({
+        next: (emps) => (this.employees = emps),
+        error: () => (this.canOpenOnBehalf = false)  // sem acesso à lista de colaboradores: abre para si
+      });
+    }
+
     this.ticketForm.get('category_id')?.valueChanges.subscribe((catId) => {
       this.onCategorySelected(catId);
     });
@@ -138,6 +172,32 @@ export class TicketCreateComponent implements OnInit {
       );
     }
     this.customFieldsForm = this.fb.group(group);
+  }
+
+  applyTemplate(templateId: string | null): void {
+    this.selectedTemplateId = templateId;
+    const template = this.templates.find((t) => t.id === templateId);
+    if (!template) return;
+    this.childSpecs = template.items.map((item) => ({
+      category_id: item.category_id,
+      title: item.title,
+      description: item.description,
+      is_required: item.is_required,
+      responsible_sector_id: item.responsible_sector_id || null,
+      custom_fields: { ...(item.default_custom_fields || {}) }
+    }));
+  }
+
+  addChildRow(): void {
+    this.childSpecs.push({ category_id: '', title: '', description: '', is_required: true });
+  }
+
+  removeChildRow(index: number): void {
+    this.childSpecs.splice(index, 1);
+  }
+
+  childrenValid(): boolean {
+    return this.childSpecs.every((s) => s.category_id && s.title.trim() && s.description.trim());
   }
 
   onFilesSelected(event: any): void {
@@ -174,6 +234,11 @@ export class TicketCreateComponent implements OnInit {
       return;
     }
 
+    if (!this.childrenValid()) {
+      this.snackBar.open('Cada subchamado precisa de categoria, título e descrição.', 'Fechar', { duration: 5000 });
+      return;
+    }
+
     this.isSubmitting = true;
     this.uploadProgressText = '';
 
@@ -186,11 +251,15 @@ export class TicketCreateComponent implements OnInit {
       priority: val.priority,
       category_id: val.category_id || undefined,
       asset_ids: val.asset_id ? [val.asset_id] : [],
-      custom_fields: customFieldsVal
+      custom_fields: customFieldsVal,
+      requester_id: this.canOpenOnBehalf && this.requesterId ? this.requesterId : undefined,
+      template_id: this.selectedTemplateId || undefined,
+      children: this.childSpecs
     };
 
-    this.ticketService.createTicket(payload).subscribe({
+    this.ticketService.createTicket(payload, this.idempotencyKey).subscribe({
       next: async (ticket) => {
+        this.idempotencyKey = newIdempotencyKey();
         const failedUploads: string[] = [];
         if (this.selectedFiles.length > 0) {
           this.uploadProgressText = `Enviando ${this.selectedFiles.length} anexo(s)...`;

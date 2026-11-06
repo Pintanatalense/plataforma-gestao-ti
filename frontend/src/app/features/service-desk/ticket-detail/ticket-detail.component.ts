@@ -38,6 +38,7 @@ import { HttpResponse } from '@angular/common/http';
 import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
 import { apiErrorMessage } from '../../../core/http/api-error';
 import { SlaBadgeComponent } from '../sla-badge/sla-badge.component';
+import { TicketChildrenComponent } from '../ticket-children/ticket-children.component';
 
 @Component({
   selector: 'app-ticket-detail',
@@ -63,7 +64,8 @@ import { SlaBadgeComponent } from '../sla-badge/sla-badge.component';
     MatProgressSpinnerModule,
     AttachmentsComponent,
     LoadStateComponent,
-    SlaBadgeComponent
+    SlaBadgeComponent,
+    TicketChildrenComponent
   ],
   templateUrl: './ticket-detail.component.html',
   styleUrls: ['./ticket-detail.component.scss']
@@ -267,7 +269,20 @@ export class TicketDetailComponent implements OnInit {
 
   canCloseTicket(): boolean {
     if (!this.ticket) return false;
+    // Subchamado: só o setor dele altera (ADR-026); cancelado é terminal.
+    if (this.ticket.status === 'CANCELED' || (this.ticket.parent_ticket_id && !this.isTechnician)) return false;
     return this.ticket.status !== 'CLOSED' && (this.isTechnician || this.isRequester());
+  }
+
+  isCreator(): boolean {
+    return !!this.ticket?.created_by_user_id && this.ticket.created_by_user_id === this.authService.currentUserValue?.id;
+  }
+
+  /** Solicitante, quem abriu ou atendente incluem subchamados num principal aberto (o backend confere o setor). */
+  canAddChildren(): boolean {
+    if (!this.ticket || this.ticket.parent_ticket_id) return false;
+    if (['RESOLVED', 'CLOSED', 'CANCELED'].includes(this.ticket.status)) return false;
+    return this.isTechnician || this.isRequester() || this.isCreator();
   }
 
   hasCustomFields(): boolean {
@@ -412,6 +427,7 @@ export class TicketDetailComponent implements OnInit {
       case 'PENDING': return 'Pendente';
       case 'RESOLVED': return 'Resolvido';
       case 'CLOSED': return 'Encerrado';
+      case 'CANCELED': return 'Cancelado';
       default: return status;
     }
   }

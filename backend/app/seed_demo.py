@@ -188,7 +188,9 @@ async def sync_roles_and_permissions(session: AsyncSession) -> dict[str, Role]:
     # 2. Atendente: Solicitante + atendimento de chamados do seu setor/unidade
     atendente_codes = solicitante_codes + [
         "service_desk.tickets.manage",
+        "service_desk.tickets.route_any_sector",
     "service_desk.categories.manage",
+        "service_desk.templates.manage",
         "service_desk.interactions.internal",
         "assets.read",
         "stock.read",
@@ -1166,6 +1168,7 @@ async def _seed_demo_impl(session: AsyncSession) -> None:
             "data_admissao": (date.today() + timedelta(days=5)).isoformat(),
         },
         requester_id=employee_map["Carla Albuquerque"].id,
+        created_by_user_id=admin_user.id,  # aberto pela carga de demonstração
         assignee_id=user_map["gabriel.ti@empresa.com.br"].id,
         origin_unit_id=matriz.id,
         origin_sector_id=sec_rh.id,
@@ -1195,6 +1198,7 @@ async def _seed_demo_impl(session: AsyncSession) -> None:
             "mensagem_erro": "Teclas de espaço e interrogação sem resposta mecânica",
         },
         requester_id=employee_map["Patrícia Lima"].id,
+        created_by_user_id=admin_user.id,  # aberto pela carga de demonstração
         assignee_id=user_map["gabriel.ti@empresa.com.br"].id,
         origin_unit_id=filial.id,
         origin_sector_id=sec_adm.id,
@@ -1233,6 +1237,7 @@ async def _seed_demo_impl(session: AsyncSession) -> None:
             "tipo_permissao": "Leitura e Gravação",
         },
         requester_id=employee_map["Marcos Rocha"].id,
+        created_by_user_id=admin_user.id,  # aberto pela carga de demonstração
         assignee_id=None,
         origin_unit_id=filial.id,
         origin_sector_id=sec_operacional.id,
@@ -1254,6 +1259,7 @@ async def _seed_demo_impl(session: AsyncSession) -> None:
             "centro_custo": "CC-201 (Comercial Matriz)",
         },
         requester_id=employee_map["Mariana Costa"].id,
+        created_by_user_id=admin_user.id,  # aberto pela carga de demonstração
         assignee_id=None,
         origin_unit_id=matriz.id,
         origin_sector_id=sec_comercial.id,
@@ -1274,6 +1280,7 @@ async def _seed_demo_impl(session: AsyncSession) -> None:
             "ambiente": "Bancada de Triagem e Expedição",
         },
         requester_id=employee_map["Marcos Rocha"].id,
+        created_by_user_id=admin_user.id,  # aberto pela carga de demonstração
         assignee_id=user_map["felipe.manutencao@empresa.com.br"].id,
         origin_unit_id=filial.id,
         origin_sector_id=sec_operacional.id,

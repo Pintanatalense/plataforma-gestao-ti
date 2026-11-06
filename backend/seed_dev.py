@@ -275,6 +275,7 @@ async def seed():
             status="IN_PROGRESS",
             category_id=cat_chamado_equip.id,
             requester_id=emp_solicitante.id,
+            created_by_user_id=user_solicitante.id,
             assignee_id=emp_tec.id,
             origin_unit_id=unit_sp.id,
             origin_sector_id=sector_rh.id,

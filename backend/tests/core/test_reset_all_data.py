@@ -53,7 +53,7 @@ async def _populate(db: AsyncSession):
     user = await make_user(db, emp)
     ticket = Ticket(
         title="Chamado", description="x", priority="LOW", status="OPENED", custom_fields={}, requester_id=emp.id,
-        origin_unit_id=org.unit.id, origin_sector_id=org.sector.id, responsible_sector_id=org.sector.id,
+        created_by_user_id=user.id, origin_unit_id=org.unit.id, origin_sector_id=org.sector.id, responsible_sector_id=org.sector.id,
         category_id=category.id,
     )
     db.add(ticket)

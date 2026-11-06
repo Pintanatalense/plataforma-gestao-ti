@@ -1580,3 +1580,27 @@
   }
 }
 
+
+// Chamados vinculados (ADR-026)
+.parent-banner {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: var(--mat-sys-surface-container);
+  font-size: 14px;
+
+  .tag {
+    padding: 0 6px;
+    border-radius: 10px;
+    font-size: 11px;
+    background: var(--mat-sys-surface-container-high);
+  }
+}
+
+.meta-badge.status.status-canceled {
+  background: #f1f5f9;
+  color: #475569;
+}

@@ -30,6 +30,7 @@
         <th mat-header-cell *matHeaderCellDef> Assunto </th>
         <td mat-cell *matCellDef="let element">
           <span class="ticket-title">{{ element.title }}</span>
+          <span class="child-chip" *ngIf="element.parent_ticket_id" matTooltip="Subchamado de um chamado principal">subchamado</span>
         </td>
       </ng-container>
 

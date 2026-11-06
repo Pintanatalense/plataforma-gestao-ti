@@ -87,6 +87,97 @@ export interface Ticket {
   interactions: TicketInteraction[];
   materials?: TicketMaterial[];
   sla?: SlaInfo;
+  created_by_user_id?: string | null;
+  created_by_name?: string | null;
+  // Chamados vinculados (ADR-026). `parent_ticket_id` só vem para quem pode ver o principal.
+  parent_ticket_id?: string | null;
+  is_required?: boolean;
+  replaces_ticket_id?: string | null;
+  template_id?: string | null;
+  children_progress?: ChildrenProgress | null;
+}
+
+export interface ChildrenProgress {
+  total: number;
+  done: number;
+  canceled: number;
+  required_pending: number;
+  overdue: number;
+  steps_overdue: number;
+  process_overdue: boolean;
+}
+
+export interface ChildTicketSummary {
+  id: string;
+  title: string;
+  status: string;
+  is_required: boolean;
+  responsible_sector_id: string;
+  responsible_sector_name?: string | null;
+  category_id?: string | null;
+  category_name?: string | null;
+  assignee_name?: string | null;
+  created_at: string;
+  replaces_ticket_id?: string | null;
+  replaced_by_ticket_id?: string | null;
+  resolution_due_at?: string | null;
+  overdue: boolean;
+  at_risk: boolean;
+}
+
+export interface ChildrenOverview {
+  progress: ChildrenProgress;
+  children: ChildTicketSummary[];
+}
+
+/** Um subchamado a criar: passa pelas mesmas regras de um chamado comum no backend. */
+export interface ChildTicketSpec {
+  category_id: string;
+  title: string;
+  description: string;
+  is_required: boolean;
+  responsible_sector_id?: string | null;
+  custom_fields?: Record<string, any>;
+  priority?: string | null;
+}
+
+export interface TicketTemplateItem {
+  id?: string;
+  category_id: string;
+  responsible_sector_id?: string | null;
+  title: string;
+  description: string;
+  default_custom_fields?: Record<string, any>;
+  is_required: boolean;
+  sort?: number;
+}
+
+export interface TicketTemplate {
+  id: string;
+  name: string;
+  description?: string | null;
+  is_active: boolean;
+  items: TicketTemplateItem[];
+}
+
+export const STATUS_LABELS: Record<string, string> = {
+  OPENED: 'Aberto',
+  IN_PROGRESS: 'Em Atendimento',
+  PENDING: 'Pendente',
+  RESOLVED: 'Resolvido',
+  CLOSED: 'Encerrado',
+  CANCELED: 'Cancelado'
+};
+
+/** Uma chave por intenção de envio: repetir o mesmo pedido não duplica chamados (ADR-026). */
+export function newIdempotencyKey(): string {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID();
+  }
+  return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+    const r = (Math.random() * 16) | 0;
+    return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
+  });
 }
 
 @Injectable({
@@ -104,15 +195,68 @@ export class TicketService {
     return this.http.get<Ticket>(`${this.apiUrl}/${id}`);
   }
 
-  createTicket(payload: {
-    title: string;
-    description: string;
-    priority: string;
-    category_id?: string;
-    asset_ids?: string[];
-    custom_fields?: Record<string, any>;
-  }): Observable<Ticket> {
-    return this.http.post<Ticket>(this.apiUrl, payload);
+  createTicket(
+    payload: {
+      title: string;
+      description: string;
+      priority: string;
+      category_id?: string;
+      asset_ids?: string[];
+      custom_fields?: Record<string, any>;
+      requester_id?: string | null;
+      template_id?: string | null;
+      children?: ChildTicketSpec[];
+    },
+    idempotencyKey?: string
+  ): Observable<Ticket> {
+    return this.http.post<Ticket>(this.apiUrl, payload, { headers: this.keyHeader(idempotencyKey) });
+  }
+
+  private keyHeader(key?: string): Record<string, string> {
+    return key ? { 'Idempotency-Key': key } : {};
+  }
+
+  // --- Chamados vinculados (ADR-026) ---------------------------------------------------------------------
+
+  getChildren(parentId: string): Observable<ChildrenOverview> {
+    return this.http.get<ChildrenOverview>(`${this.apiUrl}/${parentId}/children`);
+  }
+
+  addChildren(parentId: string, children: ChildTicketSpec[], idempotencyKey?: string): Observable<Ticket[]> {
+    return this.http.post<Ticket[]>(
+      `${this.apiUrl}/${parentId}/children`, { children }, { headers: this.keyHeader(idempotencyKey) }
+    );
+  }
+
+  cancelChild(childId: string, reason: string): Observable<Ticket> {
+    return this.http.post<Ticket>(`${this.apiUrl}/${childId}/cancel`, { reason });
+  }
+
+  replaceChild(childId: string, reason: string, child: ChildTicketSpec): Observable<Ticket> {
+    return this.http.post<Ticket>(`${this.apiUrl}/${childId}/replace`, { reason, child });
+  }
+
+  setChildRequirement(childId: string, isRequired: boolean, reason: string): Observable<Ticket> {
+    return this.http.patch<Ticket>(`${this.apiUrl}/${childId}/requirement`, { is_required: isRequired, reason });
+  }
+
+  // --- Modelos de atendimento ----------------------------------------------------------------------------
+
+  listTemplates(includeInactive = false): Observable<TicketTemplate[]> {
+    const query = includeInactive ? '?include_inactive=true' : '';
+    return this.http.get<TicketTemplate[]>(`/api/v1/ticket-templates${query}`);
+  }
+
+  createTemplate(payload: Omit<TicketTemplate, 'id'>): Observable<TicketTemplate> {
+    return this.http.post<TicketTemplate>('/api/v1/ticket-templates', payload);
+  }
+
+  updateTemplate(id: string, payload: Omit<TicketTemplate, 'id'>): Observable<TicketTemplate> {
+    return this.http.put<TicketTemplate>(`/api/v1/ticket-templates/${id}`, payload);
+  }
+
+  deactivateTemplate(id: string): Observable<void> {
+    return this.http.delete<void>(`/api/v1/ticket-templates/${id}`);
   }
 
   addInteraction(ticketId: string, message: string, is_internal: boolean): Observable<TicketInteraction> {

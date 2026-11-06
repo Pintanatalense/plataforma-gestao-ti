@@ -6,12 +6,17 @@ import uuid
 from datetime import date
 from typing import Sequence
 
-from fastapi import APIRouter, Depends, Query, status
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.access import AccessContext
 from app.core.dependencies import get_access_context, get_current_user_id, get_db, require_permission
 from app.service_desk.schemas import (
+    ChildrenAdd,
+    ChildrenOverview,
+    TicketCancel,
+    TicketReplace,
+    TicketRequirementUpdate,
     TicketCategoryResponse,
     TicketCategoryCreate,
     TicketCategoryUpdate,
@@ -27,6 +32,7 @@ from app.service_desk.schemas import (
     TicketAssetInspectRequest,
     TicketsReport,
 )
+from app.service_desk import idempotency
 from app.service_desk.services import ServiceDeskService
 from app.sla.router import SLA_MANAGE
 from app.sla.service import SlaService
@@ -100,14 +106,24 @@ async def list_tickets(
     )
     
     await SlaService(session).attach(tickets)
+    visible_parents = await service.visible_parent_ids(tickets, **_scope(ctx))
     responses = []
     for t in tickets:
         resp = TicketResponse.model_validate(t)
-        if not ctx.can_internal_notes:
+        if not await service.can_see_internal(t, ctx.can_internal_notes, **_scope(ctx)):
             resp.interactions = [i for i in resp.interactions if not i.is_internal]
+        if resp.parent_ticket_id not in visible_parents:
+            resp.parent_ticket_id = None
         responses.append(resp)
         
     return responses
+
+
+def _scope(ctx: AccessContext) -> dict:
+    return {
+        "user_employee_id": ctx.employee_id, "user_id": ctx.user_id, "sector_id": ctx.sector_id,
+        "is_technician": ctx.is_technician, "can_read_all": ctx.can_read_all,
+    }
 
 
 @router.get(
@@ -150,9 +166,14 @@ async def get_ticket(
     
     await SlaService(session).attach([ticket])
     resp = TicketResponse.model_validate(ticket)
-    if not ctx.can_internal_notes:
+    if not await service.can_see_internal(ticket, ctx.can_internal_notes, **_scope(ctx)):
         resp.interactions = [i for i in resp.interactions if not i.is_internal]
-        
+    if ticket.parent_ticket_id and not await service.can_view_ticket(ticket.parent_ticket_id, ctx):
+        resp.parent_ticket_id = None
+    if ticket.parent_ticket_id is None:
+        progress = await service.children_progress(ticket)
+        resp.children_progress = progress if progress.total else None
+
     return resp
 
 
@@ -164,26 +185,54 @@ async def get_ticket(
 )
 async def create_ticket(
     schema: TicketCreate,
+    response: Response,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
     ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
 ) -> TicketResponse:
-    # Mesmo quem não é tecnico pode abrir (o usuario atual é o requester se tiver employee_id)
-    # Requisito minimo é ter employee_id
-    if not ctx.employee_id:
-        from app.core.exceptions import ForbiddenException
-        raise ForbiddenException("Apenas colaboradores vinculados a um Employee podem abrir chamados.")
-
+    # Solicitante = o próprio colaborador, ou outro com service_desk.tickets.create_on_behalf.
+    # Quem abriu (ctx.user_id) fica registrado como criador em qualquer caso.
     service = ServiceDeskService(session)
-    ticket = await service.create_ticket(
-        schema, 
-        requester_id=ctx.employee_id, 
-        origin_unit_id=ctx.unit_id, 
-        origin_sector_id=ctx.sector_id,
-        user_id=ctx.user_id
+    claimed = await _claim(session, ctx, idempotency_key, idempotency.CREATE_TICKET, None, schema)
+    if claimed and claimed.replay_ids is not None:
+        [ticket] = await _replay(session, service, response, claimed.replay_ids)
+        return ticket
+    requester = await service.resolve_requester(
+        schema.requester_id, own_employee_id=ctx.employee_id, can_create_on_behalf=ctx.can_create_on_behalf
     )
+    ticket = await service.create_ticket(
+        schema,
+        requester_id=requester.id,
+        origin_unit_id=requester.unit_id,
+        origin_sector_id=requester.sector_id,
+        user_id=ctx.user_id,
+        can_route_any_sector=ctx.can_route_any_sector,
+    )
+    if claimed:
+        await idempotency.record(session, claimed, [ticket.id])
     await SlaService(session).attach([ticket])
     await session.commit()
     return ticket
+
+
+async def _claim(session, ctx: AccessContext, raw_key, endpoint, target_id, body):
+    """Reserva a ``Idempotency-Key`` (ver ``app.service_desk.idempotency``); sem cabeçalho, ``None``."""
+    key = idempotency.parse_key(raw_key)
+    if key is None:
+        return None
+    return await idempotency.claim(
+        session, user_id=ctx.user_id, key=key, endpoint=endpoint, target_id=target_id,
+        body_hash=idempotency.request_hash(body.model_dump(mode="json")),
+    )
+
+
+async def _replay(session, service: ServiceDeskService, response: Response, ids) -> list:
+    """Pedido repetido: devolve os chamados já criados, com 200 e ``Idempotent-Replay: true``."""
+    tickets = [await service.repo.get_ticket(i) for i in ids]
+    await SlaService(session).attach(tickets)
+    response.status_code = status.HTTP_200_OK
+    response.headers["Idempotent-Replay"] = "true"
+    return tickets
 
 
 @router.patch(
@@ -211,6 +260,105 @@ async def update_ticket(
     await SlaService(session).attach([ticket])
     await session.commit()
     return ticket
+
+
+@router.get(
+    "/{ticket_id}/children",
+    response_model=ChildrenOverview,
+    summary="Resumo dos subchamados e o progresso do chamado principal",
+)
+async def list_children(
+    ticket_id: uuid.UUID,
+    ctx: AccessContext = Depends(get_access_context),
+    session: AsyncSession = Depends(get_db),
+) -> ChildrenOverview:
+    return await ServiceDeskService(session).list_children_for_user(ticket_id, ctx)
+
+
+@router.post(
+    "/{ticket_id}/children",
+    response_model=list[TicketResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Inclui subchamados em um chamado principal aberto",
+)
+async def add_children(
+    ticket_id: uuid.UUID,
+    body: ChildrenAdd,
+    response: Response,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    ctx: AccessContext = Depends(get_access_context),
+    session: AsyncSession = Depends(get_db),
+) -> list[TicketResponse]:
+    service = ServiceDeskService(session)
+    claimed = await _claim(session, ctx, idempotency_key, idempotency.ADD_CHILDREN, ticket_id, body)
+    if claimed and claimed.replay_ids is not None:
+        return await _replay(session, service, response, claimed.replay_ids)
+    children = await service.add_children(ticket_id, body.children, ctx)
+    if claimed:
+        await idempotency.record(session, claimed, [c.id for c in children])
+    await SlaService(session).attach(children)
+    await session.commit()
+    return children
+
+
+@router.post(
+    "/{ticket_id}/cancel",
+    response_model=TicketResponse,
+    summary="Cancela um subchamado, com justificativa",
+)
+async def cancel_child(
+    ticket_id: uuid.UUID,
+    body: TicketCancel,
+    ctx: AccessContext = Depends(get_access_context),
+    session: AsyncSession = Depends(get_db),
+) -> TicketResponse:
+    service = ServiceDeskService(session)
+    child = await service.cancel_child(ticket_id, body.reason, ctx)
+    await SlaService(session).attach([child])
+    await session.commit()
+    resp = TicketResponse.model_validate(child)
+    if not await service.can_see_internal(child, ctx.can_internal_notes, **_scope(ctx)):
+        resp.interactions = [i for i in resp.interactions if not i.is_internal]
+    return resp
+
+
+@router.post(
+    "/{ticket_id}/replace",
+    response_model=TicketResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Substitui uma etapa cancelada por um subchamado novo",
+)
+async def replace_child(
+    ticket_id: uuid.UUID,
+    body: TicketReplace,
+    ctx: AccessContext = Depends(get_access_context),
+    session: AsyncSession = Depends(get_db),
+) -> TicketResponse:
+    new_child = await ServiceDeskService(session).replace_child(ticket_id, body.reason, body.child, ctx)
+    await SlaService(session).attach([new_child])
+    await session.commit()
+    return new_child
+
+
+@router.patch(
+    "/{ticket_id}/requirement",
+    response_model=TicketResponse,
+    summary="Torna um subchamado obrigatório ou não, com justificativa",
+)
+async def set_child_requirement(
+    ticket_id: uuid.UUID,
+    body: TicketRequirementUpdate,
+    ctx: AccessContext = Depends(get_access_context),
+    session: AsyncSession = Depends(get_db),
+) -> TicketResponse:
+    service = ServiceDeskService(session)
+    child = await service.set_child_requirement(ticket_id, body.is_required, body.reason, ctx)
+    await SlaService(session).attach([child])
+    await session.commit()
+    resp = TicketResponse.model_validate(child)
+    if not await service.can_see_internal(child, ctx.can_internal_notes, **_scope(ctx)):
+        resp.interactions = [i for i in resp.interactions if not i.is_internal]
+    return resp
 
 
 @router.get(

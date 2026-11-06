@@ -159,3 +159,14 @@
     color: #64748b;
   }
 }
+
+// Chamados vinculados (ADR-026)
+.child-chip {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 6px;
+  border-radius: 10px;
+  font-size: 11px;
+  background: var(--mat-sys-surface-container);
+  color: var(--mat-sys-on-surface-variant);
+}

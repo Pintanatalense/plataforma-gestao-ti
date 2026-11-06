@@ -256,6 +256,7 @@ class ConversationEngine:
                 origin_unit_id=ctx.unit_id,
                 origin_sector_id=ctx.sector_id,
                 user_id=ctx.user_id,
+                can_route_any_sector=ctx.can_route_any_sector,
             )
             self._reset(conv)
             return (
