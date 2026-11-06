@@ -18,7 +18,7 @@ em [`docs/decisions/`](docs/decisions/).
 **Agentes de IA** seguem também o [AGENTS.md](AGENTS.md): validam e corrigem localmente (`ci-local`) antes de publicar,
 não usam o CI para descobrir erro e nunca mesclam sem autorização humana.
 
-Dependabot: PRs semanais de dependências (limite baixo no início). Versão **maior** de runtime (Python, Node, PostgreSQL, Nginx, uv) não é proposta automaticamente; o `uv` do `backend/Dockerfile` é atualizado à mão.
+Dependabot: atualizações de rotina **desligadas** (limite 0 em .github/dependabot.yml); as dependências são atualizadas numa etapa única antes de cada versão, com um ci-local só. Versão **maior** de runtime (Python, Node, PostgreSQL, Nginx, uv) não é proposta automaticamente; o `uv` do `backend/Dockerfile` é atualizado à mão.
 
 ## Qualidade mínima
 
@@ -76,5 +76,5 @@ O plano gratuito dá 2.000 minutos por mês (e o aviso chega aos 90%). Uma execu
 - **Um PR, poucos commits.** Cada `push` num PR reexecuta o que mudou. Junte as correções de revisão em um único commit em vez de um commit por achado.
 - **O CI só roda o que o PR tocou** (job `changes`): só documentação não roda nada pesado; só frontend não roda o backend. Mudar `.github/workflows/` roda tudo.
 - **Não há execução em `push` na `main`** (o PR já rodou o mesmo código). A suíte completa (backend em SQLite e em PostgreSQL real, auditoria de dependências) roda toda segunda-feira e sob demanda (aba *Actions* → *CI* → *Run workflow*).
-- **Dependabot é mensal e sem rebase automático**: cada rebase reexecuta o CI. Revise os PRs dele em lote, um por vez.
+- **Dependabot sem PRs de rotina**: cada PR dele roda o CI. Atualize as dependências de uma vez, antes de cada versão; para reativar, volte o limite no ecossistema desejado.
 - Consulte o gasto em *Settings → Billing → Usage*. Para nunca cobrar além do incluído, defina um orçamento de US$ 0 para Actions (isso bloqueia as execuções ao chegar no limite).
