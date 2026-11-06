@@ -14,12 +14,15 @@ independente que confirma o trabalho, não a ferramenta para encontrar erros. A 
   ou proposta aprovada.
 - Uma mudança lógica por branch (`fix/…`, `feat/…`, `docs/…`, `ci/…`, `chore/…`), a partir da `main` ou do PR de que
   depende (PR empilhado, declarado na descrição).
+- **Um PR por módulo.** As etapas de uma mesma entrega (por exemplo, a Central de Mensagens ou os chamados vinculados)
+  podem ser commits ou branches separados durante o trabalho, mas são publicadas juntas num PR só. O responsável
+  testa o módulo completo no sistema, e o portão completo roda uma vez por PR, não uma vez por etapa.
 
 ## 2. Durante o desenvolvimento
 
 - Escreva ou ajuste os testes junto com o código, incluindo o cenário de falha.
-- Para iterar rápido, rode só o que importa (`uv run pytest tests/<área>`, `npm run test -- <spec>`). Isso **não**
-  substitui o portão do item 3.
+- Para iterar rápido, rode só o que importa (`uv run pytest tests/<área>`, `npm run test -- <spec>`). Entre as
+  etapas de um módulo, esses testes direcionados bastam. Eles **não** substituem o portão do item 3 antes da publicação.
 
 ## 3. Portão antes de publicar (obrigatório)
 
@@ -29,6 +32,8 @@ bash scripts/ci-local.sh        # ou: make ci-local
 
 - Roda em contêineres as mesmas verificações do CI para as áreas alteradas. Mexeu em `.github/workflows/`, CI ou
   infraestrutura: o modo padrão já roda tudo; use `--all` em caso de dúvida.
+- PR de módulo: rode `bash scripts/ci-local.sh --all` no commit que vai ser publicado. Uma correção depois disso exige
+  uma nova rodada antes do push.
 - **Falhou?** Leia o log indicado (`.ci-local/*.log`), ache a causa raiz, corrija **todas** as falhas e rode de novo.
   Repita até `RESULTADO: tudo passou`. Só então faça o push.
 - É proibido, para "passar": pular ou desligar teste, marcar `skip`/`xfail` sem motivo registrado, afrouxar asserção,
