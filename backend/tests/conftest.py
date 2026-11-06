@@ -17,6 +17,7 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import NullPool
 
 from tests._guard import DEFAULT_TEST_DATABASE_URL, assert_safe_test_url
 
@@ -59,9 +60,12 @@ if USE_PG_TEST and TEST_PG_URL:
 else:
     ACTIVE_TEST_DATABASE_URL = "sqlite+aiosqlite:///:memory:"
 
+# Em PostgreSQL, sem pool: cada teste roda num event loop novo e uma conexão asyncpg guardada no pool
+# continua presa ao loop anterior ("another operation is in progress").
 test_engine = create_async_engine(
     ACTIVE_TEST_DATABASE_URL,
     echo=False,
+    **({"poolclass": NullPool} if ACTIVE_TEST_DATABASE_URL.startswith("postgresql") else {}),
 )
 
 TestSessionLocal = async_sessionmaker(
@@ -78,6 +82,10 @@ async def setup_database():
         await conn.run_sync(Base.metadata.create_all)
     yield
     async with test_engine.begin() as conn:
+        if conn.dialect.name == "sqlite":
+            # Algum teste liga `PRAGMA foreign_keys=ON` na conexão em memória (compartilhada). Com ela ligada, o DROP do
+            # SQLite apaga linha a linha e esbarra nas FKs RESTRICT do chamado para o próprio principal (ADR-026).
+            await conn.exec_driver_sql("PRAGMA foreign_keys=OFF")
         await conn.run_sync(Base.metadata.drop_all)
 
 

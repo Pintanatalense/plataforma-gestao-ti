@@ -8,8 +8,10 @@
 #  1. valida os arquivos (gzip/tar íntegros; o tar só pode conter data/attachments e app/static);
 #  2. grava e confere cópias de segurança no diretório atual: pre-restore-<data>.sql.gz (banco) e, se for
 #     restaurar arquivos, pre-restore-arquivos-<data>.tar.gz (anexos e logo ATUAIS);
-#  3. para o backend E o worker (o worker continuaria gravando durante a restauração);
-#  4. restaura o banco em uma única transação (aborta no primeiro erro, sem aplicar nada);
+#  3. garante os papéis de banco (o dump cita o papel dono e o da Evolution; ADR-022) e para o backend E o worker
+#     (o worker continuaria gravando durante a restauração);
+#  4. restaura o banco em uma única transação (aborta no primeiro erro, sem aplicar nada) e roda o db-init
+#     (papéis, dono das tabelas e permissões da aplicação; migrations, se o backup for de uma versão anterior);
 #  5. sobe o backend e, se informado o tar, extrai primeiro numa pasta temporária e SÓ DEPOIS troca o conteúdo
 #     dos volumes (se a extração falhar, os arquivos atuais continuam intactos);
 #  6. sobe o worker.
@@ -54,6 +56,10 @@ if [ -n "$FILES_TAR" ]; then
   tar -tz < "$PRE_FILES" > /dev/null || abort_safe "A cópia de segurança dos arquivos está corrompida"
 fi
 
+echo "==> Papéis de banco (o dump referencia o papel dono e o da Evolution)"
+docker compose run --rm --no-deps db-init python -m app.db_roles \
+  || abort_safe "Não consegui criar/atualizar os papéis de banco (veja a mensagem acima; o .env tem DB_*_PASSWORD?)"
+
 echo "==> Parando o backend e o worker"
 docker compose stop worker backend
 
@@ -63,6 +69,18 @@ if gunzip -c "$FILE" | docker compose exec -T postgres psql -U "$DB_USER" -d "$D
 else
   echo "!! Falha na restauração: nada foi aplicado. Cópia de segurança: $PRE_SQL" >&2
   docker compose start backend worker
+  exit 1
+fi
+
+# Um backup antigo (de antes dos papéis separados, ADR-022) traz as tabelas do superusuário: o db-init devolve a
+# posse ao papel dono, reaplica as permissões da aplicação e leva o banco à última migration.
+echo "==> Papéis, permissões e migrations (db-init)"
+if ! docker compose run --rm --no-deps db-init; then
+  {
+    echo "!! O BANCO foi restaurado, mas o db-init falhou. Backend e worker NÃO foram iniciados."
+    echo "   Veja a mensagem acima, corrija e rode:  docker compose run --rm db-init && docker compose start backend worker"
+    echo "   Banco de antes da restauração: $PRE_SQL"
+  } >&2
   exit 1
 fi
 

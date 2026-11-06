@@ -431,18 +431,20 @@ export class AdminComponent implements OnInit {
     });
   }
 
-  downloadBackupFile(backup: DbBackup): void {
-    this.adminService.downloadBackup(backup.id).subscribe({
+  downloadBackupFile(backup: DbBackup, files = false): void {
+    const name = files ? backup.files_filename || 'arquivos.tar.gz' : backup.filename;
+    const request = files ? this.adminService.downloadBackupFiles(backup.id) : this.adminService.downloadBackup(backup.id);
+    request.subscribe({
       next: (blob) => {
         const url = window.URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.href = url;
-        a.download = backup.filename;
+        a.download = name;
         document.body.appendChild(a);
         a.click();
         document.body.removeChild(a);
         window.URL.revokeObjectURL(url);
-        this.snackBar.open(`Download de ${backup.filename} iniciado.`, 'OK', { duration: 3000 });
+        this.snackBar.open(`Download de ${name} iniciado.`, 'OK', { duration: 3000 });
       },
       error: (err) => {
         const msg = apiErrorMessage(err, 'Falha ao baixar arquivo de backup.');

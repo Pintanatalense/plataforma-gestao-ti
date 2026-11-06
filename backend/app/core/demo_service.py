@@ -687,11 +687,15 @@ class DemoManagementService:
             ("Wi-Fi caindo na sala de reuniões", "Cai várias vezes durante as videochamadas.", "CRITICAL", "OPENED", 4, None, "Rede e internet"),
             ("Solicitação de mouse sem fio", "O atual está com o botão falhando.", "LOW", "CLOSED", 5, admin, "Outros"),
         ]
+        account_of = {u.employee_id: u for u in users if u.employee_id}
         for title, description, priority, status, requester_idx, assignee, category in sample:
             requester = employees[requester_idx]
+            # Quem abriu: a conta do próprio solicitante; sem conta, quem carregou a demonstração.
+            creator = account_of.get(requester.id) or admin or technician
             ticket = Ticket(
                 title=title, description=description, priority=priority, status=status, custom_fields={},
                 requester_id=requester.id, assignee_id=assignee.id if assignee else None,
+                created_by_user_id=creator.id,
                 origin_unit_id=requester.unit_id, origin_sector_id=requester.sector_id,
                 responsible_sector_id=sector_ti.id, category_id=categories.get(category), is_demo=True,
             )

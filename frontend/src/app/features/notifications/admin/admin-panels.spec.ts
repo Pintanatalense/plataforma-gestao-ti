@@ -12,11 +12,12 @@ import { CHANNEL_NAMES, ChannelsComponent, channelState } from './channels.compo
 import { DeliveriesComponent } from './deliveries.component';
 import { RulesComponent, apiErrorMessage, parseList } from './rules.component';
 
-function delivery(id: string, status: string): DeliveryItem {
+function delivery(id: string, status: string, extra: Partial<DeliveryItem> = {}): DeliveryItem {
   return {
     id, event_id: 'e', event_type: 'ticket.created', channel: 'email', status, priority: 'normal',
     recipient_email: `${id}@x.y`, address: 'a', title: 't', attempts: 1, max_attempts: 5, last_error: null,
-    next_attempt_at: '2026-10-17T12:00:00Z', created_at: '2026-10-17T12:00:00Z', sent_at: null
+    next_attempt_at: '2026-10-17T12:00:00Z', created_at: '2026-10-17T12:00:00Z', sent_at: null,
+    provider_status: null, provider_status_at: null, origin: 'rule', ...extra
   };
 }
 
@@ -93,6 +94,39 @@ describe('DeliveriesComponent', () => {
     expect(detail.textContent).toContain('permanent');
   });
 
+  it('tells "accepted by the gateway" apart from what the provider confirmed', async () => {
+    const api = {
+      listDeliveries: vi.fn().mockReturnValue(of({ total: 2, items: [
+        delivery('a', 'SENT', { channel: 'whatsapp', provider_status: 'read', provider_status_at: '2026-10-17T12:05:00Z' }),
+        delivery('b', 'SENT')
+      ] })),
+      getDelivery: vi.fn().mockReturnValue(of({ ...delivery('b', 'SENT', { origin: 'direct' }), attempt_log: [], event_payload: {} }))
+    };
+    const fixture = await mount(DeliveriesComponent, api);
+    const rows: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="delivery-row"]'));
+    expect(rows[0].textContent).toContain('Aceita pelo gateway');
+    expect(rows[0].querySelector('[data-testid="provider-status"]')?.textContent).toContain('Lida');
+    expect(rows[0].textContent).toContain('WhatsApp');
+    expect(rows[1].querySelector('[data-testid="provider-status"]')?.textContent).toContain('—');
+
+    rows[1].click();
+    fixture.detectChanges();
+    const detail = fixture.nativeElement.querySelector('[data-testid="delivery-detail"]');
+    expect(detail.textContent).toContain('Mensagem direta');
+    expect(detail.querySelector('[data-testid="detail-confirmation"]').textContent).toContain('aceita pelo gateway');
+  });
+
+  it('sends the new filters (origin, confirmation, address, text) to the API', async () => {
+    const api = { listDeliveries: vi.fn().mockReturnValue(of({ total: 0, items: [] })) };
+    const fixture = await mount(DeliveriesComponent, api);
+    const c = fixture.componentInstance;
+    Object.assign(c.filters, { origin: 'direct', provider_status: 'none', address: '8590', q: 'AnyDesk' });
+    c.search();
+    expect(api.listDeliveries).toHaveBeenLastCalledWith(
+      expect.objectContaining({ origin: 'direct', provider_status: 'none', address: '8590', q: 'AnyDesk', offset: 0 })
+    );
+  });
+
   it('shows an error when listing fails', async () => {
     const api = { listDeliveries: vi.fn().mockReturnValue(throwError(() => new Error('x'))) };
     const fixture = await mount(DeliveriesComponent, api);
@@ -104,9 +138,18 @@ describe('RulesComponent', () => {
   const RULE: RuleItem = {
     id: 'r1', code: 'ticket.created.staff', is_system: true, name: 'Novo chamado', enabled: true,
     event_type: 'ticket.created', condition: { exclude_actor: false, payload_equals: { x: 1 } },
-    audience: ['sector_attendants'], channels: ['in_app'], template_code: 'ticket.created.staff'
+    audience: ['sector_attendants'], channels: ['in_app'], template_code: 'ticket.created.staff',
+    escalation: { after_minutes: 30, until: 'first_response', audience: ['admins'] }, fallback_channel: 'email', in_catalog: true
   };
-  const OPTIONS = { channels: ['email', 'in_app'], templates: ['generic'], selectors: ['admins'] };
+  const OPTIONS = {
+    channels: ['email', 'in_app', 'preferred'], templates: ['generic'], selectors: ['admins'],
+    events: [
+      { code: 'ticket.created', label: 'Chamado aberto', area: 'Chamados', payload_keys: [], escalation: true },
+      { code: 'stock.below_minimum', label: 'Estoque abaixo do mínimo', area: 'Estoque', payload_keys: [], escalation: false }
+    ],
+    audiences: { admins: 'Administradores' },
+    escalation_until: { first_response: 'enquanto ninguém responder', resolved: 'enquanto não resolver' }
+  };
 
   function api(over: object = {}) {
     return {
@@ -139,7 +182,8 @@ describe('RulesComponent', () => {
     c.save();
     expect(a.createRule).toHaveBeenCalledWith({
       name: 'Estoque', enabled: true, event_type: 'stock.below_minimum', condition: { min_priority: 'high' },
-      audience: ['admins', 'role:Gestão'], channels: ['in_app', 'email'], template_code: 'generic'
+      audience: ['admins', 'role:Gestão'], channels: ['in_app', 'email'], template_code: 'generic',
+      escalation: {}, fallback_channel: null
     });
 
     c.edit(RULE);
@@ -147,6 +191,39 @@ describe('RulesComponent', () => {
     const sent = a.updateRule.mock.calls[0][1];
     expect(a.updateRule.mock.calls[0][0]).toBe('r1');
     expect(sent.condition).toEqual({ payload_equals: { x: 1 }, exclude_actor: false });
+    expect([sent.escalation, sent.fallback_channel]).toEqual([{ after_minutes: 30, until: 'first_response', audience: ['admins'] }, 'email']);
+  });
+
+  it('offers escalation only for ticket events and never sends it for others', async () => {
+    const a = api();
+    const fixture = await mount(RulesComponent, a);
+    const c = fixture.componentInstance;
+    c.startNew();
+    const f = c.form()!;
+    Object.assign(f, { name: 'x', event_type: 'ticket.created', audienceText: 'requester', escalate: true, escalation_minutes: '45', escalation_audienceText: 'admins, role:Gestão' });
+    c.setEscalationChannel(f, 'email', true);
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="rule-escalation-form"]')).toBeTruthy();
+    expect(c.fallbackChannels()).toEqual(['email', 'in_app']);
+    c.save();
+    expect(a.createRule.mock.calls[0][0].escalation).toEqual({ after_minutes: 45, until: 'first_response', audience: ['admins', 'role:Gestão'], channels: ['email'] });
+
+    c.startNew();
+    Object.assign(c.form()!, { name: 'y', event_type: 'stock.below_minimum', audienceText: 'admins', escalate: true });
+    fixture.detectChanges();
+    expect(fixture.nativeElement.querySelector('[data-testid="rule-escalate"]')).toBeNull();
+    c.save();
+    expect(a.createRule.mock.calls[1][0].escalation).toEqual({});
+  });
+
+  it('shows the event label and flags rules outside the catalog', async () => {
+    const custom = { ...RULE, id: 'r2', is_system: false, event_type: 'x.y', in_catalog: false, escalation: {}, fallback_channel: null };
+    const fixture = await mount(RulesComponent, api({ listRules: vi.fn().mockReturnValue(of({ items: [RULE, custom], options: OPTIONS })) }));
+    const rows: HTMLElement[] = Array.from(fixture.nativeElement.querySelectorAll('[data-testid="rule-row"]'));
+    expect(rows[0].textContent).toContain('Chamado aberto');
+    expect(rows[0].querySelector('[data-testid="rule-escalation"]')?.textContent).toContain('30 min');
+    expect(rows[0].textContent).toContain('se falhar: email');
+    expect(rows[1].textContent).toContain('fora do catálogo');
   });
 
   it('shows the server validation message and keeps the form open', async () => {
@@ -163,7 +240,10 @@ describe('RulesComponent', () => {
     const a = api();
     const fixture = await mount(RulesComponent, a);
     fixture.componentInstance.toggle(RULE, false);
-    expect(a.updateRule).toHaveBeenCalledWith('r1', expect.objectContaining({ enabled: false, audience: ['sector_attendants'] }));
+    expect(a.updateRule).toHaveBeenCalledWith('r1', expect.objectContaining({
+      enabled: false, audience: ['sector_attendants'], fallback_channel: 'email',
+      escalation: { after_minutes: 30, until: 'first_response', audience: ['admins'] }  // ligar/desligar não apaga o escalonamento
+    }));
   });
 
   it('refuses a simulation with invalid JSON without calling the API', async () => {

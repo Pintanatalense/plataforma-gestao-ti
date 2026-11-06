@@ -1,4 +1,4 @@
-"""Modelos de SLA (ADR-017). Esta etapa só cria as tabelas; a integração com chamados vem depois."""
+"""Modelos de SLA (ADR-017): políticas, calendários, ciclos dos chamados e violações."""
 
 import uuid
 from datetime import date, datetime
@@ -11,7 +11,7 @@ from app.core.timestamps import TimestampMixin
 from app.database import Base
 
 REOPEN_RULES = ("RESTART", "CONTINUE")
-CYCLE_STATES = ("RUNNING", "PAUSED", "MET", "BREACHED", "SUPERSEDED")
+CYCLE_STATES = ("RUNNING", "PAUSED", "MET", "BREACHED", "SUPERSEDED", "CANCELED")
 BREACH_KINDS = ("FIRST_RESPONSE", "RESOLUTION")
 
 
@@ -96,6 +96,9 @@ class TicketSlaCycle(Base, TimestampMixin):
     remaining_resolution_minutes: Mapped[int | None] = mapped_column(Integer, nullable=True)
     paused_minutes: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     state: Mapped[str] = mapped_column(String(16), nullable=False, default="RUNNING", index=True)
+    # Alerta de proximidade já enviado (job `sla.check`); a troca de prioridade rearma.
+    first_response_warned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    resolution_warned_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     breaches: Mapped[list["SlaBreach"]] = relationship("SlaBreach", back_populates="cycle", cascade="all, delete-orphan")
 
@@ -109,5 +112,7 @@ class SlaBreach(Base):
     kind: Mapped[str] = mapped_column(String(20), nullable=False)
     due_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     detected_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    # Aviso de violação já emitido (job `sla.check`); nulo = ainda não avisado.
+    notified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
     cycle: Mapped["TicketSlaCycle"] = relationship("TicketSlaCycle", back_populates="breaches")

@@ -3,7 +3,8 @@ name: CI
 # Minutos do GitHub Actions são limitados (2.000/mês no plano gratuito). Por isso:
 #  - não há execução em "push" na main: o PR já rodou o mesmo código antes de ser mesclado;
 #  - cada PR só roda os jobs das áreas que mudou (job `changes`); PR só de documentação roda só o `changes`;
-#  - a suíte completa (inclusive SQLite e auditoria de dependências) roda toda segunda-feira e sob demanda.
+#  - a suíte completa (backend em SQLite e em PostgreSQL real, auditoria de dependências) roda toda segunda-feira
+#    e sob demanda.
 on:
   pull_request:
     branches: [ "**" ]  # inclui PRs empilhados (base != main)
@@ -37,6 +38,7 @@ jobs:
       docker: ${{ steps.f.outputs.docker }}
       scripts: ${{ steps.f.outputs.scripts }}
       audit: ${{ steps.f.outputs.audit }}
+      pg_real: ${{ steps.f.outputs.pg_real }}
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       with:
@@ -63,10 +65,19 @@ jobs:
           echo "docker=$(check '^(backend|nginx|frontend)/|^docker-compose')"
           echo "scripts=$(check '^scripts/')"
           echo "audit=$(check '(uv\.lock|package-lock\.json)$')"
+          echo "pg_real=$(check '^backend/(alembic/|app/database\.py$|app/.*/(models|repository)\.py$|tests/conftest\.py$)')"
         } >> "$GITHUB_OUTPUT"
         echo "Arquivos alterados:"; printf '%s\n' "$files"; cat "$GITHUB_OUTPUT"
 
-  # Testes rápidos (SQLite em memória) + migrations em banco vazio. O nome do job é mantido.
+  # Backend num job só (antes eram dois, que repetiam instalação, banco e migrations): lint, migrations em banco
+  # vazio, models × migrations e a suíte. O nome `backend-tests` é mantido (referências e futura proteção da main).
+  #
+  # Onde a suíte roda:
+  #  - em todo PR de backend: os testes de regra usam SQLite em memória (rápido) e os marcados `pg`/`migrations`
+  #    usam o PostgreSQL 16 do serviço;
+  #  - a suíte INTEIRA em PostgreSQL real (`USE_PG_TEST=true`, ~2× mais lenta) roda quando o PR mexe no que o
+  #    SQLite pode esconder (migrations, models, repositórios, banco, conftest) e na execução semanal/manual,
+  #    que também roda a versão SQLite.
   backend-tests:
     needs: changes
     if: needs.changes.outputs.backend == 'true'
@@ -76,12 +87,19 @@ jobs:
         image: postgres:16-alpine
         env:
           POSTGRES_PASSWORD: postgres
-          POSTGRES_DB: gti_ci
+          # O guarda dos testes (tests/_guard.py) só aceita banco descartável: o nome termina em `_test`.
+          POSTGRES_DB: gti_ci_test
         ports:
           - 5432:5432
         options: >-
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/gti_ci_test
+      DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/gti_ci_test
+      # Mesmos valores de CI_SECRET_KEY/CI_ENCRYPTION_KEY (no nível do job o contexto `env` não está disponível).
+      SECRET_KEY: ci-only-secret-key-0123456789abcdef0123456789
+      APP_ENCRYPTION_KEY: j7aZmoHBs-fLFKl4myK4N7BqySPuIpD8OjzqKQmxKtA=
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
@@ -105,89 +123,70 @@ jobs:
 
     - name: Migrations apply on an empty database
       working-directory: ./backend
-      env:
-        DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/gti_ci
-        SECRET_KEY: ${{ env.CI_SECRET_KEY }}
-        APP_ENCRYPTION_KEY: ${{ env.CI_ENCRYPTION_KEY }}
-      run: uv run alembic upgrade head
-
-    # A suíte em PostgreSQL (job abaixo) inclui estes mesmos testes e mais os de `pg`/`migrations`; rodar as duas
-    # em todo PR dobrava os minutos. A versão em SQLite fica na execução semanal e sob demanda.
-    - name: Run pytest (SQLite; só na execução semanal/manual)
-      if: github.event_name != 'pull_request'
-      working-directory: ./backend
-      run: uv run pytest
-
-  # Mesma suíte contra PostgreSQL 16 de verdade (inclui os testes marcados `pg` e `migrations`)
-  # e verificação de que os models batem com as migrations.
-  backend-postgres:
-    needs: changes
-    if: needs.changes.outputs.backend == 'true'
-    runs-on: ubuntu-latest
-    services:
-      postgres:
-        image: postgres:16-alpine
-        env:
-          POSTGRES_PASSWORD: postgres
-          # O guarda dos testes (tests/_guard.py) só aceita banco descartável: o nome termina em `_test`.
-          POSTGRES_DB: gti_ci_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd "pg_isready -U postgres"
-          --health-interval 5s --health-timeout 5s --health-retries 10
-    env:
-      TEST_DATABASE_URL: postgresql+asyncpg://postgres:postgres@localhost:5432/gti_ci_test
-    steps:
-    - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@caf0cab7a618c569241d31dcd442f54681755d39 # v3
-      with:
-        enable-cache: true
-
-    - name: Set up Python
-      uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-      with:
-        python-version: "3.12"
-
-    - name: Install dependencies
-      working-directory: ./backend
-      run: uv sync --frozen
-
-    - name: Migrations apply on an empty database
-      working-directory: ./backend
-      env:
-        DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
-        SECRET_KEY: ${{ env.CI_SECRET_KEY }}
-        APP_ENCRYPTION_KEY: ${{ env.CI_ENCRYPTION_KEY }}
       run: uv run alembic upgrade head
 
     - name: Models match migrations (alembic check)
       working-directory: ./backend
-      env:
-        DATABASE_URL: ${{ env.TEST_DATABASE_URL }}
-        SECRET_KEY: ${{ env.CI_SECRET_KEY }}
-        APP_ENCRYPTION_KEY: ${{ env.CI_ENCRYPTION_KEY }}
       run: uv run alembic check
 
-    - name: Run pytest against PostgreSQL
+    - name: Run pytest (regras em SQLite + testes pg/migrations no PostgreSQL)
+      if: needs.changes.outputs.pg_real != 'true' || github.event_name != 'pull_request'
       working-directory: ./backend
       run: uv run pytest
 
-  # As imagens que vão para produção precisam construir (sem publicar).
+    - name: Run pytest (suíte inteira em PostgreSQL real)
+      if: needs.changes.outputs.pg_real == 'true'
+      working-directory: ./backend
+      env:
+        USE_PG_TEST: "true"
+      run: uv run pytest
+
+  # As imagens que vão para produção precisam construir E funcionar (sem publicar).
+  # - Roda quando muda backend/, nginx/, frontend/ ou docker-compose*: mudança de código também muda a imagem.
+  # - Espera os testes: se backend-tests ou frontend-tests FALHARAM, não gasta minutos construindo. Se foram
+  #   PULADOS (PR que não mexe naquela área), roda mesmo assim: `!cancelled()` evita o skip em cadeia que um
+  #   `needs` comum causaria.
+  # - Cache de camadas no GitHub (type=gha), por imagem: camada só é reaproveitada se o que entra nela é idêntico
+  #   (o BuildKit compara o conteúdo copiado). Na execução semanal, sem cache e com pull das imagens base, para
+  #   pegar correções de segurança de python/node/nginx que mantêm a mesma tag.
+  # - Teste de fumaça (scripts/smoke-test.sh): sobe postgres + backend + worker + nginx com as imagens recém
+  #   construídas e confere health com banco e worker saudáveis, versão, migrations, seed, frontend e bloqueios.
   docker-build:
-    needs: changes
-    if: needs.changes.outputs.docker == 'true'
+    needs: [changes, backend-tests, frontend-tests]
+    if: ${{ !cancelled() && needs.changes.outputs.docker == 'true' && !contains(needs.*.result, 'failure') }}
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
+    - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
     - name: Build backend image
-      run: docker build -t gti-backend:ci ./backend
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: ./backend
+        tags: gti-backend:ci-local
+        load: true
+        push: false
+        pull: ${{ github.event_name == 'schedule' }}
+        no-cache: ${{ github.event_name == 'schedule' }}
+        cache-from: type=gha,scope=backend
+        cache-to: type=gha,mode=max,scope=backend
 
     - name: Build nginx image (compila o frontend Angular)
-      run: docker build -f nginx/Dockerfile -t gti-nginx:ci .
+      uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+      with:
+        context: .
+        file: nginx/Dockerfile
+        tags: gti-nginx:ci-local
+        load: true
+        push: false
+        pull: ${{ github.event_name == 'schedule' }}
+        no-cache: ${{ github.event_name == 'schedule' }}
+        cache-from: type=gha,scope=nginx
+        cache-to: type=gha,mode=max,scope=nginx
+
+    - name: Teste de fumaça (pilha real com as imagens construídas)
+      run: scripts/smoke-test.sh
 
   # Scripts de operação (instalação, backup, restauração) são código que mexe em dados: precisam passar no shellcheck.
   shellcheck:

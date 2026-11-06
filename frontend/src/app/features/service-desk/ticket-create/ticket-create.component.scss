@@ -338,3 +338,15 @@
     }
   }
 }
+
+// Subchamados (ADR-026)
+.child-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+
+  .child-cat { flex: 1 1 200px; }
+  .child-title { flex: 1 1 200px; }
+  .child-desc { flex: 2 1 260px; }
+}

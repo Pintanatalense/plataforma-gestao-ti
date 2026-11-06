@@ -1,6 +1,7 @@
 # ADR-017 — SLA de chamados
 
-**Status:** Proposto (2026-10-22), revisado após revisão independente. Os prazos iniciais da seção "Valores iniciais" são uma sugestão a confirmar com o usuário; todo o resto vale para a implementação.  
+**Status:** Aceito; **implementado** (aguardando publicação). P4-S1 (tabelas e cálculo de horas úteis, `backend/app/sla/`) foi entregue em 2026-10-23 (#51); P4-S2 (relógio nos chamados), P4-S3 (job `sla.check`, violações e alertas), P4-S4 (telas de administração e SLA na categoria) e P4-S5 (indicadores e relatório) estão prontos. Por decisão do usuário (2026-10-26), o SLA é concluído antes da prova de conceito do Plano de Evolução. Os prazos da seção "Valores iniciais" continuam sendo sugestão a confirmar com o usuário.  
+*Status anterior: Proposto (2026-10-22), revisado após revisão independente.*  
 **Data:** 2026-10-22  
 **Depende de:** ADR-013 (worker e outbox já existentes)
 
@@ -68,6 +69,49 @@ Calendário padrão: segunda a sexta, 08:00–18:00, fuso `America/Sao_Paulo`, s
 ### Indicadores
 
 Cumprimento = `MET / (MET + BREACHED)` por período, categoria e prioridade; tempo médio de primeira resposta e de resolução em minutos úteis; chamados em risco (acima do % de alerta). Tudo vem dos fatos persistidos nos ciclos e nas violações, sem recalcular o passado.
+
+## Registro de implementação — P4-S2 (2026-10-26)
+
+Decisões tomadas ao integrar com os chamados (o texto acima continua valendo):
+
+- **Resultado do ciclo:** `BREACHED` quando há **qualquer** violação registrada (primeira resposta ou resolução); `MET` só sem nenhuma. Violação de primeira resposta não muda o estado enquanto o ciclo corre (continua `RUNNING`), só aparece em `breaches`.
+- **Retroativo:** ao trocar prioridade ou categoria, se o alvo novo já estourou o vencimento é o instante em que o consumo atingiu o alvo (`início + alvo + minutos pausados`), a violação é registrada na hora e **nunca é apagada** (voltar a uma prioridade folgada não a remove).
+- **Categoria com a mesma política:** não abre ciclo novo (os prazos já são os certos). Categoria nova com política em chamado que nunca teve relógio: o ciclo parte da **criação** do chamado.
+- **Pausa:** o relógio para em minutos **úteis**; resolver um chamado pausado não é violação, por mais longa que seja a pausa. Chamado reaberto direto para um status de pausa nasce pausado.
+- **Reabertura (`TICKET_REOPEN_DAYS`):** vale para **todos** os chamados (com ou sem SLA); a data da resolução vem do ciclo ou, sem ciclo, da auditoria (`ticket.closed` com status `RESOLVED`). Fora do prazo a API responde **422** (`ValidationException`). Como a permissão `service_desk.sla.manage` só nasce no P4-S4 (telas de administração), **por enquanto só administradores** reabrem fora do prazo; o P4-S4 troca isso pela permissão.
+- **Primeira resposta** conta no ponto de criação da interação, inclusive a nota de um `PATCH` de status; a nota interna e o próprio solicitante não contam.
+- **API:** `GET/POST/PATCH /tickets` devolvem `sla` (`NOT_APPLICABLE` sem política ativa ou sem alvo para a prioridade).
+- **Tudo ou nada:** o SLA roda na transação do chamado; se o cálculo falhar, a alteração do chamado também não é gravada (erro 500, nada pela metade). Escolha deliberada, para o relógio nunca divergir do chamado.
+- **Chamado encerrado** (`RESOLVED`/`CLOSED`) nunca ganha relógio por troca de categoria. A janela de reabertura é checada **antes** de qualquer campo ser alterado.
+- **Pendências conhecidas (menores):** dois pedidos simultâneos de troca de categoria num chamado sem ciclo podem colidir no único `(ticket_id, cycle)` (um deles falha com 500 e pode repetir); no ciclo reaberto por `RESTART` o intervalo "resolvido" entre ciclos conta como consumido numa troca de categoria posterior; a suíte desta etapa roda em SQLite — a validação em PostgreSQL (`FOR UPDATE`, datas com fuso) fica para o CI do PR.
+- **Fora desta etapa (P4-S3):** o job `sla.check`, os alertas de proximidade e o registro de violações de chamados que ninguém tocou.
+
+## Registro de implementação — P4-S3 (2026-10-27)
+
+- **Job `sla.check`** (a cada 5 minutos, `app/sla/checker.py`): ciclo `RUNNING` com prazo vencido (`agora > vencimento`) ganha a violação, com o mesmo único `(ciclo, tipo)` das transições. Ciclo pausado não tem prazo e fica de fora; política desativada não para ciclos abertos.
+- **Alerta de proximidade:** `ticket.sla_warning` quando faltam `100 - %` do alvo da prioridade (padrão: passou de 80%), **uma vez por prazo** (`first_response_warned_at`/`resolution_warned_at`). A troca de prioridade e a reabertura com `CONTINUE` rearmam o alerta (o prazo mudou). `%` fora de 1–99 desliga o alerta.
+- **Aviso de violação:** `ticket.sla_breached` para **toda** violação ainda não avisada (`sla_breaches.notified_at`), venha do job ou de uma transição (ex.: primeira resposta atrasada). A migration marca as violações antigas como avisadas.
+- **Quem recebe** (regras semeadas, editáveis em Notificações): alerta → atendente responsável; sem responsável → atendentes do setor (`payload_equals: {"assigned": false}`); violação → responsável, atendentes do setor e o perfil "Gestão".
+- **Concorrência:** os ciclos e as violações são lidos com `FOR UPDATE SKIP LOCKED`; um chamado sendo alterado na mesma hora fica para a execução seguinte. Evento no outbox e marca de aviso gravam na mesma transação.
+- **Lote:** até 500 ciclos e 500 avisos por execução (o resto vai na próxima).
+
+## Registro de implementação — P4-S4 (2026-10-27)
+
+- **API** `/api/v1/sla/calendars` e `/api/v1/sla/policies` (listar, criar, editar, excluir). Ler: `service_desk.sla.manage` **ou** `service_desk.categories.manage` (o formulário de categoria lista as políticas). Alterar: só `service_desk.sla.manage`. Toda alteração vai para a auditoria (`sla.calendar_*`, `sla.policy_*`).
+- **Validação:** o calendário passa pela mesma calculadora do relógio (fuso IANA, intervalos em ordem e sem sobreposição, ao menos um expediente); feriados sem data repetida; alvos com uma linha por prioridade, minutos entre 1 e 1 ano e resolução maior ou igual à primeira resposta; pausa só em `PENDING`/`IN_PROGRESS`; alerta de 0 (desligado) a 99%.
+- **Exclusão:** calendário usado por política e política ligada a categoria respondem 409 com os nomes. Ciclos já abertos guardam a cópia e não dependem da política.
+- **Categoria:** campo `sla_policy_id` (nulo = "Não se aplica"). Escolher ou trocar exige `service_desk.sla.manage` (403 sem ela, mesmo com `categories.manage`); política inexistente = 422. A troca é auditada (`ticket_category.sla_changed`) e vale para chamados novos.
+- **Permissão** `service_desk.sla.manage` ("Gerenciar SLA", risco Alteração, não crítica): entra sozinha no perfil Administrador (todas as comuns) e no Admin de **instalações novas**. Em instalações existentes o perfil Admin é preservado (regra do seed: perfil existente não é sobrescrito) e só ganha a permissão se alguém marcar em *Perfis*; antes dela só administradores mexiam nisso. Substitui o "só administradores" da reabertura fora do prazo (P4-S2).
+- **Telas:** *Service Desk > SLA (prazos)* (`/service-desk/sla`), com abas Políticas (prazos por prioridade em horas úteis, alerta, reabertura, pausa, ativar/desativar) e Calendários (expediente por dia com mais de um intervalo, feriados); campo e coluna "SLA" em *Categorias de Chamados*; selo de SLA no cabeçalho do chamado (no prazo, pausado, cumprido ou violado, com o próximo prazo). Indicadores nas listas e relatório ficam no P4-S5.
+
+## Registro de implementação — P4-S5 (2026-10-27)
+
+- **Relatório** `GET /api/v1/tickets/reports/summary?start=AAAA-MM-DD&end=AAAA-MM-DD` (mesma rota e mesma permissão `service_desk.reports.read`, agora com período e resposta tipada `TicketsReport`). Datas são dias no fuso `APP_TIMEZONE`, com o último dia incluído; sem datas, todo o histórico; início depois do fim = 422. As contagens por status, prioridade e categoria saem agregadas do banco (antes carregava todos os chamados) e contam os chamados **criados** no período.
+- **Indicadores de SLA** (`app/sla/report.py`), só com os fatos gravados: ciclos `MET`/`BREACHED` **resolvidos** no período; cumprimento `MET / (MET + BREACHED)`, nulo sem ciclo encerrado (não vira 100%); por categoria (a atual do chamado) e por prioridade (a do ciclo). Cada ciclo conta uma vez (reabertura com `RESTART` conta de novo); `SUPERSEDED` fica fora.
+- **Tempos médios** em minutos úteis do calendário guardado no ciclo: resolução = início do ciclo → resolução, menos as pausas; primeira resposta = início do ciclo → primeira resposta, só quando ela aconteceu no próprio ciclo. Simplificação aceita: a pausa **antes** da primeira resposta conta como tempo gasto na média (o ciclo guarda só o total pausado).
+- **Agora** (independe do período): ciclos abertos, **atrasados** (prazo pendente vencido, mesmo antes de o job registrar a violação) e **em risco** (acima do `% de alerta`, mesma regra do aviso do job), com a lista dos 50 mais urgentes.
+- **`sla` de cada chamado** ganha `overdue` e `at_risk`, calculados na leitura. A lista de chamados mostra a coluna SLA (selo compacto: no prazo, em risco, atrasado, pausado, cumprido, violado) e o filtro *Todos / Pedem atenção / Violados* (aparece só quando algum chamado da lista tem SLA).
+- **Tela** *Service Desk > Relatório de Chamados* (`/service-desk/reports`, `service_desk.reports.read`): período (padrão: mês atual; atalhos 30 dias e todo o histórico), cartões, tabela "Agora" com link para o chamado e tabelas de SLA por prioridade e por categoria.
 
 ## Entrega em PRs
 

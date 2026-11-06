@@ -202,6 +202,10 @@ export class SidebarComponent implements OnInit {
       items: [
         { icon: 'notifications', label: 'Caixa de entrada', route: '/notifications' },
         { icon: 'tune', label: 'Minhas preferências', route: '/notifications/preferences' },
+        {
+          icon: 'campaign', label: 'Central de mensagens', route: '/notifications/messages',
+          anyPermission: ['notifications.messages.send', 'notifications.messages.schedule', 'notifications.messages.read', 'notifications.manage']
+        },
         { icon: 'send', label: 'Entregas e regras', route: '/notifications/admin', permission: 'notifications.manage' }
       ]
     },
@@ -210,14 +214,17 @@ export class SidebarComponent implements OnInit {
       items: [
         { icon: 'forum', label: 'Chamados', route: '/service-desk' },
         { icon: 'add_circle', label: 'Abrir Chamado', route: '/service-desk/new' },
-        { icon: 'category', label: 'Categorias de Chamados', route: '/service-desk/categories', permission: 'service_desk.tickets.manage' }
+        { icon: 'category', label: 'Categorias de Chamados', route: '/service-desk/categories', permission: 'service_desk.categories.manage' },
+        { icon: 'account_tree', label: 'Modelos de Atendimento', route: '/service-desk/templates', permission: 'service_desk.templates.manage' },
+        { icon: 'timer', label: 'SLA (prazos)', route: '/service-desk/sla', permission: 'service_desk.sla.manage' },
+        { icon: 'bar_chart', label: 'Relatório de Chamados', route: '/service-desk/reports', permission: 'service_desk.reports.read' }
       ]
     },
     {
       title: 'Operações & Físico',
       items: [
         { icon: 'devices', label: 'Patrimônio & Ativos', route: '/assets', permission: 'assets.read' },
-        { icon: 'upload_file', label: 'Importar Inventário (GLPI)', route: '/assets/import-glpi', permission: 'assets.write' },
+        { icon: 'upload_file', label: 'Importar Inventário (GLPI)', route: '/assets/import-glpi', permission: 'assets.import' },
         { icon: 'category', label: 'Categorias de Ativos', route: '/assets/categories', permission: 'assets.read' },
         { icon: 'inventory_2', label: 'Estoque & Insumos', route: '/stock', permission: 'stock.read' },
         { icon: 'category', label: 'Categorias de Estoque', route: '/stock/categories', permission: 'stock.read' },

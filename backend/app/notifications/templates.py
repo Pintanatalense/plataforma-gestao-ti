@@ -14,6 +14,7 @@ STATUS_LABELS = {
     "PENDING": "Pendente",
     "RESOLVED": "Resolvido",
     "CLOSED": "Encerrado",
+    "CANCELED": "Cancelado",
 }
 PRIORITY_LABELS = {"LOW": "Baixa", "MEDIUM": "Média", "HIGH": "Alta", "CRITICAL": "Crítica"}
 
@@ -26,6 +27,11 @@ def _html_card(heading: str, lines: list[str], quote: str | None = None, link: b
         if quote
         else ""
     )
+    return html_frame(heading, body + quote_html, link)
+
+
+def html_frame(heading: str, inner_html: str, link: bool = True) -> str:
+    """Moldura dos e-mails do sistema. `inner_html` já vem escapado por quem chama."""
     button = (
         '<p style="margin:20px 0 8px;"><a href="{{link}}" style="background:#2563eb;color:#fff;padding:10px 18px;'
         'text-decoration:none;border-radius:6px;font-weight:bold;font-size:14px;">Abrir no sistema</a></p>'
@@ -35,7 +41,7 @@ def _html_card(heading: str, lines: list[str], quote: str | None = None, link: b
     return (
         '<div style="font-family:-apple-system,Segoe UI,Roboto,Arial,sans-serif;max-width:640px;margin:0 auto;'
         'padding:24px;border:1px solid #e2e8f0;border-radius:8px;">'
-        f'<h2 style="color:#1e293b;margin:0 0 12px;font-size:19px;">{escape(heading)}</h2>{body}{quote_html}{button}'
+        f'<h2 style="color:#1e293b;margin:0 0 12px;font-size:19px;">{escape(heading)}</h2>{inner_html}{button}'
         '<hr style="border:0;border-top:1px solid #f1f5f9;margin:20px 0 10px;">'
         '<p style="font-size:12px;color:#94a3b8;margin:0;">Mensagem automática da Plataforma de Gestão de TI. '
         "Não responda a este e-mail.</p></div>"
@@ -116,6 +122,29 @@ def ticket_interaction_added(p: dict[str, Any], priority: str) -> Message:
     )
 
 
+SLA_KIND_LABELS = {"FIRST_RESPONSE": "primeira resposta", "RESOLUTION": "resolução"}
+
+
+def ticket_sla_warning(p: dict[str, Any], priority: str) -> Message:
+    kind = SLA_KIND_LABELS.get(p.get("kind", ""), "prazo")
+    return _build(
+        priority,
+        f"Chamado {_ticket_ref(p)}: prazo de {kind} perto de vencer",
+        [f"{p.get('title', '')}", f"O prazo de {kind} vence em {p.get('due_local', '-')}."],
+        p,
+    )
+
+
+def ticket_sla_breached(p: dict[str, Any], priority: str) -> Message:
+    kind = SLA_KIND_LABELS.get(p.get("kind", ""), "prazo")
+    return _build(
+        priority,
+        f"Chamado {_ticket_ref(p)}: prazo de {kind} vencido",
+        [f"{p.get('title', '')}", f"O prazo de {kind} venceu em {p.get('due_local', '-')} (SLA violado)."],
+        p,
+    )
+
+
 def backup_failed(p: dict[str, Any], priority: str) -> Message:
     err = p.get("error") or "motivo não informado"
     return Message(
@@ -166,6 +195,36 @@ def _digest(title: str, lines: list[str], extra: int, link: str, entity_type: st
     )
 
 
+def identity_critical_changed(p: dict[str, Any], priority: str) -> Message:
+    granted = p.get("action") == "granted"
+    label = p.get("permission_label") or p.get("permission") or "permissão crítica"
+    who = p.get("target_email") or "um usuário"
+    title = f"Permissão crítica {'concedida' if granted else 'revogada'}: {label}"
+    via = {"setup": "assistente de instalação", "cli": "comando no servidor", "migration": "atualização do sistema"}
+    lines = [f"Usuário: {who}", f"Origem: {via.get(p.get('via'), 'tela de usuários')}"]
+    return Message(
+        title=title,
+        body_text="\n".join([title, *lines]),
+        body_html=_html_card(title, lines, link=False),
+        priority=priority,
+        entity_type="user",
+    )
+
+
+def audit_integrity_failed(p: dict[str, Any], priority: str) -> Message:
+    labels = {"security": "segurança", "operational": "operacional"}
+    lines = [f"Trilha de {labels.get(i.get('category'), i.get('category'))}: {i.get('problem')}" for i in p.get("problems", [])]
+    lines.append("Alguém alterou ou apagou registros fora do sistema. Preserve o servidor e os backups e investigue.")
+    title = "Auditoria: a cadeia de integridade não confere"
+    return Message(
+        title=title,
+        body_text="\n".join([title, *lines]),
+        body_html=_html_card(title, lines, link=False),
+        priority=priority,
+        entity_type="audit_chain",
+    )
+
+
 def stock_below_minimum(p: dict[str, Any], priority: str) -> Message:
     items = p.get("items") or []
     total = int(p.get("total") or len(items))
@@ -186,6 +245,120 @@ def asset_warranty_expiring(p: dict[str, Any], priority: str) -> Message:
     return _digest(title, lines, total - len(items), "/assets", "asset", priority)
 
 
+def _asset_label(p: dict[str, Any]) -> str:
+    tag, name = p.get("asset_tag") or "", p.get("asset_name") or ""
+    return f"{tag} - {name}" if tag and name else (tag or name or "equipamento")
+
+
+def ticket_asset_delivered(p: dict[str, Any], priority: str) -> Message:
+    return _build(
+        priority,
+        f"Chamado {_ticket_ref(p)}: equipamento entregue",
+        [f"{_asset_label(p)} foi entregue a você.", "O Termo de Responsabilidade está no chamado."],
+        p,
+    )
+
+
+def ticket_asset_returned(p: dict[str, Any], priority: str) -> Message:
+    return _build(
+        priority,
+        f"Chamado {_ticket_ref(p)}: equipamento devolvido",
+        [f"{_asset_label(p)} foi devolvido e aguarda inspeção técnica.", f"{p.get('title', '')}"],
+        p,
+    )
+
+
+def ticket_children_created(p: dict[str, Any], priority: str) -> Message:
+    children = p.get("children") or []
+    lines = [
+        f"#{str(c.get('ticket_id', ''))[:8]} - {c.get('sector_name') or 'setor'}: {c.get('title', '')}"
+        + ("" if c.get("is_required", True) else " (não obrigatória)")
+        for c in children
+    ]
+    count = len(children)
+    return _build(
+        priority,
+        f"Chamado {_ticket_ref(p)}: {count} subchamado{'s' if count != 1 else ''} aberto{'s' if count != 1 else ''}",
+        [f"{p.get('title', '')}", *lines, "Acompanhe o andamento de cada etapa no chamado principal."],
+        p,
+    )
+
+
+def _child_ref(p: dict[str, Any]) -> str:
+    return f"#{str(p.get('child_ticket_id', ''))[:8]} {p.get('child_title', '')}".strip()
+
+
+def ticket_child_completed(p: dict[str, Any], priority: str) -> Message:
+    pending = int(p.get("required_pending") or 0)
+    status = (
+        "Todas as etapas obrigatórias foram concluídas."
+        if pending == 0
+        else f"Faltam {pending} etapa{'s' if pending != 1 else ''} obrigatória{'s' if pending != 1 else ''}."
+    )
+    return _build(
+        priority,
+        f"Chamado {_ticket_ref(p)}: etapa concluída",
+        [f"{p.get('title', '')}", f"Concluída: {_child_ref(p)}.", status],
+        p,
+    )
+
+
+def ticket_child_canceled(p: dict[str, Any], priority: str) -> Message:
+    note = (
+        "Era obrigatória: o chamado principal só pode ser resolvido depois que ela for substituída ou dispensada."
+        if p.get("is_required")
+        else "Não era obrigatória."
+    )
+    return _build(
+        priority,
+        f"Chamado {_ticket_ref(p)}: etapa cancelada",
+        [f"{p.get('title', '')}", f"Cancelada: {_child_ref(p)}.", note],
+        p,
+        quote=p.get("reason") or None,
+    )
+
+
+def ticket_canceled(p: dict[str, Any], priority: str) -> Message:
+    return _build(
+        priority,
+        f"Subchamado {_ticket_ref(p)} cancelado",
+        [f"{p.get('title', '')}", "O atendimento desta etapa foi cancelado."],
+        p,
+        quote=p.get("reason") or None,
+    )
+
+
+JOB_LABELS = {
+    "retention.cleanup": "limpeza de dados antigos",
+    "stock.low_check": "verificação de estoque",
+    "assets.warranty_check": "verificação de garantias",
+    "whatsapp.health_check": "checagem dos canais",
+    "audit.retention": "retenção da auditoria",
+    "audit.seal": "selagem da auditoria",
+    "audit.verify": "verificação da auditoria",
+    "sla.check": "verificação de SLA",
+    "messages.schedules": "agendamentos de mensagens",
+}
+
+
+def job_failed(p: dict[str, Any], priority: str) -> Message:
+    job = p.get("job") or "?"
+    status = {"timeout": "passou do tempo máximo", "interrupted": "foi interrompida"}.get(p.get("status"), "falhou")
+    title = f"Rotina automática com falha: {JOB_LABELS.get(job, job)}"
+    lines = [
+        f"A rotina {job} {status} nas {p.get('attempts', '?')} tentativas e volta à agenda normal.",
+        *([f"Erro: {p['error']}"] if p.get("error") else []),
+        "Detalhes em Notificações - administração > Agenda. Novo aviso só depois que ela voltar a funcionar.",
+    ]
+    return Message(
+        title=title,
+        body_text="\n".join([title, *lines]),
+        body_html=_html_card(title, lines, link=False),
+        priority=priority,
+        entity_type="job",
+    )
+
+
 def generic(p: dict[str, Any], priority: str) -> Message:
     title = str(p.get("title") or "Notificação do sistema")
     return Message(title=title, body_text=str(p.get("message") or title), priority=priority)
@@ -197,11 +370,22 @@ TEMPLATES: dict[str, Callable[[dict[str, Any], str], Message]] = {
     "ticket.assigned": ticket_assigned,
     "ticket.status_changed": ticket_status_changed,
     "ticket.interaction_added": ticket_interaction_added,
+    "ticket.sla_warning": ticket_sla_warning,
+    "ticket.sla_breached": ticket_sla_breached,
     "backup.failed": backup_failed,
     "backup.completed": backup_completed,
     "channel.degraded": channel_degraded,
+    "identity.critical_changed": identity_critical_changed,
+    "audit.integrity_failed": audit_integrity_failed,
     "stock.below_minimum": stock_below_minimum,
     "asset.warranty_expiring": asset_warranty_expiring,
+    "ticket.asset_delivered": ticket_asset_delivered,
+    "ticket.asset_returned": ticket_asset_returned,
+    "ticket.children_created": ticket_children_created,
+    "ticket.child_completed": ticket_child_completed,
+    "ticket.child_canceled": ticket_child_canceled,
+    "ticket.canceled": ticket_canceled,
+    "job.failed": job_failed,
 }
 
 

@@ -18,6 +18,10 @@ export interface DeliveryItem {
   next_attempt_at: string;
   created_at: string;
   sent_at: string | null;
+  /** Confirmação do provedor depois do envio; null = o canal não informa ou ainda não informou (ADR-025). */
+  provider_status: 'accepted' | 'delivered' | 'read' | 'failed' | null;
+  provider_status_at: string | null;
+  origin: 'rule' | 'direct' | 'conversation' | 'system';
 }
 
 export interface DeliveryDetail extends DeliveryItem {
@@ -32,6 +36,10 @@ export interface DeliveryFilters {
   recipient?: string;
   date_from?: string;
   date_to?: string;
+  origin?: string;
+  provider_status?: string;
+  address?: string;
+  q?: string;
   limit?: number;
   offset?: number;
 }
@@ -47,13 +55,39 @@ export interface RuleItem {
   audience: string[];
   channels: string[];
   template_code: string;
+  escalation: RuleEscalation | Record<string, never>;
+  fallback_channel: string | null;
+  in_catalog: boolean;
 }
 
-export type RuleInput = Omit<RuleItem, 'id' | 'code' | 'is_system'>;
+/** Escalonamento (ADR-013 §6.3, ADR-025 M5): só em eventos de chamado. */
+export interface RuleEscalation {
+  after_minutes: number;
+  until: 'first_response' | 'resolved';
+  audience: string[];
+  channels?: string[];
+}
+
+export type RuleInput = Omit<RuleItem, 'id' | 'code' | 'is_system' | 'in_catalog'>;
+
+export interface CatalogEvent {
+  code: string;
+  label: string;
+  area: string;
+  payload_keys: string[];
+  escalation: boolean;
+}
 
 export interface RulesResponse {
   items: RuleItem[];
-  options: { channels: string[]; templates: string[]; selectors: string[] };
+  options: {
+    channels: string[];
+    templates: string[];
+    selectors: string[];
+    events: CatalogEvent[];
+    audiences: Record<string, string>;
+    escalation_until: Record<string, string>;
+  };
 }
 
 export interface SimulatedDelivery {
@@ -62,6 +96,7 @@ export interface SimulatedDelivery {
   channel: string;
   title: string | null;
   send_at: string;
+  escalation_until?: string | null;
 }
 
 export interface ChannelHealth {
@@ -159,10 +194,46 @@ export interface WhatsAppConnect extends WhatsAppStatus {
   count: number | null;
 }
 
+/** O que a NOSSA integração com o canal faz hoje (ADR-025 §4). */
+export interface GatewayCapabilities {
+  rich_text: boolean;
+  inbound: boolean;
+  max_len: number | null;
+  rate_per_second: number | null;
+  formatting: 'plain' | 'html' | 'whatsapp' | 'slack';
+  attachments: boolean;
+  typing: boolean;
+  delivery_receipts: boolean;
+  read_receipts: boolean;
+}
+
+export interface Gateway {
+  channel: string;
+  enabled: boolean;
+  configured: boolean;
+  provider?: string;
+  capabilities: GatewayCapabilities;
+  limits: {
+    ceiling_rate_per_second: number | null;
+    rate_per_second: number | null;
+    effective_rate_per_second: number | null;
+    send_interval_seconds?: number;
+    max_per_hour_per_person?: number;
+  };
+}
+
 @Injectable({ providedIn: 'root' })
 export class NotificationsAdminService {
   private http = inject(HttpClient);
   private base = '/api/v1/notifications/admin';
+
+  listGateways(): Observable<{ items: Gateway[] }> {
+    return this.http.get<{ items: Gateway[] }>(`${this.base}/gateways`);
+  }
+
+  updateGatewayLimit(channel: string, ratePerSecond: number | null): Observable<Gateway> {
+    return this.http.put<Gateway>(`${this.base}/gateways/${channel}/limits`, { rate_per_second: ratePerSecond });
+  }
 
   listDeliveries(filters: DeliveryFilters = {}): Observable<{ total: number; items: DeliveryItem[] }> {
     let params = new HttpParams();

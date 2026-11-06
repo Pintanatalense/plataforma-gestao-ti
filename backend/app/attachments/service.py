@@ -72,6 +72,7 @@ class AttachmentService:
         entity_type: AttachmentEntityType,
         entity_id: uuid.UUID,
         user_id: uuid.UUID,
+        is_internal: bool = False,
     ) -> Attachment:
         content_type = (file.content_type or "").lower()
         if content_type not in settings.ATTACHMENT_ALLOWED_TYPES:
@@ -114,11 +115,14 @@ class AttachmentService:
             entity_type=entity_type.value,
             entity_id=entity_id,
             uploaded_by_id=user_id,
+            is_internal=is_internal,
         )
         return await self.repo.create(attachment)
 
-    async def list_attachments(self, entity_type: str, entity_id: uuid.UUID) -> list[Attachment]:
-        return await self.repo.list_by_entity(entity_type, entity_id)
+    async def list_attachments(
+        self, entity_type: str, entity_id: uuid.UUID, include_internal: bool = True
+    ) -> list[Attachment]:
+        return await self.repo.list_by_entity(entity_type, entity_id, include_internal)
 
     async def get_attachment(self, attachment_id: uuid.UUID) -> Attachment:
         attachment = await self.repo.get_by_id(attachment_id)

@@ -1,7 +1,7 @@
 """
 Resolução de audiência: transforma seletores de uma regra em usuários, a partir do payload do evento.
 
-Seletores: requester, assignee, sector_attendants, counterpart, admins, role:<nome>, user:<uuid>.
+Seletores: requester, creator, assignee, sector_attendants, counterpart, admins, role:<nome>, user:<uuid>.
 Só consulta por ids (identity/organization); não importa models de service_desk (ADR-004).
 """
 import uuid
@@ -110,6 +110,10 @@ async def resolve_audience(
     for selector in selectors:
         if selector == "requester":
             users = await _requester_user(session, payload)
+        elif selector == "creator":
+            # Quem abriu o chamado (pode ser diferente do solicitante; ADR-026).
+            creator_id = _to_uuid(payload.get("created_by_user_id"))
+            users = await _users_by_ids(session, {creator_id} if creator_id else set())
         elif selector == "assignee":
             assignee_id = _to_uuid(payload.get("assignee_id"))
             users = await _users_by_ids(session, {assignee_id} if assignee_id else set())

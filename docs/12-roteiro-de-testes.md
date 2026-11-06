@@ -72,7 +72,7 @@ Com 2 usuários comuns criados (A e B) e o administrador.
 
 ## Etapa 4b — Importar inventário do GLPI Agent (XML)
 
-Menu **Importar Inventário (GLPI)** (exige `assets.write`). Use XMLs gerados pelo GLPI Agent (`glpi-agent --tasks inventory --local <pasta>`).
+Menu **Importar Inventário (GLPI)** (exige `assets.import`). Use XMLs gerados pelo GLPI Agent (`glpi-agent --tasks inventory --local <pasta>`).
 
 1. Envie 2 ou 3 arquivos `.xml` e clique em analisar. **Esperado:** cada máquina aparece como **Novo** (série ainda não cadastrada) ou **Já cadastrado** (série igual à de um ativo).
 2. Tente adicionar de novo um arquivo com o **mesmo nome**. **Esperado:** é ignorado, com aviso.
@@ -167,7 +167,7 @@ Se existir instalação anterior com dados reais:
 1. **Backup antes** (Etapa 7). A migration da Fase D apaga `wa_outbox`, `wa_sessions` e `wa_configs` de forma **irreversível**.
 2. Defina `APP_ENCRYPTION_KEY` no `.env`, `git pull`, `docker compose up -d --build`, `docker compose logs -f backend`.
 3. **Esperado:** migrations aplicam sem erro (inclui `q7a8b9c0d1e2` sessão por usuário, `r8b9c0d1e2f3` ajustes de índices e `s9c0d1e2f3a4` recuperação de senha); a senha SMTP antiga continua funcionando (foi cifrada pela migration `j0e1f2a3b4c5`); login funciona **sem deslogar ninguém** por causa da migration; chamados antigos aparecem.
-4. Novas variáveis no `.env` (veja `.env.example`): `ENABLE_QA_SEED` (padrão `false`: o botão de carga de QA responde 403) e `ENABLE_API_DOCS`. A imagem do backend agora usa `PyJWT`: tokens já emitidos continuam válidos.
+4. Novas variáveis no `.env` (veja `.env.example`): `ENABLE_QA_SEED` (padrão `false`: o botão de carga de QA responde 403) e `ENABLE_API_DOCS` (padrão `false`: `/api/v1/docs` responde 404; o `docker-compose.dev.yml` liga). A imagem do backend agora usa `PyJWT`: tokens já emitidos continuam válidos.
 5. Recuperação de senha por e-mail vem **desativada**; ative só depois da Etapa 6b.
 
 ---

@@ -496,6 +496,9 @@
                         <mat-icon>archive</mat-icon>
                         <span>{{ b.filename }}</span>
                       </div>
+                      <div class="files-archive" *ngIf="b.files_filename" style="font-size: 12px; opacity: 0.8;" data-testid="backup-files">
+                        + anexos e logomarca: {{ b.files_count }} arquivo(s), {{ formatBytes(b.files_size_bytes || 0) }}
+                      </div>
                     </td>
                     <td>{{ formatBytes(b.size_bytes) }}</td>
                     <td>
@@ -515,6 +518,9 @@
                       </button>
                       <button mat-icon-button color="primary" title="Baixar Backup" (click)="downloadBackupFile(b)">
                         <mat-icon>download</mat-icon>
+                      </button>
+                      <button *ngIf="b.files_filename" mat-icon-button color="primary" title="Baixar anexos e logomarca (.tar.gz)" data-testid="download-files" (click)="downloadBackupFile(b, true)">
+                        <mat-icon>folder_zip</mat-icon>
                       </button>
                       <button mat-icon-button color="warn" title="Excluir Backup" (click)="deleteBackupFile(b)">
                         <mat-icon>delete</mat-icon>

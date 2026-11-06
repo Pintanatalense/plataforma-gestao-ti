@@ -13,6 +13,8 @@ import { MatDividerModule } from '@angular/material/divider';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 
 import { TicketService, TicketCategory, CategoryFormField } from '../ticket.service';
+import { SLA_MANAGE, SlaPolicy, SlaService } from '../sla.service';
+import { AuthService } from '../../../core/auth/auth.service';
 import { OrganizationService, Sector } from '../../../core/services/organization.service';
 import { apiErrorMessage } from '../../../core/http/api-error';
 import { LoadStateComponent } from '../../../shared/components/load-state/load-state.component';
@@ -101,6 +103,17 @@ interface FormFieldBuilder {
                 <mat-option *ngFor="let s of sectors" [value]="s.id">{{ s.name }}</mat-option>
               </mat-select>
               <mat-hint>Chamados desta categoria serão direcionados automaticamente para este setor.</mat-hint>
+            </mat-form-field>
+
+            <mat-form-field appearance="outline" class="full-width" *ngIf="canManageSla">
+              <mat-label>SLA (prazos de atendimento)</mat-label>
+              <mat-select formControlName="sla_policy_id" data-testid="category-sla">
+                <mat-option [value]="null">Não se aplica (sem prazo)</mat-option>
+                <mat-option *ngFor="let p of slaPolicies" [value]="p.id">
+                  {{ p.name }}{{ p.is_active ? '' : ' (inativa)' }}
+                </mat-option>
+              </mat-select>
+              <mat-hint>Vale para chamados novos. Política inativa não liga o relógio; ative-a em SLA (prazos).</mat-hint>
             </mat-form-field>
 
             <mat-divider class="my-4"></mat-divider>
@@ -272,6 +285,14 @@ interface FormFieldBuilder {
                   <mat-icon class="badge-icon">{{ element.default_sector_id ? 'alt_route' : 'filter_alt' }}</mat-icon>
                   {{ element.default_sector_id ? getSectorName(element.default_sector_id) : 'Triagem' }}
                 </span>
+              </td>
+            </ng-container>
+
+            <!-- SLA da categoria (ADR-017) -->
+            <ng-container matColumnDef="sla">
+              <th mat-header-cell *matHeaderCellDef> SLA </th>
+              <td mat-cell *matCellDef="let element" [attr.data-testid]="'sla-' + element.name">
+                {{ getSlaName(element.sla_policy_id) }}
               </td>
             </ng-container>
 
@@ -978,7 +999,12 @@ export class CategoryListComponent implements OnInit {
   categoriesError: string | null = null;
   private categoriesLoaded = false;
   sectors: Sector[] = [];
-  displayedColumns: string[] = ['name', 'sector', 'prerequisites', 'actions'];
+  displayedColumns: string[] = ['name', 'sector', 'sla', 'prerequisites', 'actions'];
+  private slaService = inject(SlaService);
+  private authService = inject(AuthService);
+  /** Só quem tem Gerenciar SLA escolhe o SLA da categoria (o backend recusa os demais). */
+  canManageSla = this.authService.hasPermission(SLA_MANAGE);
+  slaPolicies: SlaPolicy[] = [];
   
   catForm: FormGroup;
   editingCategory: TicketCategory | null = null;
@@ -988,7 +1014,8 @@ export class CategoryListComponent implements OnInit {
     this.catForm = this.fb.group({
       name: ['', Validators.required],
       description: [''],
-      default_sector_id: [null]
+      default_sector_id: [null],
+      sla_policy_id: [null]
     });
   }
 
@@ -998,6 +1025,20 @@ export class CategoryListComponent implements OnInit {
       next: (s) => (this.sectors = s),
       error: () => {}
     });
+    this.slaService.listPolicies().subscribe({
+      next: (p) => {
+        this.slaPolicies = p;
+        this.cdr.markForCheck();
+      },
+      error: () => {} // sem a lista, a coluna mostra só "Não se aplica" ou "Com SLA"
+    });
+  }
+
+  getSlaName(id: string | null | undefined): string {
+    if (!id) return 'Não se aplica';
+    const policy = this.slaPolicies.find((p) => p.id === id);
+    if (!policy) return 'Com SLA';
+    return policy.is_active ? policy.name : `${policy.name} (inativa)`;
   }
 
   loadData() {
@@ -1194,7 +1235,8 @@ export class CategoryListComponent implements OnInit {
     this.catForm.patchValue({
       name: cat.name,
       description: cat.description,
-      default_sector_id: cat.default_sector_id
+      default_sector_id: cat.default_sector_id,
+      sla_policy_id: cat.sla_policy_id ?? null
     });
 
     if (cat.form_schema && Array.isArray(cat.form_schema)) {
@@ -1238,9 +1280,12 @@ export class CategoryListComponent implements OnInit {
         };
       });
 
+      const { sla_policy_id, ...values } = this.catForm.value;
       const payload = {
-        ...this.catForm.value,
-        form_schema: schema
+        ...values,
+        form_schema: schema,
+        // sem a permissão o campo nem aparece; mandá-lo faria o backend recusar a categoria inteira
+        ...(this.canManageSla ? { sla_policy_id: sla_policy_id ?? null } : {})
       };
 
       if (this.editingCategory) {

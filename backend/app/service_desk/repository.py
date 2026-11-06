@@ -48,10 +48,14 @@ class ServiceDeskRepository:
     # Tickets
     # ==========================================================================
 
-    async def get_ticket(self, ticket_id: uuid.UUID) -> Ticket | None:
-        """Busca ticket e eager load nas interações, categoria e insumos."""
+    async def get_ticket(self, ticket_id: uuid.UUID, populate_existing: bool = False) -> Ticket | None:
+        """Busca ticket e eager load nas interações, categoria e insumos.
+
+        ``populate_existing``: relê do banco mesmo que o chamado já esteja na sessão (depois de uma trava).
+        """
         stmt = (
             select(Ticket)
+            .execution_options(populate_existing=populate_existing)
             .options(selectinload(Ticket.category))
             .options(selectinload(Ticket.interactions))
             .options(selectinload(Ticket.materials))
@@ -67,11 +71,12 @@ class ServiceDeskRepository:
         sector_id: uuid.UUID | None = None,
         assignee_id: uuid.UUID | None = None,
         is_attendant_scope: bool = False,
+        created_by_id: uuid.UUID | None = None,
     ) -> Sequence[Ticket]:
         """
         Lista tickets com suporte a menor privilégio e escopo setorial:
-        - is_attendant_scope=True: visualiza chamados do seu setor responsável, atribuídos a si ou abertos por si.
-        - requester_id apenas: visualiza exclusivamente os chamados que o próprio solicitante abriu.
+        - is_attendant_scope=True: chamados do seu setor responsável, atribuídos a si, solicitados ou abertos por si.
+        - requester_id/created_by_id: só os chamados em que é solicitante ou que abriu (criador).
         - Sem filtros: visualização irrestrita de todos os chamados (Gestão / Administrador).
         """
         stmt = (
@@ -92,13 +97,39 @@ class ServiceDeskRepository:
                 conditions.append(Ticket.assignee_id == assignee_id)
             if requester_id:
                 conditions.append(Ticket.requester_id == requester_id)
+            if created_by_id:
+                conditions.append(Ticket.created_by_user_id == created_by_id)
             if conditions:
                 stmt = stmt.where(or_(*conditions))
-        elif requester_id:
-            stmt = stmt.where(Ticket.requester_id == requester_id)
+        elif requester_id or created_by_id:
+            from sqlalchemy import or_
+            own = []
+            if requester_id:
+                own.append(Ticket.requester_id == requester_id)
+            if created_by_id:
+                own.append(Ticket.created_by_user_id == created_by_id)
+            stmt = stmt.where(or_(*own))
             
         result = await self.session.execute(stmt)
         return result.scalars().all()
+
+    async def list_children(self, parent_id: uuid.UUID) -> Sequence[Ticket]:
+        stmt = (
+            select(Ticket)
+            .options(selectinload(Ticket.category))
+            .where(Ticket.parent_ticket_id == parent_id)
+            .order_by(Ticket.created_at, Ticket.id)
+        )
+        return (await self.session.execute(stmt)).scalars().all()
+
+    async def lock_ticket_status(self, ticket_id: uuid.UUID) -> str | None:
+        """Trava a linha do chamado até o fim da transação (``FOR UPDATE``) e devolve o status lido do banco.
+
+        Serializa a inclusão de subchamados e o encerramento do principal (ADR-026). No SQLite dos testes rápidos não
+        há trava; a concorrência é testada no PostgreSQL.
+        """
+        stmt = select(Ticket.status).where(Ticket.id == ticket_id).with_for_update()
+        return (await self.session.execute(stmt)).scalar_one_or_none()
 
     async def create_ticket(self, ticket: Ticket) -> Ticket:
         self.session.add(ticket)

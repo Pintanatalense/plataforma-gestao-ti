@@ -20,6 +20,7 @@
         <span class="meta-badge priority">
           Prioridade: {{ ticket.priority }}
         </span>
+        <app-sla-badge [sla]="ticket.sla"></app-sla-badge>
         <span class="meta-badge requester" *ngIf="ticket.requester_name">
           <mat-icon>person</mat-icon> {{ ticket.requester_name }}
         </span>
@@ -38,7 +39,7 @@
           mat-flat-button
           color="primary"
           [matMenuTriggerFor]="statusMenu"
-          [disabled]="ticket.status === 'CLOSED'"
+          [disabled]="ticket.status === 'CLOSED' || ticket.status === 'CANCELED'"
           class="action-btn"
         >
           <mat-icon>tune</mat-icon> Alterar Status
@@ -92,7 +93,7 @@
       </button>
 
       <!-- Finalize action for Requester -->
-      <ng-container *ngIf="!isTechnician && isRequester() && ticket.status !== 'CLOSED'">
+      <ng-container *ngIf="!isTechnician && isRequester() && !ticket.parent_ticket_id && ticket.status !== 'CLOSED' && ticket.status !== 'CANCELED'">
         <button
           mat-flat-button
           color="accent"
@@ -364,6 +365,21 @@
     </div>
   </div>
 
+  <!-- Chamados vinculados (ADR-026) -->
+  <div class="parent-banner" *ngIf="ticket.parent_ticket_id" data-testid="parent-banner">
+    <mat-icon>subdirectory_arrow_right</mat-icon>
+    <span>Subchamado de <a [routerLink]="['/service-desk', ticket.parent_ticket_id]">#{{ ticket.parent_ticket_id.slice(0, 8) }}</a></span>
+    <span class="tag" *ngIf="ticket.is_required === false">etapa não obrigatória</span>
+  </div>
+  <app-ticket-children
+    *ngIf="!ticket.parent_ticket_id && (ticket.children_progress || canAddChildren())"
+    [ticket]="ticket"
+    [categories]="categories"
+    [canAdd]="canAddChildren()"
+    [canManage]="isTechnician"
+    (changed)="loadTicket(ticket.id)"
+  ></app-ticket-children>
+
   <mat-tab-group class="ticket-tabs" animationDuration="0ms">
     
     <!-- TAB 1: Chat / Interactions -->
@@ -572,7 +588,7 @@
         <span>Anexos ({{ attachments.length }})</span>
       </ng-template>
       <div class="tab-body p-4">
-        <app-attachments [entityType]="'TICKET'" [entityId]="ticket.id" (attachmentsChange)="onTicketAttachmentsChanged($event)"></app-attachments>
+        <app-attachments [entityType]="'TICKET'" [entityId]="ticket.id" [allowRestricted]="isTechnician" (attachmentsChange)="onTicketAttachmentsChanged($event)"></app-attachments>
       </div>
     </mat-tab>
 

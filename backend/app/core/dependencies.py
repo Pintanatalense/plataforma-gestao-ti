@@ -7,6 +7,8 @@ Centraliza dependências reutilizáveis como:
 - Parâmetros de paginação
 """
 
+import ipaddress
+from functools import lru_cache
 from uuid import UUID
 
 from fastapi import Depends, Header, Request
@@ -18,6 +20,7 @@ from app.core.exceptions import AppException, ForbiddenException, UnauthorizedEx
 from app.core.security import decode_access_token
 from app.database import get_db
 from app.identity.models import UserAccount
+from app.core.access import AccessContext, build_access_context, has_permission as _has_permission
 
 
 # Com troca de senha obrigatória pendente, só estas rotas funcionam.
@@ -103,29 +106,72 @@ async def get_current_user_id(
         raise UnauthorizedException("Identificação de usuário inválida no token") from exc
 
 
-async def get_current_user_ip(
-    x_forwarded_for: str | None = Header(None),
-    x_real_ip: str | None = Header(None),
-) -> str:
-    """
-    Extrai o IP do cliente da request.
+@lru_cache
+def _trusted_proxies() -> tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...]:
+    raw = get_settings().TRUSTED_PROXIES
+    return tuple(ipaddress.ip_network(item.strip(), strict=False) for item in raw.split(",") if item.strip())
 
-    Considera headers de proxy reverso (Nginx).
+
+def _valid_ip(value: str | None) -> str | None:
+    if not value:
+        return None
+    try:
+        return str(ipaddress.ip_address(value.strip()))
+    except ValueError:
+        return None
+
+
+def client_ip(request: Request) -> str:
     """
-    if x_forwarded_for:
-        return x_forwarded_for.split(",")[0].strip()
-    if x_real_ip:
-        return x_real_ip
-    return "unknown"
+    IP de quem fez a requisição, para auditoria, limites e logs.
+
+    Os cabeçalhos de proxy só valem quando a conexão vem de um proxy confiável (``TRUSTED_PROXIES``, o Nginx do
+    Compose). O Nginx sobrescreve ``X-Real-IP`` e ``X-Forwarded-For`` com o IP que ele viu; por isso o cliente não
+    escolhe o próprio IP. Conexão direta de fora dessas redes: vale o IP da conexão e os cabeçalhos são ignorados.
+
+    Proxy confiável sem cabeçalho válido devolve ``"unknown"``, nunca o IP do proxy: senão todos os clientes
+    dividiriam o mesmo "IP" nos limites por IP (``"unknown"`` não conta como um IP).
+    """
+    peer = _valid_ip(request.client.host) if request.client else None
+    if peer is None:
+        return "unknown"
+    if not any(ipaddress.ip_address(peer) in network for network in _trusted_proxies()):
+        return peer
+    forwarded = request.headers.get("x-forwarded-for", "").split(",")[0]
+    return _valid_ip(request.headers.get("x-real-ip")) or _valid_ip(forwarded) or "unknown"
+
+
+async def get_current_user_ip(request: Request) -> str:
+    """Dependência FastAPI de ``client_ip``."""
+    return client_ip(request)
+
+
+def has_permission(payload: dict, code: str) -> bool:
+    """
+    Regra única de permissão a partir do token. Administrador passa em tudo, menos nas permissões críticas: essas
+    exigem concessão explícita (``user_critical_grants``), que o login coloca em ``permissions``.
+    """
+    return _has_permission(bool(payload.get("is_admin")), payload.get("permissions", []), code)
+
+
+async def get_access_context(
+    payload: dict = Depends(get_token_payload),
+    db: AsyncSession = Depends(get_db),
+) -> AccessContext:
+    """Contexto de acesso único da requisição (FastAPI reaproveita o mesmo objeto em todas as dependências)."""
+    return await build_access_context(
+        db, uuid_from_payload(payload), is_admin=payload.get("is_admin", False), permissions=payload.get("permissions")
+    )
+
+
+def uuid_from_payload(payload: dict) -> UUID:
+    return UUID(str(payload["sub"]))
 
 
 def require_any_permission(*required_permissions: str):
-    """Libera se o usuário for admin ou tiver ao menos uma das permissões informadas."""
+    """Libera se o usuário tiver ao menos uma das permissões informadas (admin: ver ``has_permission``)."""
     async def _require_any_permission(payload: dict = Depends(get_token_payload)) -> None:
-        if payload.get("is_admin"):
-            return
-        user_permissions = set(payload.get("permissions", []))
-        if not user_permissions.intersection(required_permissions):
+        if not any(has_permission(payload, code) for code in required_permissions):
             raise ForbiddenException(
                 "Permissão necessária: " + " ou ".join(f"'{p}'" for p in required_permissions) + "."
             )
@@ -136,14 +182,10 @@ def require_any_permission(*required_permissions: str):
 def require_permission(required_permission: str):
     """
     Fábrica de dependências para verificar se o usuário tem a permissão requerida.
-    Admin (is_admin=True) sempre tem permissão.
+    Admin (is_admin=True) tem todas, exceto as críticas (``has_permission``).
     """
     async def _require_permission(payload: dict = Depends(get_token_payload)) -> None:
-        if payload.get("is_admin"):
-            return
-            
-        user_permissions = payload.get("permissions", [])
-        if required_permission not in user_permissions:
+        if not has_permission(payload, required_permission):
             raise ForbiddenException(f"Permissão '{required_permission}' necessária.")
             
     return _require_permission

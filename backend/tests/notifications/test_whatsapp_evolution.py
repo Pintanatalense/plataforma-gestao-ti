@@ -23,7 +23,7 @@ from app.notifications.linking import create_link_code
 from app.notifications.models import AutomationMark, Delivery, DomainEvent, InboundMessage, NotificationRule, UserChannelAddress
 from app.notifications.telegram_poller import SenderRateLimiter
 from app.notifications.rules_seed import seed_notification_rules
-from tests.factories import headers_for, make_employee, make_org, make_user
+from tests.factories import headers_for, make_employee, make_org, make_ticket_category, make_user
 
 pytestmark = pytest.mark.asyncio
 
@@ -262,7 +262,10 @@ async def test_status_connect_and_disconnect_flow(client: AsyncClient, db_sessio
 
     fake.state = "open"
     status = (await client.get(f"{BASE}/whatsapp/status", headers=h)).json()
-    assert (status["state"], status["display_phone"]) == ("open", "5585999990000")  # descoberto e guardado
+    assert (status["state"], status["display_phone"]) == ("open", "5585999990000")  # descoberto
+    assert "display_phone" not in (await load_channel(db_session, "whatsapp")).config  # consultar o estado não grava
+    await job_whatsapp_health(SessionFactory)  # quem guarda é a checagem periódica do worker (ou o Conectar)
+    db_session.expire_all()
     assert (await load_channel(db_session, "whatsapp")).config["display_phone"] == "5585999990000"
 
     fake.calls.clear()
@@ -706,6 +709,58 @@ async def test_per_sender_flood_is_dropped(client: AsyncClient, db_session: Asyn
     assert len(await _replies(db_session)) == 2
 
 
+async def _linked_user(client: AsyncClient, db: AsyncSession, jid: str, *, is_admin: bool = False):
+    org = await make_org(db)
+    user = await make_user(db, await make_employee(db, org), is_admin=is_admin)
+    code, _ = await create_link_code(db, user.id, "whatsapp")
+    await db.commit()
+    assert (await client.post(HOOK, json=upsert(f"vincular {code}", jid=jid), headers=hook_headers())).status_code == 200
+    return user, org
+
+
+async def test_ticket_opened_through_the_bot_shows_on_the_web_list_and_in_the_bot(client: AsyncClient, db_session: AsyncSession):
+    """Relato "abri um chamado pelo bot mas não aparece": o chamado é do colaborador vinculado, na mesma transação da
+    resposta "Chamado criado!", e aparece para ele na web e no "Consultar", e para a gestão (administrador)."""
+    await _hooked(db_session)
+    jid = "5585966660000@s.whatsapp.net"
+    user, org = await _linked_user(client, db_session, jid)
+    await make_ticket_category(db_session, org.sector, name="Acesso")
+    for text in ("1", "1", "Problema para logar no servidor", "Desde cedo o login falha"):
+        assert (await client.post(HOOK, json=upsert(text, jid=jid), headers=hook_headers())).status_code == 200
+    created = (await _replies(db_session))[-1].message["body_text"]
+    assert created.startswith("Chamado criado!")
+    number = created.split("#")[1][:8]
+
+    mine = (await client.get("/api/v1/tickets", headers=headers_for(user))).json()
+    assert [t["title"] for t in mine] == ["Problema para logar no servidor"] and mine[0]["id"].startswith(number)
+    admin = await make_user(db_session, is_admin=True)
+    assert any(t["id"].startswith(number) for t in (await client.get("/api/v1/tickets", headers=headers_for(admin))).json())
+
+    await client.post(HOOK, json=upsert("2", jid=jid), headers=hook_headers())
+    assert f"#{number}" in (await _replies(db_session))[-1].message["body_text"]
+
+
+async def test_a_failure_while_handling_does_not_return_500_nor_repeat_on_redelivery(client: AsyncClient, db_session: AsyncSession, monkeypatch):
+    from app.notifications.conversation import inbound
+    from app.notifications.conversation.engine import ConversationEngine
+
+    await _hooked(db_session)
+
+    async def broken(self, channel, external_id, text):
+        self.session.add(AutomationMark(key="escrita-parcial"))
+        await self.session.flush()
+        raise RuntimeError("banco fora do ar no meio do fluxo")
+
+    monkeypatch.setattr(ConversationEngine, "handle", broken)
+    body = upsert("1", msg_id="FALHA1")
+    for _ in range(3):  # a Evolution reenvia quando recebe erro; agora recebe 200 e a reentrega é ignorada
+        assert (await client.post(HOOK, json=body, headers=hook_headers())).status_code == 200
+    [reply] = await _replies(db_session)
+    assert reply.message["body_text"] == inbound.FAILURE_REPLY and reply.address == "5585977770000"
+    assert (await db_session.execute(select(AutomationMark))).scalars().all() == []  # o que o fluxo gravou foi desfeito
+    assert len((await db_session.execute(select(InboundMessage))).scalars().all()) == 1
+
+
 async def test_parse_inbound_is_strict_about_the_phone_format():
     good = upsert(jid="5585977770000@s.whatsapp.net")
     assert evo.parse_inbound(good, "gestao-ti")[0][1] == "5585977770000"
@@ -725,7 +780,7 @@ async def test_connect_registers_the_webhook_once_with_secret_and_the_qr_refresh
     assert (method, path, key) == ("POST", "/webhook/set/gestao-ti", API_KEY)
     hook = payload["webhook"]
     assert hook["url"].endswith("/api/v1/integrations/whatsapp/evolution/webhook") and hook["enabled"] is True
-    assert hook["headers"] == {"X-Webhook-Secret": secret} and hook["events"] == ["MESSAGES_UPSERT"]
+    assert hook["headers"] == {"X-Webhook-Secret": secret} and hook["events"] == ["MESSAGES_UPSERT", "MESSAGES_UPDATE"]
 
     fake.calls.clear()
     await client.post(f"{BASE}/whatsapp/connect?refresh=true", headers=h)

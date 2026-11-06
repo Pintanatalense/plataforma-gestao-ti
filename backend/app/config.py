@@ -70,16 +70,32 @@ class Settings(BaseSettings):
     # --- Segurança operacional ---
     # Carga de QA cria o usuário admin@teste.local com senha conhecida: nunca ligar em produção.
     ENABLE_QA_SEED: bool = False
-    # Swagger/ReDoc/openapi.json. Em produção exposta à internet, desligue.
-    ENABLE_API_DOCS: bool = True
+    # Swagger/ReDoc/openapi.json: desligado por padrão (mapa completo da API para quem chegar). Ligue em desenvolvimento.
+    ENABLE_API_DOCS: bool = False
+    # De quem o backend aceita os cabeçalhos X-Real-IP/X-Forwarded-For (o Nginx do Compose fica numa rede privada do
+    # Docker). Conexão vinda de fora dessas redes usa o IP da própria conexão: o cabeçalho é ignorado.
+    TRUSTED_PROXIES: str = "127.0.0.1/32,::1/128,10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
 
     # --- Chamados ---
     TICKET_REOPEN_DAYS: int = 3
+
+    # --- Central de Mensagens (ADR-025): tetos contra disparo em massa (o WhatsApp tem ainda o teto por pessoa) ---
+    MESSAGES_MAX_RECIPIENTS: int = 50  # por envio
+    MESSAGES_MAX_PER_HOUR: int = 20  # envios por pessoa por hora (testes contam à parte: 10 por hora)
+    MESSAGES_MAX_ACTIVE_SCHEDULES: int = 20  # agendamentos ativos ou pausados por pessoa
+    MESSAGES_SCHEDULE_TOLERANCE_MINUTES: int = 60  # ocorrência atrasada (worker parado) ainda sai dentro deste prazo
 
     # --- Backups ---
     BACKUP_STORAGE_PATH: str = "/data/backups"
     BACKUP_RETENTION_DAYS: int = 30
     BACKUP_MAX_KEEP: int = 15
+    # Anexos e logomarca entram no backup (pacote .tar.gz ao lado do .sql.gz), só nos N mais recentes
+    BACKUP_INCLUDE_FILES: bool = True
+    BACKUP_FILES_MAX_KEEP: int = 3
+
+    # --- Auditoria (retenção por categoria; job audit.retention, que arquiva antes de apagar) ---
+    AUDIT_RETENTION_SECURITY_DAYS: int = 1825  # mínimo: 5 anos
+    AUDIT_RETENTION_OPERATIONAL_DAYS: int = 730
 
     # --- CORS ---
     CORS_ORIGINS: list[str] = ["http://localhost:4200"]
@@ -93,6 +109,20 @@ class Settings(BaseSettings):
                 "SECRET_KEY inválida: use um valor aleatório com pelo menos 32 caracteres "
                 "(ex.: openssl rand -hex 32) e sem o texto 'CHANGE-ME'."
             )
+        return value
+
+    @field_validator("AUDIT_RETENTION_SECURITY_DAYS")
+    @classmethod
+    def _security_audit_keeps_five_years(cls, value: int) -> int:
+        if value < 1825:
+            raise ValueError("AUDIT_RETENTION_SECURITY_DAYS: a trilha de segurança é guardada por pelo menos 1825 dias (5 anos).")
+        return value
+
+    @field_validator("AUDIT_RETENTION_OPERATIONAL_DAYS")
+    @classmethod
+    def _operational_audit_positive(cls, value: int) -> int:
+        if value < 30:
+            raise ValueError("AUDIT_RETENTION_OPERATIONAL_DAYS: mínimo de 30 dias.")
         return value
 
     @field_validator("APP_ENCRYPTION_KEY")

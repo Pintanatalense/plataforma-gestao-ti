@@ -3,15 +3,20 @@ MOD-04 — Service Desk (Router)
 """
 
 import uuid
+from datetime import date
 from typing import Sequence
 
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, Header, Query, Response, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.dependencies import get_current_user_id, get_db, get_token_payload
-from app.identity.repository import IdentityRepository
-from app.organization.models import Employee
+from app.core.access import AccessContext
+from app.core.dependencies import get_access_context, get_current_user_id, get_db, require_permission
 from app.service_desk.schemas import (
+    ChildrenAdd,
+    ChildrenOverview,
+    TicketCancel,
+    TicketReplace,
+    TicketRequirementUpdate,
     TicketCategoryResponse,
     TicketCategoryCreate,
     TicketCategoryUpdate,
@@ -25,51 +30,14 @@ from app.service_desk.schemas import (
     TicketHistoryItem,
     TicketAssetActionRequest,
     TicketAssetInspectRequest,
+    TicketsReport,
 )
+from app.service_desk import idempotency
 from app.service_desk.services import ServiceDeskService
+from app.sla.router import SLA_MANAGE
+from app.sla.service import SlaService
 
 router = APIRouter()
-
-
-async def get_user_context(
-    payload: dict = Depends(get_token_payload),
-    session: AsyncSession = Depends(get_db)
-) -> dict:
-    user_id = uuid.UUID(payload["sub"])
-    perms = payload.get("permissions", [])
-    is_admin = payload.get("is_admin", False)
-    
-    is_technician = is_admin or "service_desk.tickets.manage" in perms
-    can_read_all = is_admin or "service_desk.tickets.read_all" in perms
-    can_internal_notes = is_admin or is_technician or "service_desk.interactions.internal" in perms
-    can_view_reports = is_admin or "service_desk.reports.read" in perms
-    
-    # precisamos do employee_id do usuário logado
-    repo = IdentityRepository(session)
-    user = await repo.get_user(user_id)
-    employee_id = user.employee_id if user else None
-    
-    employee_unit_id = None
-    employee_sector_id = None
-    if employee_id:
-        from sqlalchemy import select
-        stmt = select(Employee).where(Employee.id == employee_id)
-        result = await session.execute(stmt)
-        emp = result.scalar_one_or_none()
-        if emp:
-            employee_unit_id = emp.unit_id
-            employee_sector_id = emp.sector_id
-
-    return {
-        "user_id": user_id,
-        "employee_id": employee_id,
-        "unit_id": employee_unit_id,
-        "sector_id": employee_sector_id,
-        "is_technician": is_technician,
-        "can_read_all": can_read_all,
-        "can_internal_notes": can_internal_notes,
-        "can_view_reports": can_view_reports,
-    }
 
 
 @router.get(
@@ -88,37 +56,33 @@ async def list_categories(
     "/categories",
     response_model=TicketCategoryResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Cria uma nova categoria de chamado"
+    summary="Cria uma nova categoria de chamado",
+    dependencies=[Depends(require_permission("service_desk.categories.manage"))],
 )
 async def create_category(
     schema: TicketCategoryCreate,
-    ctx: dict = Depends(get_user_context),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
 ) -> TicketCategoryResponse:
-    if not ctx["is_technician"]:
-        from app.core.exceptions import ForbiddenException
-        raise ForbiddenException("Apenas técnicos ou gestores podem criar categorias.")
     service = ServiceDeskService(session)
-    cat = await service.create_category(schema)
+    cat = await service.create_category(schema, can_manage_sla=ctx.has(SLA_MANAGE))
     await session.commit()
     return cat
 
 @router.patch(
     "/categories/{category_id}",
     response_model=TicketCategoryResponse,
-    summary="Atualiza uma categoria existente"
+    summary="Atualiza uma categoria existente",
+    dependencies=[Depends(require_permission("service_desk.categories.manage"))],
 )
 async def update_category(
     category_id: uuid.UUID,
     schema: TicketCategoryUpdate,
-    ctx: dict = Depends(get_user_context),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
 ) -> TicketCategoryResponse:
-    if not ctx["is_technician"]:
-        from app.core.exceptions import ForbiddenException
-        raise ForbiddenException("Apenas técnicos ou gestores podem atualizar categorias.")
     service = ServiceDeskService(session)
-    cat = await service.update_category(category_id, schema)
+    cat = await service.update_category(category_id, schema, can_manage_sla=ctx.has(SLA_MANAGE), user_id=ctx.user_id)
     await session.commit()
     return cat
 
@@ -129,41 +93,55 @@ async def update_category(
     summary="Lista chamados do usuário ou todos (se técnico ou gestão)"
 )
 async def list_tickets(
-    ctx: dict = Depends(get_user_context),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
 ) -> Sequence[TicketResponse]:
     service = ServiceDeskService(session)
     tickets = await service.list_tickets_for_user(
-        user_employee_id=ctx["employee_id"],
-        user_id=ctx["user_id"],
-        sector_id=ctx["sector_id"],
-        is_technician=ctx["is_technician"],
-        can_read_all=ctx["can_read_all"]
+        user_employee_id=ctx.employee_id,
+        user_id=ctx.user_id,
+        sector_id=ctx.sector_id,
+        is_technician=ctx.is_technician,
+        can_read_all=ctx.can_read_all
     )
     
+    await SlaService(session).attach(tickets)
+    visible_parents = await service.visible_parent_ids(tickets, **_scope(ctx))
     responses = []
     for t in tickets:
         resp = TicketResponse.model_validate(t)
-        if not ctx["can_internal_notes"]:
+        if not await service.can_see_internal(t, ctx.can_internal_notes, **_scope(ctx)):
             resp.interactions = [i for i in resp.interactions if not i.is_internal]
+        if resp.parent_ticket_id not in visible_parents:
+            resp.parent_ticket_id = None
         responses.append(resp)
         
     return responses
 
 
+def _scope(ctx: AccessContext) -> dict:
+    return {
+        "user_employee_id": ctx.employee_id, "user_id": ctx.user_id, "sector_id": ctx.sector_id,
+        "is_technician": ctx.is_technician, "can_read_all": ctx.can_read_all,
+    }
+
+
 @router.get(
     "/reports/summary",
-    summary="Resumo gerencial de chamados, métricas e distribuição por status/prioridade"
+    response_model=TicketsReport,
+    summary="Resumo gerencial de chamados no período: status, prioridade, categoria e indicadores de SLA"
 )
 async def get_tickets_summary_report(
-    ctx: dict = Depends(get_user_context),
+    start: date | None = Query(None, description="Primeiro dia (fuso APP_TIMEZONE)"),
+    end: date | None = Query(None, description="Último dia, incluído"),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
-) -> dict:
-    if not ctx["can_view_reports"]:
+) -> TicketsReport:
+    if not ctx.can_view_reports:
         from app.core.exceptions import ForbiddenException
         raise ForbiddenException("Apenas o perfil de Gestão ou Administrador pode visualizar relatórios.")
     service = ServiceDeskService(session)
-    return await service.get_tickets_summary_report()
+    return await service.get_tickets_summary_report(start, end)
 
 
 @router.get(
@@ -173,23 +151,29 @@ async def get_tickets_summary_report(
 )
 async def get_ticket(
     ticket_id: uuid.UUID,
-    ctx: dict = Depends(get_user_context),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
 ) -> TicketResponse:
     service = ServiceDeskService(session)
     ticket = await service.get_ticket_for_user(
         ticket_id=ticket_id,
-        user_employee_id=ctx["employee_id"],
-        is_technician=ctx["is_technician"],
-        can_read_all=ctx["can_read_all"],
-        user_id=ctx["user_id"],
-        sector_id=ctx["sector_id"],
+        user_employee_id=ctx.employee_id,
+        is_technician=ctx.is_technician,
+        can_read_all=ctx.can_read_all,
+        user_id=ctx.user_id,
+        sector_id=ctx.sector_id,
     )
     
+    await SlaService(session).attach([ticket])
     resp = TicketResponse.model_validate(ticket)
-    if not ctx["can_internal_notes"]:
+    if not await service.can_see_internal(ticket, ctx.can_internal_notes, **_scope(ctx)):
         resp.interactions = [i for i in resp.interactions if not i.is_internal]
-        
+    if ticket.parent_ticket_id and not await service.can_view_ticket(ticket.parent_ticket_id, ctx):
+        resp.parent_ticket_id = None
+    if ticket.parent_ticket_id is None:
+        progress = await service.children_progress(ticket)
+        resp.children_progress = progress if progress.total else None
+
     return resp
 
 
@@ -201,25 +185,54 @@ async def get_ticket(
 )
 async def create_ticket(
     schema: TicketCreate,
-    ctx: dict = Depends(get_user_context),
+    response: Response,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
 ) -> TicketResponse:
-    # Mesmo quem não é tecnico pode abrir (o usuario atual é o requester se tiver employee_id)
-    # Requisito minimo é ter employee_id
-    if not ctx["employee_id"]:
-        from app.core.exceptions import ForbiddenException
-        raise ForbiddenException("Apenas colaboradores vinculados a um Employee podem abrir chamados.")
-
+    # Solicitante = o próprio colaborador, ou outro com service_desk.tickets.create_on_behalf.
+    # Quem abriu (ctx.user_id) fica registrado como criador em qualquer caso.
     service = ServiceDeskService(session)
-    ticket = await service.create_ticket(
-        schema, 
-        requester_id=ctx["employee_id"], 
-        origin_unit_id=ctx["unit_id"], 
-        origin_sector_id=ctx["sector_id"],
-        user_id=ctx["user_id"]
+    claimed = await _claim(session, ctx, idempotency_key, idempotency.CREATE_TICKET, None, schema)
+    if claimed and claimed.replay_ids is not None:
+        [ticket] = await _replay(session, service, response, claimed.replay_ids)
+        return ticket
+    requester = await service.resolve_requester(
+        schema.requester_id, own_employee_id=ctx.employee_id, can_create_on_behalf=ctx.can_create_on_behalf
     )
+    ticket = await service.create_ticket(
+        schema,
+        requester_id=requester.id,
+        origin_unit_id=requester.unit_id,
+        origin_sector_id=requester.sector_id,
+        user_id=ctx.user_id,
+        can_route_any_sector=ctx.can_route_any_sector,
+    )
+    if claimed:
+        await idempotency.record(session, claimed, [ticket.id])
+    await SlaService(session).attach([ticket])
     await session.commit()
     return ticket
+
+
+async def _claim(session, ctx: AccessContext, raw_key, endpoint, target_id, body):
+    """Reserva a ``Idempotency-Key`` (ver ``app.service_desk.idempotency``); sem cabeçalho, ``None``."""
+    key = idempotency.parse_key(raw_key)
+    if key is None:
+        return None
+    return await idempotency.claim(
+        session, user_id=ctx.user_id, key=key, endpoint=endpoint, target_id=target_id,
+        body_hash=idempotency.request_hash(body.model_dump(mode="json")),
+    )
+
+
+async def _replay(session, service: ServiceDeskService, response: Response, ids) -> list:
+    """Pedido repetido: devolve os chamados já criados, com 200 e ``Idempotent-Replay: true``."""
+    tickets = [await service.repo.get_ticket(i) for i in ids]
+    await SlaService(session).attach(tickets)
+    response.status_code = status.HTTP_200_OK
+    response.headers["Idempotent-Replay"] = "true"
+    return tickets
 
 
 @router.patch(
@@ -230,21 +243,122 @@ async def create_ticket(
 async def update_ticket(
     ticket_id: uuid.UUID,
     schema: TicketUpdate,
-    ctx: dict = Depends(get_user_context),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
 ) -> TicketResponse:
     service = ServiceDeskService(session)
     ticket = await service.update_ticket(
         ticket_id=ticket_id,
         schema=schema,
-        is_technician=ctx["is_technician"],
-        user_employee_id=ctx["employee_id"],
-        user_id=ctx["user_id"],
-        sector_id=ctx["sector_id"],
-        can_read_all=ctx["can_read_all"]
+        is_technician=ctx.is_technician,
+        user_employee_id=ctx.employee_id,
+        user_id=ctx.user_id,
+        sector_id=ctx.sector_id,
+        can_read_all=ctx.can_read_all,
+        can_reopen_late=ctx.has(SLA_MANAGE),
     )
+    await SlaService(session).attach([ticket])
     await session.commit()
     return ticket
+
+
+@router.get(
+    "/{ticket_id}/children",
+    response_model=ChildrenOverview,
+    summary="Resumo dos subchamados e o progresso do chamado principal",
+)
+async def list_children(
+    ticket_id: uuid.UUID,
+    ctx: AccessContext = Depends(get_access_context),
+    session: AsyncSession = Depends(get_db),
+) -> ChildrenOverview:
+    return await ServiceDeskService(session).list_children_for_user(ticket_id, ctx)
+
+
+@router.post(
+    "/{ticket_id}/children",
+    response_model=list[TicketResponse],
+    status_code=status.HTTP_201_CREATED,
+    summary="Inclui subchamados em um chamado principal aberto",
+)
+async def add_children(
+    ticket_id: uuid.UUID,
+    body: ChildrenAdd,
+    response: Response,
+    idempotency_key: str | None = Header(None, alias="Idempotency-Key"),
+    ctx: AccessContext = Depends(get_access_context),
+    session: AsyncSession = Depends(get_db),
+) -> list[TicketResponse]:
+    service = ServiceDeskService(session)
+    claimed = await _claim(session, ctx, idempotency_key, idempotency.ADD_CHILDREN, ticket_id, body)
+    if claimed and claimed.replay_ids is not None:
+        return await _replay(session, service, response, claimed.replay_ids)
+    children = await service.add_children(ticket_id, body.children, ctx)
+    if claimed:
+        await idempotency.record(session, claimed, [c.id for c in children])
+    await SlaService(session).attach(children)
+    await session.commit()
+    return children
+
+
+@router.post(
+    "/{ticket_id}/cancel",
+    response_model=TicketResponse,
+    summary="Cancela um subchamado, com justificativa",
+)
+async def cancel_child(
+    ticket_id: uuid.UUID,
+    body: TicketCancel,
+    ctx: AccessContext = Depends(get_access_context),
+    session: AsyncSession = Depends(get_db),
+) -> TicketResponse:
+    service = ServiceDeskService(session)
+    child = await service.cancel_child(ticket_id, body.reason, ctx)
+    await SlaService(session).attach([child])
+    await session.commit()
+    resp = TicketResponse.model_validate(child)
+    if not await service.can_see_internal(child, ctx.can_internal_notes, **_scope(ctx)):
+        resp.interactions = [i for i in resp.interactions if not i.is_internal]
+    return resp
+
+
+@router.post(
+    "/{ticket_id}/replace",
+    response_model=TicketResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Substitui uma etapa cancelada por um subchamado novo",
+)
+async def replace_child(
+    ticket_id: uuid.UUID,
+    body: TicketReplace,
+    ctx: AccessContext = Depends(get_access_context),
+    session: AsyncSession = Depends(get_db),
+) -> TicketResponse:
+    new_child = await ServiceDeskService(session).replace_child(ticket_id, body.reason, body.child, ctx)
+    await SlaService(session).attach([new_child])
+    await session.commit()
+    return new_child
+
+
+@router.patch(
+    "/{ticket_id}/requirement",
+    response_model=TicketResponse,
+    summary="Torna um subchamado obrigatório ou não, com justificativa",
+)
+async def set_child_requirement(
+    ticket_id: uuid.UUID,
+    body: TicketRequirementUpdate,
+    ctx: AccessContext = Depends(get_access_context),
+    session: AsyncSession = Depends(get_db),
+) -> TicketResponse:
+    service = ServiceDeskService(session)
+    child = await service.set_child_requirement(ticket_id, body.is_required, body.reason, ctx)
+    await SlaService(session).attach([child])
+    await session.commit()
+    resp = TicketResponse.model_validate(child)
+    if not await service.can_see_internal(child, ctx.can_internal_notes, **_scope(ctx)):
+        resp.interactions = [i for i in resp.interactions if not i.is_internal]
+    return resp
 
 
 @router.get(
@@ -254,18 +368,18 @@ async def update_ticket(
 )
 async def get_ticket_history(
     ticket_id: uuid.UUID,
-    ctx: dict = Depends(get_user_context),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
 ) -> list[TicketHistoryItem]:
     service = ServiceDeskService(session)
     history = await service.get_ticket_history(
         ticket_id=ticket_id,
-        user_employee_id=ctx["employee_id"],
-        is_technician=ctx["is_technician"],
-        can_read_all=ctx["can_read_all"],
-        can_see_internal=ctx["can_internal_notes"],
-        user_id=ctx["user_id"],
-        sector_id=ctx["sector_id"],
+        user_employee_id=ctx.employee_id,
+        is_technician=ctx.is_technician,
+        can_read_all=ctx.can_read_all,
+        can_see_internal=ctx.can_internal_notes,
+        user_id=ctx.user_id,
+        sector_id=ctx.sector_id,
     )
     return [TicketHistoryItem.model_validate(h) for h in history]
 
@@ -279,19 +393,19 @@ async def get_ticket_history(
 async def add_interaction(
     ticket_id: uuid.UUID,
     schema: TicketInteractionCreate,
-    ctx: dict = Depends(get_user_context),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
 ) -> TicketInteractionResponse:
     service = ServiceDeskService(session)
     interaction = await service.add_interaction(
         ticket_id=ticket_id,
         schema=schema,
-        author_id=ctx["user_id"],
-        user_employee_id=ctx["employee_id"],
-        is_technician=ctx["is_technician"],
-        can_read_all=ctx["can_read_all"],
-        can_internal_notes=ctx["can_internal_notes"],
-        sector_id=ctx["sector_id"],
+        author_id=ctx.user_id,
+        user_employee_id=ctx.employee_id,
+        is_technician=ctx.is_technician,
+        can_read_all=ctx.can_read_all,
+        can_internal_notes=ctx.can_internal_notes,
+        sector_id=ctx.sector_id,
     )
     await session.commit()
     return interaction
@@ -306,7 +420,7 @@ async def add_interaction(
 async def add_material(
     ticket_id: uuid.UUID,
     schema: TicketMaterialCreate,
-    ctx: dict = Depends(get_user_context),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db)
 ) -> TicketMaterialResponse:
     from app.stock.repository import StockRepository
@@ -318,11 +432,11 @@ async def add_material(
     material = await service.add_material_to_ticket(
         ticket_id=ticket_id,
         schema=schema,
-        author_id=ctx["user_id"],
-        user_employee_id=ctx["employee_id"],
-        is_technician=ctx["is_technician"],
-        can_read_all=ctx["can_read_all"],
-        sector_id=ctx["sector_id"],
+        author_id=ctx.user_id,
+        user_employee_id=ctx.employee_id,
+        is_technician=ctx.is_technician,
+        can_read_all=ctx.can_read_all,
+        sector_id=ctx.sector_id,
     )
     await session.commit()
     return material
@@ -339,15 +453,15 @@ async def add_material(
 async def link_asset_to_ticket(
     ticket_id: uuid.UUID,
     asset_id: uuid.UUID,
-    ctx: dict = Depends(get_user_context),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db),
 ):
     service = ServiceDeskService(session)
     await service.link_asset_to_ticket(
         ticket_id=ticket_id,
         asset_id=asset_id,
-        author_id=ctx["user_id"],
-        is_technician=ctx["is_technician"],
+        author_id=ctx.user_id,
+        is_technician=ctx.is_technician,
     )
     await session.commit()
     return {"message": "Ativo vinculado ao chamado com sucesso"}
@@ -360,15 +474,15 @@ async def link_asset_to_ticket(
 async def unlink_asset_from_ticket(
     ticket_id: uuid.UUID,
     asset_id: uuid.UUID,
-    ctx: dict = Depends(get_user_context),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db),
 ):
     service = ServiceDeskService(session)
     await service.unlink_asset_from_ticket(
         ticket_id=ticket_id,
         asset_id=asset_id,
-        author_id=ctx["user_id"],
-        is_technician=ctx["is_technician"],
+        author_id=ctx.user_id,
+        is_technician=ctx.is_technician,
     )
     await session.commit()
     return {"message": "Ativo desvinculado do chamado com sucesso"}
@@ -382,7 +496,7 @@ async def reserve_ticket_asset(
     ticket_id: uuid.UUID,
     asset_id: uuid.UUID,
     body: TicketAssetActionRequest = TicketAssetActionRequest(),
-    ctx: dict = Depends(get_user_context),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db),
 ):
     service = ServiceDeskService(session)
@@ -392,11 +506,11 @@ async def reserve_ticket_asset(
     movement = await service.reserve_ticket_asset(
         ticket_id=ticket_id,
         asset_id=asset_id,
-        author_id=ctx["user_id"],
-        user_employee_id=ctx["employee_id"],
-        is_technician=ctx["is_technician"],
-        can_read_all=ctx["can_read_all"],
-        sector_id=ctx["sector_id"],
+        author_id=ctx.user_id,
+        user_employee_id=ctx.employee_id,
+        is_technician=ctx.is_technician,
+        can_read_all=ctx.can_read_all,
+        sector_id=ctx.sector_id,
         employee_id=employee_id,
         notes=notes,
     )
@@ -412,7 +526,7 @@ async def deliver_ticket_asset(
     ticket_id: uuid.UUID,
     asset_id: uuid.UUID,
     body: TicketAssetActionRequest = TicketAssetActionRequest(),
-    ctx: dict = Depends(get_user_context),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db),
 ):
     service = ServiceDeskService(session)
@@ -422,11 +536,11 @@ async def deliver_ticket_asset(
     movement = await service.deliver_ticket_asset(
         ticket_id=ticket_id,
         asset_id=asset_id,
-        author_id=ctx["user_id"],
-        user_employee_id=ctx["employee_id"],
-        is_technician=ctx["is_technician"],
-        can_read_all=ctx["can_read_all"],
-        sector_id=ctx["sector_id"],
+        author_id=ctx.user_id,
+        user_employee_id=ctx.employee_id,
+        is_technician=ctx.is_technician,
+        can_read_all=ctx.can_read_all,
+        sector_id=ctx.sector_id,
         employee_id=employee_id,
         notes=notes,
     )
@@ -442,7 +556,7 @@ async def return_ticket_asset(
     ticket_id: uuid.UUID,
     asset_id: uuid.UUID,
     body: TicketAssetActionRequest = TicketAssetActionRequest(),
-    ctx: dict = Depends(get_user_context),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db),
 ):
     service = ServiceDeskService(session)
@@ -450,11 +564,11 @@ async def return_ticket_asset(
     movement = await service.return_ticket_asset(
         ticket_id=ticket_id,
         asset_id=asset_id,
-        author_id=ctx["user_id"],
-        user_employee_id=ctx["employee_id"],
-        is_technician=ctx["is_technician"],
-        can_read_all=ctx["can_read_all"],
-        sector_id=ctx["sector_id"],
+        author_id=ctx.user_id,
+        user_employee_id=ctx.employee_id,
+        is_technician=ctx.is_technician,
+        can_read_all=ctx.can_read_all,
+        sector_id=ctx.sector_id,
         notes=notes,
     )
     await session.commit()
@@ -469,7 +583,7 @@ async def inspect_ticket_asset(
     ticket_id: uuid.UUID,
     asset_id: uuid.UUID,
     body: TicketAssetInspectRequest = TicketAssetInspectRequest(),
-    ctx: dict = Depends(get_user_context),
+    ctx: AccessContext = Depends(get_access_context),
     session: AsyncSession = Depends(get_db),
 ):
     service = ServiceDeskService(session)
@@ -481,11 +595,11 @@ async def inspect_ticket_asset(
         ticket_id=ticket_id,
         asset_id=asset_id,
         approved=approved,
-        author_id=ctx["user_id"],
-        user_employee_id=ctx["employee_id"],
-        is_technician=ctx["is_technician"],
-        can_read_all=ctx["can_read_all"],
-        sector_id=ctx["sector_id"],
+        author_id=ctx.user_id,
+        user_employee_id=ctx.employee_id,
+        is_technician=ctx.is_technician,
+        can_read_all=ctx.can_read_all,
+        sector_id=ctx.sector_id,
         notes=notes,
         send_to_maintenance=send_to_maintenance,
     )

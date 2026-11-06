@@ -8,11 +8,11 @@ import hashlib
 import re
 import uuid
 from datetime import date, datetime, time, timedelta, timezone
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field, field_validator
-from sqlalchemy import func, select
+from pydantic import BaseModel, Field, field_validator, model_validator
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.repository import AuditRepository
@@ -20,14 +20,22 @@ from app.core.dependencies import get_current_user_id, require_permission
 from app.core.exceptions import BusinessRuleException, NotFoundException
 from app.database import AsyncSessionLocal, get_db
 from app.identity.models import UserAccount
+from app.notifications.channel_store import LIMITS_KEY, StoredChannel, load_channel, rate_override, save_channel
 from app.notifications.channels import ADAPTERS, build_adapter
+from app.notifications.channels import whatsapp_evolution as evolution
 from app.notifications.channels.base import AdapterContext
+from app.notifications.channels.whatsapp import PROVIDER_EVOLUTION, WHATSAPP_CHANNEL, provider_of
+from app.notifications.dispatcher import effective_rate
+from app.notifications.event_catalog import BY_CODE as EVENT_CATALOG
+from app.notifications.event_catalog import ESCALATION_UNTIL, accepts_escalation
+from app.notifications.event_catalog import as_options as catalog_options
 from app.notifications.fanout import enabled_channels, plan_event
 from app.notifications.models import (
     Delivery,
     DeliveryAttempt,
     DomainEvent,
     NotificationRule,
+    JobRun,
     ScheduledJob,
     WorkerHeartbeat,
 )
@@ -43,7 +51,7 @@ router = APIRouter(
 DB = Annotated[AsyncSession, Depends(get_db)]
 CurrentUser = Annotated[uuid.UUID, Depends(get_current_user_id)]
 
-FIXED_SELECTORS = {"requester", "assignee", "sector_attendants", "counterpart", "admins"}
+FIXED_SELECTORS = {"requester", "creator", "assignee", "sector_attendants", "counterpart", "admins"}
 CONDITION_KEYS = {"min_priority", "exclude_actor", "payload_equals"}
 EVENT_TYPE = re.compile(r"^[a-z_]+(\.[a-z_]+)*(\.\*)?$")
 DELIVERY_STATUSES = ("PENDING", "SENDING", "SENT", "DEAD", "SKIPPED", "CANCELLED")
@@ -58,6 +66,42 @@ async def _audit(db: AsyncSession, event_type: str, entity_id: uuid.UUID | None,
 
 
 # --- Entregas -------------------------------------------------------------------------------------
+
+
+def _like_escape(text: str) -> str:
+    """Só o texto digitado: % e _ do usuário não viram curinga (mesmo cuidado da busca da auditoria)."""
+    return text.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
+
+def _origin_of(d: Delivery, event_type: str | None) -> str:
+    """De onde veio a entrega: regra, Central de Mensagens, mensagem direta de uma pessoa, resposta do robô ou outra
+    rotina do sistema."""
+    if d.rule_id is not None:
+        return "rule"
+    if d.message_id is not None:
+        return "message"
+    if event_type and event_type.endswith(".direct_message"):
+        return "direct"
+    if event_type == "conversation.reply":
+        return "conversation"
+    return "system"
+
+
+def _origin_clause(origin: str):
+    if origin == "rule":
+        return Delivery.rule_id.is_not(None)
+    if origin == "message":
+        return and_(Delivery.rule_id.is_(None), Delivery.message_id.is_not(None))
+    unattached = and_(Delivery.rule_id.is_(None), Delivery.message_id.is_(None))
+    if origin == "direct":
+        return and_(unattached, DomainEvent.event_type.like("%.direct_message"))
+    if origin == "conversation":
+        return and_(unattached, DomainEvent.event_type == "conversation.reply")
+    return and_(
+        unattached,
+        DomainEvent.event_type.not_like("%.direct_message"),
+        DomainEvent.event_type != "conversation.reply",
+    )
 
 
 def _delivery_out(d: Delivery, event_type: str | None, email: str | None) -> dict[str, Any]:
@@ -77,6 +121,9 @@ def _delivery_out(d: Delivery, event_type: str | None, email: str | None) -> dic
         "next_attempt_at": d.next_attempt_at,
         "created_at": d.created_at,
         "sent_at": d.sent_at,
+        "provider_status": d.provider_status,
+        "provider_status_at": d.provider_status_at,
+        "origin": _origin_of(d, event_type),
     }
 
 
@@ -89,6 +136,12 @@ async def list_deliveries(
     recipient: str | None = Query(None, description="trecho do e-mail do destinatário"),
     date_from: date | None = None,
     date_to: date | None = None,
+    origin: Literal["rule", "message", "direct", "conversation", "system"] | None = None,
+    provider_status: Literal["accepted", "delivered", "read", "failed", "none"] | None = Query(
+        None, description="confirmação do provedor; 'none' = sem confirmação"
+    ),
+    address: str | None = Query(None, max_length=255, description="trecho do endereço (e-mail, telefone, chat)"),
+    q: str | None = Query(None, max_length=100, description="trecho do título ou do texto da mensagem"),
     limit: int = Query(50, ge=1, le=200),
     offset: int = Query(0, ge=0),
 ):
@@ -109,6 +162,22 @@ async def list_deliveries(
         base = base.where(Delivery.created_at >= datetime.combine(date_from, time.min, tzinfo=timezone.utc))
     if date_to:
         base = base.where(Delivery.created_at < datetime.combine(date_to + timedelta(days=1), time.min, tzinfo=timezone.utc))
+    if origin:
+        base = base.where(_origin_clause(origin))
+    if provider_status == "none":
+        base = base.where(Delivery.provider_status.is_(None))
+    elif provider_status:
+        base = base.where(Delivery.provider_status == provider_status)
+    if address and address.strip():
+        base = base.where(Delivery.address.ilike(f"%{_like_escape(address)}%", escape="\\"))
+    if q and q.strip():
+        pattern = f"%{_like_escape(q)}%"
+        base = base.where(
+            or_(
+                Delivery.message["title"].as_string().ilike(pattern, escape="\\"),
+                Delivery.message["body_text"].as_string().ilike(pattern, escape="\\"),
+            )
+        )
 
     total = (await db.execute(select(func.count()).select_from(base.subquery()))).scalar_one()
     rows = (await db.execute(base.order_by(Delivery.created_at.desc()).limit(limit).offset(offset))).all()
@@ -190,6 +259,29 @@ async def cancel_delivery(delivery_id: uuid.UUID, db: DB, user_id: CurrentUser):
 # --- Regras ---------------------------------------------------------------------------------------
 
 
+def _check_selectors(value: list[str]) -> list[str]:
+    for selector in value:
+        if selector in FIXED_SELECTORS:
+            continue
+        if selector.startswith("role:") and len(selector) > 5:
+            continue
+        if selector.startswith("user:"):
+            try:
+                uuid.UUID(selector[5:])
+                continue
+            except ValueError:
+                pass
+        raise ValueError(f"Seletor de audiência inválido: {selector}")
+    return value
+
+
+def _check_channels(value: list[str]) -> list[str]:
+    invalid = [c for c in value if c not in ADAPTERS and c != "preferred"]
+    if invalid:
+        raise ValueError(f"Canais desconhecidos: {invalid}. Disponíveis: {sorted(ADAPTERS)} e 'preferred'")
+    return value
+
+
 class RuleIn(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     enabled: bool = True
@@ -219,27 +311,12 @@ class RuleIn(BaseModel):
     @field_validator("audience")
     @classmethod
     def _audience(cls, value: list[str]) -> list[str]:
-        for selector in value:
-            if selector in FIXED_SELECTORS:
-                continue
-            if selector.startswith("role:") and len(selector) > 5:
-                continue
-            if selector.startswith("user:"):
-                try:
-                    uuid.UUID(selector[5:])
-                    continue
-                except ValueError:
-                    pass
-            raise ValueError(f"Seletor de audiência inválido: {selector}")
-        return value
+        return _check_selectors(value)
 
     @field_validator("channels")
     @classmethod
     def _channels(cls, value: list[str]) -> list[str]:
-        invalid = [c for c in value if c not in ADAPTERS and c != "preferred"]
-        if invalid:
-            raise ValueError(f"Canais desconhecidos: {invalid}. Disponíveis: {sorted(ADAPTERS)} e 'preferred'")
-        return value
+        return _check_channels(value)
 
     @field_validator("template_code")
     @classmethod
@@ -247,6 +324,41 @@ class RuleIn(BaseModel):
         if value != "generic" and value not in TEMPLATES:
             raise ValueError(f"Modelo desconhecido: {value}")
         return value
+
+    escalation: dict[str, Any] = {}
+    fallback_channel: str | None = None
+
+    @field_validator("fallback_channel")
+    @classmethod
+    def _fallback(cls, value: str | None) -> str | None:
+        if value is not None and value not in ADAPTERS:
+            raise ValueError(f"Canal alternativo desconhecido: {value}")
+        return value or None
+
+    @model_validator(mode="after")
+    def _escalation(self) -> "RuleIn":
+        """Escalonamento (ADR-013 §6.3): só em evento de chamado, com prazo, condição e a quem escalar."""
+        esc = self.escalation
+        if not esc:
+            return self
+        if not accepts_escalation(self.event_type):
+            raise ValueError("Escalonamento só vale para eventos de chamado (abertura, atribuição e SLA).")
+        unknown = set(esc) - {"after_minutes", "until", "audience", "channels"}
+        if unknown:
+            raise ValueError(f"Campos de escalonamento desconhecidos: {sorted(unknown)}")
+        minutes = esc.get("after_minutes")
+        if not isinstance(minutes, int) or isinstance(minutes, bool) or not 5 <= minutes <= 10080:
+            raise ValueError("Escalonamento: o prazo vai de 5 minutos a 7 dias (after_minutes).")
+        if esc.get("until", "first_response") not in ESCALATION_UNTIL:
+            raise ValueError(f"Escalonamento: condição deve ser uma de {sorted(ESCALATION_UNTIL)}.")
+        audience = esc.get("audience")
+        if not isinstance(audience, list) or not audience:
+            raise ValueError("Escalonamento: escolha a quem escalar.")
+        _check_selectors(audience)
+        if esc.get("channels"):
+            _check_channels(esc["channels"])
+        self.escalation = {"until": "first_response", **esc}
+        return self
 
 
 def _rule_out(r: NotificationRule) -> dict[str, Any]:
@@ -261,6 +373,9 @@ def _rule_out(r: NotificationRule) -> dict[str, Any]:
         "audience": r.audience or [],
         "channels": r.channels or [],
         "template_code": r.template_code,
+        "escalation": r.escalation or {},
+        "fallback_channel": r.fallback_channel,
+        "in_catalog": r.event_type in EVENT_CATALOG or r.event_type.endswith(".*"),
     }
 
 
@@ -280,6 +395,7 @@ async def list_rules(db: DB):
             "channels": [*sorted(ADAPTERS), "preferred"],
             "templates": ["generic", *sorted(TEMPLATES)],
             "selectors": [*sorted(FIXED_SELECTORS), "role:<perfil>", "user:<id>"],
+            **catalog_options(),
         },
     }
 
@@ -349,6 +465,7 @@ async def simulate(body: SimulationIn, db: DB):
                 "channel": p.channel,
                 "title": p.message.get("title"),
                 "send_at": p.next_attempt_at,
+                "escalation_until": p.escalation_condition,
             }
             for p in plans
         ]
@@ -435,6 +552,63 @@ async def channel_health(db: DB):
     }
 
 
+class GatewayLimitsIn(BaseModel):
+    # None = volta ao teto do canal
+    rate_per_second: float | None = Field(None, gt=0)
+
+
+def _gateway_out(channel: str, stored: StoredChannel | None) -> dict[str, Any]:
+    capabilities = ADAPTERS[channel].capabilities
+    override = rate_override(stored.config if stored else None)
+    limits: dict[str, Any] = {
+        "ceiling_rate_per_second": capabilities.rate_per_second,
+        "rate_per_second": override,
+        "effective_rate_per_second": effective_rate(capabilities.rate_per_second, override),
+    }
+    out: dict[str, Any] = {
+        "channel": channel,
+        "enabled": True if channel == "in_app" else bool(stored and stored.enabled),
+        "configured": channel == "in_app" or stored is not None,
+        "capabilities": capabilities.to_dict(),
+        "limits": limits,
+    }
+    if channel == WHATSAPP_CHANNEL and stored is not None:
+        out["provider"] = provider_of(stored)
+        if out["provider"] == PROVIDER_EVOLUTION:  # editados na aba WhatsApp; aqui só leitura
+            limits["send_interval_seconds"] = stored.config.get("send_interval_seconds", evolution.DEFAULT_INTERVAL_SECONDS)
+            limits["max_per_hour_per_person"] = stored.config.get("max_per_hour", evolution.DEFAULT_MAX_PER_HOUR)
+    return out
+
+
+@router.get("/gateways")
+async def list_gateways(db: DB):
+    """Configuração, capacidades e limites de cada canal (ADR-025 M2). A saúde fica em `/channels`."""
+    return {"items": [_gateway_out(name, await load_channel(db, name)) for name in sorted(ADAPTERS)]}
+
+
+@router.put("/gateways/{channel}/limits")
+async def update_gateway_limits(channel: str, body: GatewayLimitsIn, db: DB, user_id: CurrentUser):
+    if channel not in ADAPTERS:
+        raise NotFoundException("Canal", channel)
+    ceiling = ADAPTERS[channel].capabilities.rate_per_second
+    if ceiling is None:
+        raise BusinessRuleException("Este canal não tem limite de envio para ajustar.")
+    if body.rate_per_second is not None and body.rate_per_second > ceiling:
+        raise BusinessRuleException(f"O limite só pode ser reduzido: o máximo deste canal é {ceiling:g} envio(s) por segundo.")
+    stored = await load_channel(db, channel)
+    if stored is None:
+        raise BusinessRuleException("Configure o canal antes de ajustar o limite.")
+    limits = {"rate_per_second": body.rate_per_second} if body.rate_per_second is not None else {}
+    await save_channel(db, channel, stored.enabled, {**stored.config, LIMITS_KEY: limits}, dict(stored.secrets))
+    await AuditRepository(db).create(
+        event_type="notifications.gateway_limits_updated", entity_type="notification",
+        entity_id=uuid.uuid5(uuid.NAMESPACE_OID, f"channel:{channel}"),
+        data={"channel": channel, "rate_per_second": body.rate_per_second}, user_id=user_id,
+    )
+    await db.commit()
+    return _gateway_out(channel, await load_channel(db, channel))
+
+
 @router.post("/channels/{channel}/test")
 async def test_channel(channel: str, db: DB):
     adapter = build_adapter(channel, AdapterContext(session_factory=AsyncSessionLocal))
@@ -460,6 +634,7 @@ async def list_jobs(db: DB):
                 "last_run_at": j.last_run_at,
                 "last_status": j.last_status,
                 "last_error": j.last_error,
+                "retry_attempt": j.retry_attempt,
             }
             for j in jobs
         ]
@@ -485,6 +660,30 @@ async def patch_job(name: str, body: JobPatch, db: DB, user_id: CurrentUser):
     await _audit(db, "notifications.job_updated", None, {"job": name, "enabled": job.enabled}, user_id)
     await db.commit()
     return {"name": job.name, "enabled": job.enabled}
+
+
+@router.get("/jobs/{name}/runs")
+async def list_job_runs(name: str, db: DB, limit: int = Query(20, ge=1, le=100)):
+    """Histórico das execuções (mais recentes primeiro): status, tentativa, duração e erro."""
+    await _get_job(db, name)
+    runs = (
+        await db.execute(select(JobRun).where(JobRun.job_name == name).order_by(JobRun.started_at.desc()).limit(limit))
+    ).scalars()
+    return {
+        "items": [
+            {
+                "id": r.id,
+                "status": r.status,
+                "attempt": r.attempt,
+                "isolated": r.isolated,
+                "started_at": r.started_at,
+                "finished_at": r.finished_at,
+                "duration_ms": r.duration_ms,
+                "error": r.error,
+            }
+            for r in runs
+        ]
+    }
 
 
 @router.post("/jobs/{name}/run")

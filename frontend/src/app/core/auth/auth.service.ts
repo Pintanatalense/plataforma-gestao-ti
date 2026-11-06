@@ -15,6 +15,8 @@ export interface UserAccount {
   must_change_password: boolean;
   is_admin: boolean;
   roles: any[];
+  /** Permissões críticas concedidas individualmente (nunca vêm de perfil). */
+  critical_permissions?: string[];
 }
 
 @Injectable({
@@ -214,8 +216,8 @@ export class AuthService {
     if (!user) return false;
     if (user.is_admin) return true;
     
-    // permissions are nested in roles
-    const permissions = new Set<string>();
+    // permissions are nested in roles; críticas vêm só da concessão individual
+    const permissions = new Set<string>(user.critical_permissions ?? []);
     user.roles?.forEach(role => {
       role.permissions?.forEach((p: any) => permissions.add(p.code));
     });

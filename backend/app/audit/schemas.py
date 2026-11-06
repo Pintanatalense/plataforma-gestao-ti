@@ -18,4 +18,18 @@ class AuditLogOut(BaseModel):
     user_id: uuid.UUID | None
     user_email: str | None = None
     user_name: str | None = None
+    actor_kind: str = "system"
+    category: str = "operational"
+    ip: str | None = None
+    request_id: str | None = None
     created_at: datetime
+
+
+class AuditChainStatusOut(BaseModel):
+    """Resultado da verificação da cadeia de uma categoria (``problem`` vazio = íntegra)."""
+
+    category: str
+    checked: int
+    last_pos: int
+    last_hash: str
+    problem: str | None = None

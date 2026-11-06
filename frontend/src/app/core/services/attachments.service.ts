@@ -11,6 +11,8 @@ export interface Attachment {
   entity_type: string;
   entity_id: string;
   uploaded_by_id: string | null;
+  /** Restrito ao setor que atende o chamado (ADR-026). */
+  is_internal?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -22,11 +24,14 @@ export class AttachmentsService {
   private http = inject(HttpClient);
   private apiUrl = '/api/v1/attachments';
 
-  uploadFile(file: File, entityType: string, entityId: string): Observable<HttpEvent<Attachment>> {
+  uploadFile(file: File, entityType: string, entityId: string, isInternal = false): Observable<HttpEvent<Attachment>> {
     const formData = new FormData();
     formData.append('file', file);
     formData.append('entity_type', entityType);
     formData.append('entity_id', entityId);
+    if (isInternal) {
+      formData.append('is_internal', 'true');
+    }
 
     const req = new HttpRequest('POST', this.apiUrl, formData, {
       reportProgress: true,

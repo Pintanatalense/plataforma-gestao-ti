@@ -10,7 +10,6 @@ from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.audit.models import AuditLog
-from app.identity.models import UserAccount
 
 class AuditRepository:
     def __init__(self, session: AsyncSession):
@@ -51,8 +50,11 @@ class AuditRepository:
         user: str | None,
         date_from: datetime | None,
         date_to: datetime | None,
+        category: str | None = None,
     ) -> list:
         conditions = []
+        if category:
+            conditions.append(AuditLog.category == category)
         if event_type:
             conditions.append(AuditLog.event_type == event_type)
         if entity_type:
@@ -60,9 +62,8 @@ class AuditRepository:
         if user and user.strip():  # só espaços não vira "%%" (casaria todo mundo)
             # só o texto digitado, escapado: % e _ do usuário não viram curinga
             escaped = user.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
-            conditions.append(
-                AuditLog.user_id.in_(select(UserAccount.id).where(UserAccount.email.ilike(f"%{escaped}%", escape="\\")))
-            )
+            # e-mail gravado no evento: acha também a trilha de contas já apagadas
+            conditions.append(AuditLog.actor_email.ilike(f"%{escaped}%", escape="\\"))
         if date_from:
             conditions.append(AuditLog.created_at >= date_from)
         if date_to:
@@ -77,10 +78,11 @@ class AuditRepository:
         user: str | None = None,
         date_from: datetime | None = None,
         date_to: datetime | None = None,
+        category: str | None = None,
         limit: int = 50,
         offset: int = 0,
     ) -> tuple[list[AuditLog], int]:
-        conditions = self._filters(event_type, entity_type, user, date_from, date_to)
+        conditions = self._filters(event_type, entity_type, user, date_from, date_to, category)
         total = await self.session.scalar(select(func.count()).select_from(AuditLog).where(*conditions))
         stmt = (
             select(AuditLog)

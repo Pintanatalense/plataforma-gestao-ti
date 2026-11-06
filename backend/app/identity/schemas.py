@@ -20,6 +20,12 @@ class PermissionBase(BaseModel):
 
 class PermissionOut(PermissionBase):
     id: uuid.UUID
+    module: Optional[str] = None
+    label: Optional[str] = None
+    risk: Optional[str] = None
+    is_critical: bool = False
+    module_label: Optional[str] = None
+    risk_label: Optional[str] = None
     created_at: datetime
     updated_at: datetime
 
@@ -111,8 +117,41 @@ class UserAccountOut(BaseModel):
     created_at: datetime
     updated_at: datetime
     roles: list[RoleOut] = []
+    # Permissões críticas concedidas individualmente (nunca vêm de perfil nem do is_admin).
+    critical_permissions: list[str] = []
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class EffectivePermissionOut(BaseModel):
+    """Uma permissão que a conta TEM, e de onde ela vem (calculado pelo backend, mesma regra da autorização)."""
+    code: str
+    label: str
+    description: str
+    module: str
+    module_label: str
+    risk: str
+    risk_label: str
+    is_critical: bool
+    sources: list[str]
+
+
+class CriticalGrantIn(BaseModel):
+    permission: str = Field(..., max_length=100)
+    reason: str = Field(..., min_length=5, max_length=255)
+
+
+class CriticalRevokeIn(BaseModel):
+    reason: str = Field(..., min_length=5, max_length=255)
+
+
+class CriticalGrantOut(BaseModel):
+    permission: str
+    label: str
+    granted_via: str
+    granted_at: datetime
+    granted_by_user_id: Optional[uuid.UUID] = None
+    reason: Optional[str] = None
 
 
 # ==============================================================================

@@ -1,7 +1,7 @@
 # Como contribuir
 
 Documentação em português; código (variáveis, funções, tabelas, endpoints) em inglês.
-O plano de evolução está em [`docs/plans/plano-diretor.md`](docs/plans/plano-diretor.md); as decisões de arquitetura,
+O plano de evolução está em [`docs/plans/plano-evolucao.md`](docs/plans/plano-evolucao.md) (o anterior, concluído, em [`plano-diretor.md`](docs/plans/plano-diretor.md)); as decisões de arquitetura,
 em [`docs/decisions/`](docs/decisions/).
 
 ## Fluxo
@@ -15,12 +15,16 @@ em [`docs/decisions/`](docs/decisions/).
 5. O PR só entra na `main` com **CI verde** e **revisão** (code owner). Nada de commit direto na `main`.
    Com um único code owner, o GitHub não deixa o dono aprovar o PR que ele mesmo abriu: use um autor diferente do dono, um segundo code owner ou o bypass de administrador na proteção da `main`.
 
-Dependabot: PRs semanais de dependências (limite baixo no início). Versão **maior** de runtime (Python, Node, PostgreSQL, Nginx, uv) não é proposta automaticamente; o `uv` do `backend/Dockerfile` é atualizado à mão.
+**Agentes de IA** seguem também o [AGENTS.md](AGENTS.md): validam e corrigem localmente (`ci-local`) antes de publicar,
+não usam o CI para descobrir erro e nunca mesclam sem autorização humana.
+
+Dependabot: atualizações de rotina **desligadas** (limite 0 em .github/dependabot.yml); as dependências são atualizadas numa etapa única antes de cada versão, com um ci-local só. Versão **maior** de runtime (Python, Node, PostgreSQL, Nginx, uv) não é proposta automaticamente; o `uv` do `backend/Dockerfile` é atualizado à mão.
 
 ## Qualidade mínima
 
 | Verificação | Comando |
 |---|---|
+| **Tudo o que o CI roda, nas áreas alteradas** (recomendado) | `make ci-local` ou `bash scripts/ci-local.sh` (ver "Minutos do GitHub Actions") |
 | Testes do backend (SQLite, rápido) | `cd backend && uv run pytest` |
 | Testes do backend em PostgreSQL (inclui `pg` e `migrations`) | `docker compose -f docker-compose.test.yml up -d`; depois `export TEST_DATABASE_URL=postgresql+asyncpg://postgres:postgres@localhost:55432/gti_test` e `cd backend && uv run pytest` (sem a variável os testes `pg`/`migrations` são ignorados; ver `docs/11-base-de-testes-e-homologacao.md`) |
 | Lint do backend | `cd backend && uv run ruff check app tests alembic` |
@@ -29,7 +33,10 @@ Dependabot: PRs semanais de dependências (limite baixo no início). Versão **m
 | Frontend | `cd frontend && npm ci && npm run test -- --watch=false && npm run build` |
 
 Regras que o CI faz cumprir: `ruff` sem achados (regras de defeito), `alembic check` sem diferença, `shellcheck` limpo,
-testes em SQLite **e** PostgreSQL, imagens Docker construindo.
+testes passando, imagens Docker construindo **e funcionando** (teste de fumaça `scripts/smoke-test.sh`: sobe a pilha
+real e confere health com banco e worker saudáveis, versão, migrations, seed, frontend e bloqueios do Nginx). Em todo PR de backend os testes de regra rodam em SQLite e os marcados
+`pg`/`migrations` no PostgreSQL 16; a suíte **inteira** em PostgreSQL real (`USE_PG_TEST=true`) roda quando o PR mexe em
+migrations, `models.py`, `repository.py`, `app/database.py` ou `tests/conftest.py`, e na execução semanal.
 
 ## Telas que dependem da API (frontend)
 
@@ -61,11 +68,13 @@ e procura mudança de comportamento escondida em PRs "mecânicos". Achado sério
 
 ## Minutos do GitHub Actions
 
-O plano gratuito dá 2.000 minutos por mês (e o aviso chega aos 90%). Uma execução completa do CI custa cerca de 20 minutos, por isso:
+O plano gratuito dá 2.000 minutos por mês (e o aviso chega aos 90%). Uma execução completa do CI custa cerca de 10 a 13 minutos faturados (medição de 24/10/2026 em [docs/ci-consumo.md](docs/ci-consumo.md), que também ensina a medir o consumo com `scripts/ci_usage.py`), por isso:
 
-- **Rode tudo localmente antes de subir** (`uv run ruff check`, `uv run pytest`, `npm run lint`, `npm test`, `shellcheck`). O CI confirma; não é para descobrir erro.
+- **Rode o CI local antes de subir**: `make ci-local` (Linux/WSL) ou `bash scripts/ci-local.sh` (Git Bash no Windows). Ele roda as mesmas verificações do CI, só nas áreas que mudaram, em contêineres Linux (Python 3.12, Node 22, PostgreSQL 16 descartável), e grava o resumo em `.ci-local/ultimo-resultado.txt` para colar no PR. `--all` roda tudo; `--no-docker` pula o build das imagens. O CI confirma; não é para descobrir erro.
+  - Precisa só do Docker ligado. O banco é criado em memória, numa rede interna sem porta, e apagado ao final; o código é montado só leitura. Nunca aponta para o banco de desenvolvimento ou de produção.
+  - Diferenças que ainda podem existir: o runner do GitHub (Ubuntu) e a versão do `uv` instalada pelo CI. Verde local reduz, mas não elimina, a chance de falha no CI.
 - **Um PR, poucos commits.** Cada `push` num PR reexecuta o que mudou. Junte as correções de revisão em um único commit em vez de um commit por achado.
 - **O CI só roda o que o PR tocou** (job `changes`): só documentação não roda nada pesado; só frontend não roda o backend. Mudar `.github/workflows/` roda tudo.
-- **Não há execução em `push` na `main`** (o PR já rodou o mesmo código). A suíte completa, inclusive SQLite e auditoria de dependências, roda toda segunda-feira e sob demanda (aba *Actions* → *CI* → *Run workflow*).
-- **Dependabot é mensal e sem rebase automático**: cada rebase reexecuta o CI. Revise os PRs dele em lote, um por vez.
+- **Não há execução em `push` na `main`** (o PR já rodou o mesmo código). A suíte completa (backend em SQLite e em PostgreSQL real, auditoria de dependências) roda toda segunda-feira e sob demanda (aba *Actions* → *CI* → *Run workflow*).
+- **Dependabot sem PRs de rotina**: cada PR dele roda o CI. Atualize as dependências de uma vez, antes de cada versão; para reativar, volte o limite no ecossistema desejado.
 - Consulte o gasto em *Settings → Billing → Usage*. Para nunca cobrar além do incluído, defina um orçamento de US$ 0 para Actions (isso bloqueia as execuções ao chegar no limite).

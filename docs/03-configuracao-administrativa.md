@@ -68,18 +68,69 @@ Quem tem apenas permissão de editar usuários **não** pode conceder o papel de
 
 ---
 
-## 3. Matriz de Perfis e Permissões (RBAC)
+## 3. Perfis, permissões e acesso efetivo
 
-O sistema opera sob o princípio do menor privilégio. Estão pré-configurados os seguintes perfis padrão:
+O sistema opera sob o princípio do menor privilégio. O catálogo único de permissões (código, módulo, rótulo em
+português, descrição e risco) fica em `backend/app/identity/permission_catalog.py`. Perfis criados pelo seed
+(cumulativos; perfis já existentes não são sobrescritos):
 
-| Perfil | Escopo de Permissões | Indicado Para |
-| :--- | :--- | :--- |
+| Perfil | O que acrescenta |
+| :--- | :--- |
+| **Solicitante** | Abrir chamados, ver os próprios chamados e os próprios ativos. |
+| **Atendente** | Atender os chamados do seu setor, direcionar chamados a qualquer setor, notas internas, categorias de chamados, modelos de atendimento, ver ativos e estoque. |
+| **Gestão** | Ver todos os chamados, relatórios, inventários, auditoria, organização (leitura) e exportar dados. |
+| **Admin** | Cadastro e movimentação de ativos, categorias, importação do GLPI, estoque, organização, usuários, perfis e SLA. |
+| **Administrador** | Todas as permissões comuns. |
+
+**Permissões críticas** (backups, download de backup, dados de demonstração, zerar a base, importação de dados e
+conceder críticas) não entram em perfil nem valem pelo simples "Administrador": são concedidas a cada pessoa. Ver
+`docs/09`, seção 2.
+
+**Abertura de chamados: solicitante, criador e setor.**
+* **Solicitante** é a pessoa para quem o pedido é feito; **criador** é quem abriu. Por padrão são a mesma pessoa.
+  Abrir em nome de outro colaborador exige **Abrir chamados em nome de outra pessoa**
+  (`service_desk.tickets.create_on_behalf`, sem concessão automática: marque no perfil de quem precisa). Solicitante e
+  criador acompanham o chamado, comentam em público e podem finalizá-lo; o criador fica registrado no chamado e na
+  auditoria.
+* **Setor responsável:** a categoria define o setor. Escolher outro setor exige **Direcionar chamados a qualquer setor**
+  (`service_desk.tickets.route_any_sector`), que vem no perfil Atendente (e nos que herdam dele). Categoria sem setor
+  padrão exige que o setor seja informado, e ele precisa estar ativo.
+
+**Telas:**
+* **Perfis** (*Administração & Sistema > Perfis*): ao criar ou editar um perfil, as permissões aparecem agrupadas por
+  módulo, com nome em português, descrição e o risco (Leitura, Alteração, Execução, Administração). As críticas não
+  aparecem ali. Se a lista de permissões não carregar, o perfil não pode ser salvo (salvar apagaria as permissões dele).
+* **Usuários** → botão **Acesso** (ícone de escudo): mostra o **acesso efetivo** da conta, calculado pelo servidor com a
+  mesma regra da autorização — cada permissão que ela tem e de onde vem (perfil, "Administrador" ou concessão
+  individual) — e as permissões críticas concedidas. Quem tem `identity.critical.grant` concede (com motivo) e revoga
+  críticas ali mesmo; a pessoa precisa entrar de novo para a concessão valer.
+
+--- | :--- | :--- |
 | **Administrador (`ADMIN_TOTAL`)** | Acesso irrestrito a configurações, backups, integrações, auditoria e limpeza de dados. | Gerentes de TI, CISO e Sysadmins. |
 | **Gestão de TI (`GESTAO_TI`)** | Visualização completa de chamados, relatórios executivos, movimentações de patrimônio e estoque. | Coordenadores e Supervisores de Suporte. |
 | **Técnico N2 (`TECNICO_N2`)** | Atendimento de chamados do seu setor, lançamento de notas internas, consumo de estoque e movimentação de ativos. | Analistas de Suporte e Especialistas de Infraestrutura. |
 | **Solicitante (`SOLICITANTE_PADRAO`)** | Visualização estrita dos chamados de sua autoria, abertura de tickets com formulários dinâmicos. | Usuários finais da organização. |
 
 ---
+
+## 3.1. SLA de chamados (prazos de atendimento)
+
+Tela *Service Desk > SLA (prazos)*, para quem tem **Gerenciar SLA** (`service_desk.sla.manage`; o perfil Administrador já tem; num perfil Admin criado antes desta versão, marque em *Perfis*). Regras completas em
+[ADR-017](decisions/ADR-017-sla.md).
+
+1. **Calendários** (aba *Calendários*): o expediente de cada dia da semana (pode ter mais de um intervalo, ex.: 08:00–12:00
+   e 13:00–18:00), o fuso e os feriados. Os prazos só correm dentro do expediente. A instalação já traz o calendário
+   "Horário comercial" (segunda a sexta, 08:00–18:00).
+2. **Políticas** (aba *Políticas*): prazo de **primeira resposta** e de **resolução** para cada prioridade, em horas úteis
+   (0,5 = 30 min); prioridade sem prazo não tem relógio. Também: o **alerta** de proximidade (padrão 80% do prazo; 0
+   desliga), o que fazer ao **reabrir** (recomeçar o prazo de resolução ou continuar de onde parou) e em quais status o
+   relógio **para** (Pendente e, se quiser, Em atendimento). A política "Padrão" vem **inativa**.
+3. **Ligar à categoria:** em *Categorias de Chamados*, campo **SLA** (padrão "Não se aplica"). A política precisa estar
+   **ativa** para ligar o relógio.
+
+Tudo vale para **chamados novos**: os que já estão abertos guardaram os prazos de quando começaram. O selo no cabeçalho
+do chamado mostra a situação (no prazo, pausado, cumprido, violado) e o próximo prazo. Os avisos (*perto de vencer* e
+*violado*) saem pelo hub de notificações; as regras ficam em *Notificações > Entregas e regras*.
 
 ## 4. Auditoria e Rastreabilidade
 

@@ -25,7 +25,7 @@ SAVED = dict(host="smtp.empresa.local", port=587, security="STARTTLS", username=
 
 async def _manager(db: AsyncSession):
     user = await make_user(db)
-    return user, headers_for(user, "system.backup.manage")
+    return user, headers_for(user, "system.backup.manage", "system.demo.manage")
 
 
 async def _save_smtp(db: AsyncSession) -> None:
@@ -165,10 +165,13 @@ async def test_smtp_config_change_and_test_are_audited_without_secrets(
     assert "segredo" not in str([log.data for log in logs])
 
 
-async def test_api_docs_can_be_turned_off(monkeypatch):
+async def test_api_docs_are_off_by_default_and_can_be_turned_on(monkeypatch):
+    from app.config import Settings
     from app.main import create_app
 
-    assert create_app().openapi_url is not None  # padrão: documentação ligada
+    assert Settings.model_fields["ENABLE_API_DOCS"].default is False
     monkeypatch.setattr(get_settings(), "ENABLE_API_DOCS", False)
     app = create_app()
     assert app.docs_url is None and app.redoc_url is None and app.openapi_url is None
+    monkeypatch.setattr(get_settings(), "ENABLE_API_DOCS", True)
+    assert create_app().openapi_url is not None

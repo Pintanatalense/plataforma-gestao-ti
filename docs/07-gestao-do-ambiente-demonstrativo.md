@@ -27,7 +27,7 @@ Acessando **Administração > Ambientes & Dados**, o administrador visualiza em 
 A funcionalidade **“Limpar dados de demonstração”** prepara o sistema para uma nova empresa sem a necessidade de reinstalação da infraestrutura.
 
 ### 3.1. Requisitos de Segurança Obrigatórios
-* **Controle de Acesso:** Exclusivo para usuários com a permissão administrativa `system.backup.manage`.
+* **Controle de Acesso:** carregar, pré-visualizar e limpar a demonstração (e a carga de QA) exige `system.demo.manage`; **zerar toda a base** exige `system.data.reset`. As duas são **críticas**: vale só por concessão individual (também para administradores); o administrador criado pelos próprios dados de demonstração não a recebe.
 * **Bloqueio por Falta de Backup:** Se não houver nenhum backup recente utilizável no diretório `/data/backups/`, o botão de limpeza é **bloqueado automaticamente**.
 * **Pré-Visualização do Impacto:** Um modal apresenta detalhadamente quais registros serão removidos e quais serão preservados.
 * **Confirmação Dupla Obrigatória:** O administrador deve digitar exatamente a frase de segurança:

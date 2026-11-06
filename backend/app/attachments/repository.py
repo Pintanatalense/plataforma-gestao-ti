@@ -17,13 +17,17 @@ class AttachmentRepository:
         result = await self.session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_by_entity(self, entity_type: str, entity_id: uuid.UUID) -> List[Attachment]:
+    async def list_by_entity(
+        self, entity_type: str, entity_id: uuid.UUID, include_internal: bool = True
+    ) -> List[Attachment]:
         stmt = select(Attachment).where(
             Attachment.entity_type == entity_type,
             Attachment.entity_id == entity_id,
             Attachment.deleted_at.is_(None)
         ).order_by(Attachment.created_at.desc())
-        
+        if not include_internal:
+            stmt = stmt.where(Attachment.is_internal.is_(False))
+
         result = await self.session.execute(stmt)
         return list(result.scalars().all())
 

@@ -24,11 +24,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.assets.models import Asset, AssetCategory, AssetStatus
-from app.audit.models import AuditLog
 from app.attachments.models import Attachment
 from app.core.security import hash_password
 from app.database import AsyncSessionLocal
 from app.identity.models import Permission, Role, UserAccount, user_role_association
+from app.identity.permission_catalog import sync_permission_catalog
 from app.inventory_audit.models import InventoryAudit, InventoryAuditItem
 from app.movements.models import AssetMovement, MovementType
 from app.notifications.models import Notification
@@ -40,62 +40,6 @@ from app.whatsapp.models import WhatsAppTemplate
 
 DEMO_PASSWORD = "Demo@2026"
 
-SYSTEM_PERMISSIONS = [
-    # Organization
-    {"code": "organization.company.read", "description": "Ler dados da empresa"},
-    {"code": "organization.company.create", "description": "Inicializar a empresa"},
-    {"code": "organization.company.update", "description": "Editar dados da empresa"},
-    {"code": "organization.units.read", "description": "Ler unidades"},
-    {"code": "organization.units.create", "description": "Criar unidades"},
-    {"code": "organization.units.update", "description": "Editar unidades"},
-    {"code": "organization.sectors.read", "description": "Ler setores"},
-    {"code": "organization.sectors.create", "description": "Criar setores"},
-    {"code": "organization.sectors.update", "description": "Editar setores"},
-    {"code": "organization.employees.read", "description": "Ler colaboradores"},
-    {"code": "organization.employees.create", "description": "Criar colaboradores"},
-    {"code": "organization.employees.update", "description": "Editar colaboradores"},
-    
-    # Identity
-    {"code": "identity.users.read", "description": "Ler usuários"},
-    {"code": "identity.users.create", "description": "Criar usuários"},
-    {"code": "identity.users.update", "description": "Editar usuários"},
-    {"code": "identity.roles.read", "description": "Ler perfis"},
-    {"code": "identity.roles.create", "description": "Criar perfis"},
-    {"code": "identity.roles.update", "description": "Editar perfis"},
-
-    # Assets
-    {"code": "assets.read", "description": "Ler patrimônio e ativos"},
-    {"code": "assets.write", "description": "Criar/editar ativos e movimentações"},
-    {"code": "assets.read_own", "description": "Visualizar próprios ativos e equipamentos vinculados"},
-
-    # Stock
-    {"code": "stock.read", "description": "Ler estoque e insumos"},
-    {"code": "stock.write", "description": "Criar/editar insumos e movimentações de estoque"},
-
-    # Inventory
-    {"code": "inventory.read", "description": "Ler inventários periódicos"},
-    {"code": "inventory.write", "description": "Criar e conduzir inventários periódicos"},
-
-    # Auditoria
-    {"code": "audit.read", "description": "Visualizar logs de auditoria e trilha de conformidade"},
-
-    # Service Desk
-    {"code": "service_desk.tickets.manage", "description": "Atender e gerenciar chamados (técnico/setorial)"},
-    {"code": "service_desk.tickets.create", "description": "Abrir novos chamados de suporte"},
-    {"code": "service_desk.tickets.read", "description": "Visualizar próprios chamados"},
-    {"code": "service_desk.tickets.read_all", "description": "Visualizar todos os chamados da organização (Gestão)"},
-    {"code": "service_desk.reports.read", "description": "Acessar relatórios e métricas de desempenho/SLA"},
-    {"code": "service_desk.interactions.internal", "description": "Registrar e visualizar notas internas no chamado"},
-
-    # Sistema, Dados e Backups
-    {"code": "system.data.export", "description": "Exportar dados do sistema em formato CSV"},
-    {"code": "system.data.import", "description": "Importar dados no sistema via CSV"},
-    {"code": "system.backup.manage", "description": "Gerenciar e gerar backups do banco de dados"},
-    {"code": "system.backup.download", "description": "Baixar arquivos de backup do banco de dados"},
-
-    # Integrações
-    {"code": "integrations.whatsapp.manage", "description": "Configurar e gerenciar bot do WhatsApp"},
-]
 
 WHATSAPP_TEMPLATES = [
     {
@@ -160,9 +104,8 @@ async def clean_database(session: AsyncSession) -> None:
     for model in (DeliveryAttempt, Delivery, DomainEvent, InboundMessage, ConversationSession):
         await session.execute(delete(model))
 
-    # 2. Notificações e auditoria
+    # 2. Notificações. A auditoria NÃO é apagada: é só de inserção e sai apenas pela retenção (ADR-023)
     await session.execute(delete(Notification))
-    await session.execute(delete(AuditLog))
 
     # 3. Anexos
     await session.execute(delete(Attachment))
@@ -204,21 +147,17 @@ async def clean_database(session: AsyncSession) -> None:
 
 async def sync_roles_and_permissions(session: AsyncSession) -> dict[str, Role]:
     """Garante a existência de todas as permissões e perfis do sistema."""
-    for p_data in SYSTEM_PERMISSIONS:
-        stmt = select(Permission).where(Permission.code == p_data["code"])
-        res = await session.execute(stmt)
-        if not res.scalar_one_or_none():
-            session.add(Permission(**p_data))
-    await session.flush()
+    # Catálogo único; críticas nunca entram em perfil, nem no Administrador da demonstração/QA (S5).
+    await sync_permission_catalog(session)
 
-    stmt_all = select(Permission)
+    stmt_all = select(Permission).where(Permission.is_critical.is_(False))
     all_perms = list((await session.execute(stmt_all)).scalars().all())
 
     async def _sync_role(name: str, desc: str, perm_codes: list[str] | None = None) -> Role:
         if perm_codes is None:
             perms = all_perms
         else:
-            stmt_p = select(Permission).where(Permission.code.in_(perm_codes))
+            stmt_p = select(Permission).where(Permission.code.in_(perm_codes), Permission.is_critical.is_(False))
             perms = list((await session.execute(stmt_p)).scalars().all())
 
         stmt_r = select(Role).options(selectinload(Role.permissions)).where(Role.name == name)
@@ -249,6 +188,9 @@ async def sync_roles_and_permissions(session: AsyncSession) -> dict[str, Role]:
     # 2. Atendente: Solicitante + atendimento de chamados do seu setor/unidade
     atendente_codes = solicitante_codes + [
         "service_desk.tickets.manage",
+        "service_desk.tickets.route_any_sector",
+    "service_desk.categories.manage",
+        "service_desk.templates.manage",
         "service_desk.interactions.internal",
         "assets.read",
         "stock.read",
@@ -281,6 +223,9 @@ async def sync_roles_and_permissions(session: AsyncSession) -> dict[str, Role]:
     # 4. Admin: Gestão + cadastro de inventário e ativos completo + usuários e estoque
     admin_codes = gestao_codes + [
         "assets.write",
+    "assets.categories.manage",
+    "assets.movements.write",
+    "assets.import",
         "stock.write",
         "organization.company.update",
         "organization.units.create",
@@ -1223,6 +1168,7 @@ async def _seed_demo_impl(session: AsyncSession) -> None:
             "data_admissao": (date.today() + timedelta(days=5)).isoformat(),
         },
         requester_id=employee_map["Carla Albuquerque"].id,
+        created_by_user_id=admin_user.id,  # aberto pela carga de demonstração
         assignee_id=user_map["gabriel.ti@empresa.com.br"].id,
         origin_unit_id=matriz.id,
         origin_sector_id=sec_rh.id,
@@ -1252,6 +1198,7 @@ async def _seed_demo_impl(session: AsyncSession) -> None:
             "mensagem_erro": "Teclas de espaço e interrogação sem resposta mecânica",
         },
         requester_id=employee_map["Patrícia Lima"].id,
+        created_by_user_id=admin_user.id,  # aberto pela carga de demonstração
         assignee_id=user_map["gabriel.ti@empresa.com.br"].id,
         origin_unit_id=filial.id,
         origin_sector_id=sec_adm.id,
@@ -1290,6 +1237,7 @@ async def _seed_demo_impl(session: AsyncSession) -> None:
             "tipo_permissao": "Leitura e Gravação",
         },
         requester_id=employee_map["Marcos Rocha"].id,
+        created_by_user_id=admin_user.id,  # aberto pela carga de demonstração
         assignee_id=None,
         origin_unit_id=filial.id,
         origin_sector_id=sec_operacional.id,
@@ -1311,6 +1259,7 @@ async def _seed_demo_impl(session: AsyncSession) -> None:
             "centro_custo": "CC-201 (Comercial Matriz)",
         },
         requester_id=employee_map["Mariana Costa"].id,
+        created_by_user_id=admin_user.id,  # aberto pela carga de demonstração
         assignee_id=None,
         origin_unit_id=matriz.id,
         origin_sector_id=sec_comercial.id,
@@ -1331,6 +1280,7 @@ async def _seed_demo_impl(session: AsyncSession) -> None:
             "ambiente": "Bancada de Triagem e Expedição",
         },
         requester_id=employee_map["Marcos Rocha"].id,
+        created_by_user_id=admin_user.id,  # aberto pela carga de demonstração
         assignee_id=user_map["felipe.manutencao@empresa.com.br"].id,
         origin_unit_id=filial.id,
         origin_sector_id=sec_operacional.id,

@@ -30,8 +30,8 @@ powershell -ExecutionPolicy Bypass -File scripts\install.ps1      # Opção: -Po
 O script:
 
 1. **verifica os requisitos mínimos** (memória, disco, portas, `curl`, `openssl`, Docker com Compose v2 em execução) e, se faltar algo, **instala**: no Linux `curl`, `openssl` e o Docker Engine (pelo gerenciador de pacotes da distribuição e pelo script oficial da Docker Inc.); no Windows o Docker Desktop, via `winget`. Sempre pergunta antes (use `--yes` / `-Yes` para não perguntar);
-2. cria o `.env` a partir do `.env.example` com `POSTGRES_PASSWORD`, `SECRET_KEY` e `APP_ENCRYPTION_KEY` **aleatórios** (nunca sobrescreve um `.env` que já exista);
-3. executa `docker compose up -d --build` (migrations e dados iniciais rodam sozinhos no backend);
+2. cria o `.env` a partir do `.env.example` com `POSTGRES_PASSWORD`, as senhas dos papéis de banco (`DB_OWNER_PASSWORD`, `DB_APP_PASSWORD`, `DB_EVOLUTION_PASSWORD`; [ADR-022](decisions/ADR-022-papeis-de-banco.md)), `SECRET_KEY` e `APP_ENCRYPTION_KEY` **aleatórios**. Nunca sobrescreve um `.env` que já exista: nele só acrescenta as senhas de papel que faltarem;
+3. executa `docker compose up -d --build` (o serviço `db-init` cria os papéis de banco e roda as migrations; o backend carrega os dados iniciais);
 4. espera `/api/v1/health` responder e mostra o endereço.
 
 `--env-only` (`-EnvOnly` no PowerShell) só gera o `.env`.
@@ -86,7 +86,7 @@ O assistente só funciona enquanto não existe usuário; depois disso responde 4
 
 ```bash
 docker compose ps                         # todos "healthy" (o worker leva ~40 s)
-curl -s http://localhost/api/v1/health    # "status": "healthy"; components.worker = "healthy"
+curl -s http://localhost/api/v1/health    # "status": "healthy"; components.worker e components.scheduler = "healthy"
 ```
 
 Volumes persistentes (não apague com `down -v`): `postgres_data`, `attachments_data`, `backups_data`.

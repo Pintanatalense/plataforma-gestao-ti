@@ -97,6 +97,11 @@ export const routes: Routes = [
         loadComponent: () => import('./features/notifications/preferences/preferences.component').then(m => m.PreferencesComponent)
       },
       {
+        path: 'notifications/messages',
+        canActivate: [anyPermissionGuard('notifications.messages.send', 'notifications.messages.schedule', 'notifications.messages.read', 'notifications.manage')],
+        loadComponent: () => import('./features/notifications/messages/messages-page.component').then(m => m.MessagesPageComponent)
+      },
+      {
         path: 'notifications/admin',
         canActivate: [permissionGuard('notifications.manage')],
         loadComponent: () => import('./features/notifications/admin/notifications-admin.component').then(m => m.NotificationsAdminComponent)
@@ -107,8 +112,23 @@ export const routes: Routes = [
       },
       {
         path: 'service-desk/categories',
-        canActivate: [permissionGuard('service_desk.tickets.manage')],
+        canActivate: [permissionGuard('service_desk.categories.manage')],
         loadComponent: () => import('./features/service-desk/category-list/category-list.component').then(m => m.CategoryListComponent)
+      },
+      {
+        path: 'service-desk/reports',
+        canActivate: [permissionGuard('service_desk.reports.read')],
+        loadComponent: () => import('./features/service-desk/ticket-report/ticket-report.component').then(m => m.TicketReportComponent)
+      },
+      {
+        path: 'service-desk/templates',
+        canActivate: [permissionGuard('service_desk.templates.manage')],
+        loadComponent: () => import('./features/service-desk/ticket-templates/ticket-templates.component').then(m => m.TicketTemplatesComponent)
+      },
+      {
+        path: 'service-desk/sla',
+        canActivate: [permissionGuard('service_desk.sla.manage')],
+        loadComponent: () => import('./features/service-desk/sla-admin/sla-admin.component').then(m => m.SlaAdminComponent)
       },
       {
         path: 'service-desk/new',
@@ -135,7 +155,7 @@ export const routes: Routes = [
       },
       {
         path: 'assets/import-glpi',
-        canActivate: [permissionGuard('assets.write')],
+        canActivate: [permissionGuard('assets.import')],
         loadComponent: () => import('./features/assets/asset-glpi-import/asset-glpi-import.component').then(m => m.AssetGlpiImportComponent)
       },
       {

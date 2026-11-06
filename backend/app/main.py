@@ -60,14 +60,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Aplicação encerrada")
 
 
-async def _worker_status(session) -> str:
-    """`healthy` se o worker de notificações publicou heartbeat há menos de 60 s (não afeta o status geral)."""
+async def _worker_status(session, name: str = "notifier") -> str:
+    """`healthy` se o laço do worker (`notifier` = entregas, `scheduler` = agenda) publicou heartbeat há menos de
+    60 s (não afeta o status geral)."""
     from sqlalchemy import select
 
     from app.notifications.models import WorkerHeartbeat
 
     try:
-        beat_at = (await session.execute(select(WorkerHeartbeat.beat_at).where(WorkerHeartbeat.name == "notifier"))).scalar_one_or_none()
+        beat_at = (await session.execute(select(WorkerHeartbeat.beat_at).where(WorkerHeartbeat.name == name))).scalar_one_or_none()
     except Exception:
         return "unknown"
     if beat_at is None:
@@ -133,11 +134,12 @@ def _mount_routers(app: FastAPI) -> None:
     async def healthcheck() -> dict:
         """Retorna status de saúde da aplicação e conexão com o banco."""
         db_status = "healthy"
-        worker_status = "unknown"
+        worker_status = scheduler_status = "unknown"
         try:
             async with AsyncSessionLocal() as session:
                 await session.execute(text("SELECT 1"))
                 worker_status = await _worker_status(session)
+                scheduler_status = await _worker_status(session, "scheduler")
         except Exception:
             db_status = "unhealthy"
 
@@ -148,6 +150,7 @@ def _mount_routers(app: FastAPI) -> None:
             "components": {
                 "database": db_status,
                 "worker": worker_status,
+                "scheduler": scheduler_status,
             },
         }
 
@@ -162,6 +165,8 @@ def _mount_routers(app: FastAPI) -> None:
 
     from app.service_desk.router import router as service_desk_router
     app.include_router(service_desk_router, prefix=f"{prefix}/tickets", tags=["Service Desk"])
+    from app.service_desk.templates_router import router as ticket_templates_router
+    app.include_router(ticket_templates_router, prefix=f"{prefix}/ticket-templates", tags=["Service Desk"])
 
     from app.assets.router import router as assets_router
     app.include_router(assets_router, prefix=f"{prefix}/assets", tags=["Ativos"])
@@ -180,6 +185,12 @@ def _mount_routers(app: FastAPI) -> None:
 
     from app.attachments.router import router as attachments_router
     app.include_router(attachments_router, prefix=f"{prefix}")
+
+    # antes do router de notificações: os caminhos /notifications/messages/... não podem cair em /notifications/{id}
+    from app.notifications.schedules_router import router as notifications_schedules_router
+    app.include_router(notifications_schedules_router, prefix=prefix)  # antes de /messages/{id}
+    from app.notifications.messages_router import router as notifications_messages_router
+    app.include_router(notifications_messages_router, prefix=prefix)
 
     from app.notifications.router import router as notifications_router
     app.include_router(notifications_router, prefix=prefix)
@@ -219,6 +230,9 @@ def _mount_routers(app: FastAPI) -> None:
 
     from app.notifications.email_router import router as email_router
     app.include_router(email_router, prefix=prefix)
+
+    from app.sla.router import router as sla_router
+    app.include_router(sla_router, prefix=prefix)
 
 
 # Instância da aplicação

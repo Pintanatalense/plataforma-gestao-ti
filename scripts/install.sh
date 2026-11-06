@@ -343,6 +343,14 @@ else
   GENERATED=1
 fi
 
+# Papéis de banco (ADR-022): também numa instalação existente, gera só as senhas que faltam (atualização).
+for role_password in DB_OWNER_PASSWORD DB_APP_PASSWORD DB_EVOLUTION_PASSWORD; do
+  if [ -z "$(env_value "$role_password")" ]; then
+    put_env "$role_password" "$(random_hex 16)"
+    say "Senha gerada no .env: $role_password (papéis de banco separados, ADR-022)."
+  fi
+done
+
 if [ -n "$PORT" ]; then
   case "$PORT" in ''|*[!0-9]*) fail "Porta inválida: $PORT" ;; esac
   if grep -qE '^HTTP_PORT=' .env; then
@@ -365,7 +373,7 @@ if [ "$HTTPS" -eq 1 ]; then
   put_env COMPOSE_FILE "docker-compose.yml:docker-compose.https.yml"
 fi
 
-for required in POSTGRES_PASSWORD SECRET_KEY APP_ENCRYPTION_KEY; do
+for required in POSTGRES_PASSWORD DB_OWNER_PASSWORD DB_APP_PASSWORD DB_EVOLUTION_PASSWORD SECRET_KEY APP_ENCRYPTION_KEY; do
   [ -n "$(env_value "$required")" ] || fail "$required está vazio no .env. Preencha (veja os comentários do arquivo) e rode de novo."
 done
 

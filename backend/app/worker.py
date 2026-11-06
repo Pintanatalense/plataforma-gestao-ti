@@ -1,14 +1,25 @@
 """
-Worker de notificações (ADR-013): um único processo que expande eventos em entregas, envia,
-executa a agenda e publica o heartbeat.
+Worker de notificações (ADR-013; papéis e agenda isolada: ADR-024, Plano de Evolução Fase 0 PR 12).
 
-    python -m app.worker                  # loop principal
-    python -m app.worker --healthcheck    # exit 0 se o heartbeat tem menos de 60 s
+Dois laços independentes, cada um com o seu heartbeat:
+
+* **entregas** (``notifier``): expande eventos em entregas, envia, recupera entregas travadas e recebe o Telegram;
+* **agenda** (``scheduler``): roda os jobs (``app/notifications/job_runner.py``). Um job lento ou preso nunca
+  atrasa uma notificação: os laços não se esperam e os jobs pesados rodam em subprocesso com tempo máximo.
+
+    python -m app.worker                       # papel em WORKER_ROLE (padrão: all = os dois laços)
+    python -m app.worker --role delivery       # só entregas  (ex.: contêiner separado)
+    python -m app.worker --role jobs           # só a agenda
+    python -m app.worker --healthcheck         # exit 0 se os heartbeats do papel têm menos de 60 s
+    python -m app.worker --run-job NOME ...    # uso interno: subprocesso de um job isolado
 """
+import argparse
 import asyncio
 import logging
+import os
 import signal
 import sys
+import uuid
 from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select
@@ -20,7 +31,8 @@ from app.config import get_settings
 from app.database import AsyncSessionLocal, engine
 from app.notifications.dispatcher import Dispatcher
 from app.notifications.fanout import fan_out_batch
-from app.notifications.jobs import ensure_default_jobs, run_due_jobs
+from app.notifications.job_runner import claim_due, recover_interrupted, run_claimed, run_job_in_child
+from app.notifications.jobs import ensure_default_jobs
 from app.notifications.models import WorkerHeartbeat
 from app.notifications.outbox import OUTBOX_CHANNEL
 from app.notifications.rules_seed import seed_notification_rules
@@ -28,8 +40,11 @@ from app.notifications.telegram_poller import poll_forever
 
 logger = logging.getLogger("worker")
 
-WORKER_NAME = "notifier"
+WORKER_NAME = "notifier"  # laço de entregas (nome mantido: a tela e o /health já o leem)
+SCHEDULER_NAME = "scheduler"
+ROLES = {"all": (WORKER_NAME, SCHEDULER_NAME), "delivery": (WORKER_NAME,), "jobs": (SCHEDULER_NAME,)}
 POLL_SECONDS = 5.0
+JOBS_POLL_SECONDS = 5.0
 HEARTBEAT_EVERY = timedelta(seconds=10)
 RECOVER_EVERY = timedelta(seconds=60)
 HEARTBEAT_MAX_AGE = timedelta(seconds=60)
@@ -58,33 +73,81 @@ async def listen_for_wakeups(wake: asyncio.Event, stop: asyncio.Event) -> None:
                 await conn.close()
 
 
-async def beat(session: AsyncSession, info: dict) -> None:
+async def beat(session: AsyncSession, info: dict, name: str = WORKER_NAME) -> None:
     now = datetime.now(timezone.utc)
-    row = (await session.execute(select(WorkerHeartbeat).where(WorkerHeartbeat.name == WORKER_NAME))).scalar_one_or_none()
+    row = (await session.execute(select(WorkerHeartbeat).where(WorkerHeartbeat.name == name))).scalar_one_or_none()
     if row is None:
-        session.add(WorkerHeartbeat(name=WORKER_NAME, beat_at=now, info=info))
+        session.add(WorkerHeartbeat(name=name, beat_at=now, info=info))
     else:
         row.beat_at = now
         row.info = info
 
 
-async def run_cycle(dispatcher: Dispatcher) -> tuple[int, int, int]:
-    """Um ciclo: fan-out, envio e agenda. Retorna (eventos expandidos, entregas tentadas, jobs rodados)."""
+async def run_cycle(dispatcher: Dispatcher) -> tuple[int, int]:
+    """Um ciclo de entregas: fan-out e envio. Retorna (eventos expandidos, entregas tentadas)."""
     async with AsyncSessionLocal() as session:
         expanded = await fan_out_batch(session)
         await session.commit()
     sent = await dispatcher.run_once()
-    jobs = await run_due_jobs(AsyncSessionLocal)
-    return expanded, sent, jobs
+    return expanded, sent
 
 
-async def run(stop: asyncio.Event) -> None:
+async def jobs_loop(stop: asyncio.Event, session_factory=AsyncSessionLocal, poll_seconds: float = JOBS_POLL_SECONDS) -> None:
+    """Laço da agenda: cada execução reservada vira uma tarefa própria; o laço segue reservando as outras."""
+    running: set[asyncio.Task] = set()
+    last_beat = datetime.min.replace(tzinfo=timezone.utc)
+    totals = {"jobs": 0, "interrupted": 0}
+    try:
+        while not stop.is_set():
+            try:
+                totals["interrupted"] += await recover_interrupted(session_factory)
+                for name, run_id in await claim_due(session_factory):
+                    task = asyncio.create_task(run_claimed(session_factory, name, run_id), name=f"job:{name}")
+                    running.add(task)
+                    task.add_done_callback(running.discard)
+                    totals["jobs"] += 1
+            except Exception:
+                logger.exception("Falha no laço da agenda")
+            now = datetime.now(timezone.utc)
+            if now - last_beat >= HEARTBEAT_EVERY:
+                try:
+                    async with session_factory() as session:
+                        await beat(session, {**totals, "running": sorted(t.get_name() for t in running)}, SCHEDULER_NAME)
+                        await session.commit()
+                    last_beat = now
+                except Exception:
+                    logger.exception("Falha ao publicar o heartbeat da agenda")
+            try:
+                await asyncio.wait_for(stop.wait(), timeout=poll_seconds)
+            except asyncio.TimeoutError:
+                pass
+    finally:
+        for task in running:  # o subprocesso de um job isolado é encerrado junto (CancelledError)
+            task.cancel()
+        if running:
+            await asyncio.gather(*running, return_exceptions=True)
+
+
+async def run(stop: asyncio.Event, role: str = "all") -> None:
     async with AsyncSessionLocal() as session:
         created = await seed_notification_rules(session)
         jobs = await ensure_default_jobs(session)
         await session.commit()
-    logger.info("Worker iniciado (regras novas: %d, jobs novos: %d)", created, jobs)
+    logger.info("Worker iniciado (papel: %s; regras novas: %d, jobs novos: %d)", role, created, jobs)
 
+    scheduler = asyncio.create_task(jobs_loop(stop)) if role in ("all", "jobs") else None
+    try:
+        if role in ("all", "delivery"):
+            await delivery_loop(stop)
+        else:
+            await stop.wait()
+    finally:
+        if scheduler is not None:
+            stop.set()
+            await scheduler
+
+
+async def delivery_loop(stop: asyncio.Event) -> None:
     dispatcher = Dispatcher(AsyncSessionLocal)
     wake = asyncio.Event()
     listener = None
@@ -95,15 +158,14 @@ async def run(stop: asyncio.Event) -> None:
 
     last_beat = datetime.min.replace(tzinfo=timezone.utc)
     last_recover = last_beat
-    totals = {"events": 0, "deliveries": 0, "jobs": 0}
+    totals = {"events": 0, "deliveries": 0}
 
     try:
         while not stop.is_set():
             try:
-                expanded, sent, jobs_run = await run_cycle(dispatcher)
+                expanded, sent = await run_cycle(dispatcher)
                 totals["events"] += expanded
                 totals["deliveries"] += sent
-                totals["jobs"] += jobs_run
             except Exception:
                 logger.exception("Falha no ciclo do worker")
                 expanded = sent = 0
@@ -132,22 +194,31 @@ async def run(stop: asyncio.Event) -> None:
         poller.cancel()
 
 
-async def healthcheck() -> int:
+async def healthcheck(role: str = "all") -> int:
     try:
         async with AsyncSessionLocal() as session:
-            beat_at = (
-                await session.execute(select(WorkerHeartbeat.beat_at).where(WorkerHeartbeat.name == WORKER_NAME))
-            ).scalar_one_or_none()
+            beats = dict(
+                (
+                    await session.execute(
+                        select(WorkerHeartbeat.name, WorkerHeartbeat.beat_at).where(WorkerHeartbeat.name.in_(ROLES[role]))
+                    )
+                ).all()
+            )
     finally:
         await engine.dispose()
-    if beat_at is None:
-        return 1
-    if beat_at.tzinfo is None:
-        beat_at = beat_at.replace(tzinfo=timezone.utc)
-    return 0 if datetime.now(timezone.utc) - beat_at < HEARTBEAT_MAX_AGE else 1
+    now = datetime.now(timezone.utc)
+    for name in ROLES[role]:
+        beat_at = beats.get(name)
+        if beat_at is None:
+            return 1
+        if beat_at.tzinfo is None:
+            beat_at = beat_at.replace(tzinfo=timezone.utc)
+        if now - beat_at >= HEARTBEAT_MAX_AGE:
+            return 1
+    return 0
 
 
-async def _main() -> None:
+async def _main(role: str) -> None:
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -156,14 +227,30 @@ async def _main() -> None:
         except NotImplementedError:  # Windows
             pass
     try:
-        await run(stop)
+        await run(stop, role)
     finally:
         await engine.dispose()
         logger.info("Worker encerrado")
 
 
+def _parse_args(argv: list[str]) -> argparse.Namespace:
+    parser = argparse.ArgumentParser(prog="python -m app.worker")
+    parser.add_argument("--role", choices=sorted(ROLES), default=os.environ.get("WORKER_ROLE", "all"))
+    parser.add_argument("--healthcheck", action="store_true")
+    parser.add_argument("--run-job", dest="run_job")
+    parser.add_argument("--run-id")
+    parser.add_argument("--target")
+    args = parser.parse_args(argv)
+    if args.role not in ROLES:
+        parser.error(f"WORKER_ROLE inválido: {args.role}")
+    return args
+
+
 if __name__ == "__main__":
     setup_logging(get_settings().LOG_LEVEL)
-    if "--healthcheck" in sys.argv:
-        sys.exit(asyncio.run(healthcheck()))
-    asyncio.run(_main())
+    args = _parse_args(sys.argv[1:])
+    if args.healthcheck:
+        sys.exit(asyncio.run(healthcheck(args.role)))
+    if args.run_job:
+        sys.exit(asyncio.run(run_job_in_child(args.run_job, uuid.UUID(args.run_id), args.target)))
+    asyncio.run(_main(args.role))

@@ -9,16 +9,19 @@ import hashlib
 import hmac
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Query, Request, Response
 from fastapi.responses import PlainTextResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.dependencies import client_ip
 from app.database import get_db
 from app.notifications.channel_store import load_channel
 from app.notifications.channels.whatsapp import WHATSAPP_CHANNEL
 from app.notifications.conversation.inbound import process_inbound
+from app.notifications.receipts import Receipt, apply_receipts
 from app.notifications.telegram_poller import SenderRateLimiter
 
 logger = logging.getLogger(__name__)
@@ -50,6 +53,29 @@ def extract_messages(payload: dict[str, Any], phone_number_id: str | None) -> li
     return found
 
 
+META_RECEIPT_STATUS = {"sent": "accepted", "delivered": "delivered", "read": "read", "failed": "failed"}
+
+
+def extract_receipts(payload: dict[str, Any], phone_number_id: str | None) -> list[Receipt]:
+    """Confirmações (`statuses`) das mensagens que o nosso número enviou: sent, delivered, read, failed."""
+    found: list[Receipt] = []
+    for entry in payload.get("entry") or []:
+        for change in entry.get("changes") or []:
+            value = change.get("value") or {}
+            if phone_number_id and (value.get("metadata") or {}).get("phone_number_id") != phone_number_id:
+                continue
+            for item in value.get("statuses") or []:
+                status = META_RECEIPT_STATUS.get(str(item.get("status") or ""))
+                if not status or not item.get("id"):
+                    continue
+                try:
+                    at = datetime.fromtimestamp(int(item.get("timestamp")), tz=timezone.utc)
+                except (TypeError, ValueError, OverflowError):
+                    at = None
+                found.append(Receipt(str(item["id"]), status, at))
+    return found
+
+
 @router.get("/webhook", include_in_schema=False)
 async def verify_webhook(
     db: Annotated[AsyncSession, Depends(get_db)],
@@ -71,7 +97,7 @@ async def receive_webhook(request: Request, db: Annotated[AsyncSession, Depends(
     if stored is None or not stored.enabled:
         return Response(status_code=404)
     if not signature_valid(stored.secrets.get("app_secret"), request.headers.get("X-Hub-Signature-256"), raw):
-        logger.warning("WhatsApp webhook com assinatura inválida de %s", request.client.host if request.client else "?")
+        logger.warning("WhatsApp webhook com assinatura inválida de %s", client_ip(request))
         return Response(status_code=401)
 
     try:
@@ -84,5 +110,9 @@ async def receive_webhook(request: Request, db: Annotated[AsyncSession, Depends(
             logger.warning("WhatsApp: remetente %s acima do limite; mensagem descartada.", phone)
             continue
         await process_inbound(db, WHATSAPP_CHANNEL, message_id, phone, text)
+        await db.commit()
+    receipts = extract_receipts(payload, stored.config.get("phone_number_id"))
+    if receipts:
+        await apply_receipts(db, WHATSAPP_CHANNEL, receipts)
         await db.commit()
     return {"status": "ok"}

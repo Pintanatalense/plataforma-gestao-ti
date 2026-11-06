@@ -53,6 +53,10 @@
           <button mat-icon-button color="primary" (click)="openDialog(element)" title="Editar Usuário">
             <mat-icon>edit</mat-icon>
           </button>
+          <button mat-icon-button (click)="openAccess(element)" title="Acesso efetivo e permissões críticas"
+                  [attr.data-testid]="'access-' + element.email">
+            <mat-icon>verified_user</mat-icon>
+          </button>
           <button mat-icon-button color="accent" (click)="resetPassword(element.id)" title="Resetar Senha">
             <mat-icon>lock_reset</mat-icon>
           </button>

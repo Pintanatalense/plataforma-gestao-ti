@@ -5,6 +5,7 @@ Semântica at-least-once (ADR-013 §4.3): `SENDING` é gravado antes do envio; s
 entre o envio e o commit do resultado, a recuperação devolve a entrega a `PENDING` e ela pode duplicar.
 """
 import asyncio
+import hashlib
 import logging
 import random
 import time
@@ -12,9 +13,12 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import case, select, update
 
+from app.identity.models import UserAccount
 from app.notifications.channels import build_adapter
 from app.notifications.channels.base import AdapterContext, DeliveryResult, Message, Recipient, SessionFactory
-from app.notifications.models import Delivery, DeliveryAttempt
+from app.notifications.channel_store import rate_override
+from app.notifications.linking import load_addresses
+from app.notifications.models import ChannelConfig, Delivery, DeliveryAttempt, DomainEvent, NotificationRule
 from app.notifications.outbox import emit_event
 
 logger = logging.getLogger(__name__)
@@ -33,6 +37,13 @@ def backoff_delay(attempts: int, retry_after: int | None = None) -> timedelta:
         return timedelta(seconds=retry_after)
     base = BACKOFF_SECONDS[min(max(attempts, 1), len(BACKOFF_SECONDS)) - 1]
     return timedelta(seconds=base * random.uniform(0.8, 1.2))
+
+
+def effective_rate(ceiling: float | None, override: float | None) -> float | None:
+    """Ritmo aplicado: o do administrador, nunca acima do teto do canal."""
+    if override is None:
+        return ceiling
+    return override if ceiling is None else min(ceiling, override)
 
 
 class ChannelCircuit:
@@ -69,6 +80,7 @@ class Dispatcher:
         self._ctx = AdapterContext(session_factory=session_factory)
         self._adapters: dict[str, object] = {}
         self._last_send: dict[str, float] = {}
+        self._rate_override: dict[str, float | None] = {}
         self.circuit = ChannelCircuit()
 
     def _adapter(self, channel: str):
@@ -107,6 +119,14 @@ class Dispatcher:
                 delivery.status = "SENDING"
                 delivery.locked_at = now
             await session.commit()
+            if batch:
+                # Limite do administrador (só para baixo do teto do canal), relido a cada lote: mudar na tela vale já.
+                configs = await session.execute(
+                    select(ChannelConfig.channel, ChannelConfig.config).where(
+                        ChannelConfig.channel.in_({d.channel for d in batch})
+                    )
+                )
+                self._rate_override = {channel: rate_override(config) for channel, config in configs.all()}
         return batch
 
     async def _throttle(self, channel: str, rate_per_second: float | None) -> None:
@@ -121,7 +141,8 @@ class Dispatcher:
         adapter = self._adapter(delivery.channel)
         if adapter is None:
             return DeliveryResult("permanent", error=f"Canal desconhecido: {delivery.channel}")
-        await self._throttle(delivery.channel, adapter.capabilities.rate_per_second)
+        rate = effective_rate(adapter.capabilities.rate_per_second, self._rate_override.get(delivery.channel))
+        await self._throttle(delivery.channel, rate)
         recipient = Recipient(
             address=delivery.address,
             user_id=str(delivery.recipient_user_id) if delivery.recipient_user_id else None,
@@ -171,6 +192,7 @@ class Dispatcher:
             elif result.outcome == "permanent" or delivery.attempts >= delivery.max_attempts:
                 delivery.status = "DEAD"
                 degraded = result.outcome == "retryable" and self.circuit.record_failure(delivery.channel, finished)
+                await self._fallback(session, delivery)
             else:
                 delivery.status = "PENDING"
                 delivery.next_attempt_at = finished + backoff_delay(delivery.attempts, result.retry_after_seconds)
@@ -195,10 +217,74 @@ class Dispatcher:
             await session.commit()
         logger.warning("Canal %s degradado: entregas pausadas por %s", channel, CIRCUIT_OPEN_FOR)
 
+    async def _escalation_still_due(self, delivery: Delivery) -> bool:
+        """Escalonamento (ADR-013 §6.3): a condição é conferida agora, não quando a entrega foi criada."""
+        from app.service_desk.notification_conditions import escalation_still_due
+
+        try:
+            async with self._session_factory() as session:
+                ticket_id = (
+                    await session.execute(select(DomainEvent.entity_id).where(DomainEvent.id == delivery.event_id))
+                ).scalar_one_or_none()
+                return await escalation_still_due(session, ticket_id, delivery.escalation_condition)
+        except Exception:  # na dúvida, avisa: escalonamento a mais incomoda menos que um chamado esquecido
+            logger.exception("Falha ao conferir o escalonamento da entrega %s; enviando", delivery.id)
+            return True
+
+    async def _skip(self, delivery_id, reason: str) -> None:
+        async with self._session_factory() as session:
+            await session.execute(
+                update(Delivery).where(Delivery.id == delivery_id).values(status="SKIPPED", locked_at=None, last_error=reason)
+            )
+            await session.commit()
+
+    async def _fallback(self, session, delivery: Delivery) -> None:
+        """Entrega que falhou de vez é refeita, uma vez, pelo canal alternativo da regra (ADR-025 M5)."""
+        if delivery.rule_id is None or delivery.fallback_of_id is not None or delivery.recipient_user_id is None:
+            return
+        rule = await session.get(NotificationRule, delivery.rule_id)
+        channel = rule.fallback_channel if rule else None
+        if not channel or channel == delivery.channel:
+            return
+        enabled = await session.execute(select(ChannelConfig.enabled).where(ChannelConfig.channel == channel))
+        if channel != "in_app" and not enabled.scalar_one_or_none():
+            return
+        already = await session.execute(
+            select(Delivery.id).where(
+                Delivery.event_id == delivery.event_id,
+                Delivery.recipient_user_id == delivery.recipient_user_id,
+                Delivery.channel == channel,
+            )
+        )
+        if already.first() is not None:  # a pessoa já recebe (ou recebeu) este evento por lá
+            return
+        user = await session.get(UserAccount, delivery.recipient_user_id)
+        if user is None or not user.is_active:
+            return
+        if channel == "in_app":
+            address = str(user.id)
+        elif channel == "email":
+            address = user.email
+        else:
+            address = (await load_addresses(session, {user.id})).get(user.id, {}).get(channel)
+        if not address:
+            return
+        session.add(
+            Delivery(
+                event_id=delivery.event_id, rule_id=delivery.rule_id, recipient_user_id=user.id, channel=channel,
+                address=address, priority=delivery.priority, message=delivery.message,
+                next_attempt_at=datetime.now(timezone.utc), fallback_of_id=delivery.id,
+                idempotency_key=hashlib.sha256(f"{delivery.idempotency_key}|fallback|{channel}".encode()).hexdigest(),
+            )
+        )
+
     async def run_once(self, limit: int = 20) -> int:
         """Reivindica e envia um lote. Retorna quantas entregas foram tentadas."""
         batch = await self._claim(limit)
         for delivery in batch:
+            if delivery.escalation_condition and not await self._escalation_still_due(delivery):
+                await self._skip(delivery.id, "Escalonamento dispensado: o chamado já foi respondido ou resolvido.")
+                continue
             started = datetime.now(timezone.utc)
             result = await self._send(delivery)
             await self._record(delivery.id, started, result)

@@ -1,4 +1,7 @@
-# Atualizações automáticas de dependências (mensais e sem rebase automático: cada rebase reexecuta o CI e gasta minutos do GitHub Actions). Limites iniciais baixos (o primeiro ciclo costuma abrir muitos PRs).
+# Atualizações de rotina DESLIGADAS (open-pull-requests-limit: 0): cada PR do Dependabot roda o CI e gasta minutos.
+# As dependências são atualizadas de propósito, numa etapa única antes de cada versão (ver CONTRIBUTING.md).
+# Para reativar, volte o limite (ex.: 2) no ecossistema desejado; o agendamento mensal e os grupos ficam prontos.
+# O limite 0 não afeta as correções de segurança, que dependem da configuração do repositório no GitHub.
 # Mudança de VERSÃO MAIOR de runtime (Python, Node, PostgreSQL, Nginx, uv) é decisão humana com ADR/teste real:
 # o Dependabot não a propõe nos ecossistemas docker. Majors do npm (Angular/Material) vêm em PR individual.
 # Fora do alcance do Dependabot: `COPY --from=ghcr.io/astral-sh/uv:<versão>` do backend/Dockerfile (manual).
@@ -11,7 +14,7 @@ updates:
     schedule:
       interval: "monthly"
       timezone: "America/Fortaleza"
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 0
     rebase-strategy: "disabled"
     commit-message:
       prefix: "chore(deps)"
@@ -25,7 +28,7 @@ updates:
     schedule:
       interval: "monthly"
       timezone: "America/Fortaleza"
-    open-pull-requests-limit: 2
+    open-pull-requests-limit: 0
     rebase-strategy: "disabled"
     commit-message:
       prefix: "chore(deps)"
@@ -39,7 +42,7 @@ updates:
     schedule:
       interval: "monthly"
       timezone: "America/Fortaleza"
-    open-pull-requests-limit: 1
+    open-pull-requests-limit: 0
     rebase-strategy: "disabled"
     ignore:
       - dependency-name: "*"
@@ -51,7 +54,7 @@ updates:
     schedule:
       interval: "monthly"
       timezone: "America/Fortaleza"
-    open-pull-requests-limit: 1
+    open-pull-requests-limit: 0
     rebase-strategy: "disabled"
     ignore:
       - dependency-name: "*"
@@ -65,7 +68,7 @@ updates:
     schedule:
       interval: "monthly"
       timezone: "America/Fortaleza"
-    open-pull-requests-limit: 1
+    open-pull-requests-limit: 0
     rebase-strategy: "disabled"
     ignore:
       - dependency-name: "*"
@@ -81,3 +84,4 @@ updates:
       timezone: "America/Fortaleza"
     commit-message:
       prefix: "chore(ci)"
+    open-pull-requests-limit: 0

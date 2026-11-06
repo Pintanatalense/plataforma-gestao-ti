@@ -60,12 +60,13 @@ describe('Tela de auditoria', () => {
   it('applying filters sends them to the API (dates as full-day UTC instants) and returns to the first page', async () => {
     backend.expectOne(list).flush([entry(1)], { headers: { 'X-Total-Count': '200' } });
     await settle();
-    component.filters = { event_type: 'identity.login_failed', user: ' ana ', date_from: '2026-10-01', date_to: '2026-10-02' };
+    component.filters = { event_type: 'identity.login_failed', category: 'security', user: ' ana ', date_from: '2026-10-01', date_to: '2026-10-02' };
     component.offset = 100;
     component.apply();
     const req = backend.expectOne(list);
     expect(req.request.params.get('event_type')).toBe('identity.login_failed');
     expect(req.request.params.get('user')).toBe('ana');
+    expect(req.request.params.get('category')).toBe('security');
     expect(req.request.params.get('offset')).toBe('0');
     expect(new Date(req.request.params.get('date_from')!).getTime()).toBe(new Date('2026-10-01T00:00:00').getTime());
     expect(new Date(req.request.params.get('date_to')!).getTime()).toBe(new Date('2026-10-02T23:59:59.999').getTime());
@@ -86,7 +87,7 @@ describe('Tela de auditoria', () => {
   it('"Limpar" resets every filter and reloads', async () => {
     backend.expectOne(list).flush([], { headers: { 'X-Total-Count': '0' } });
     await settle();
-    component.filters = { event_type: 'x', user: 'y', date_from: '2026-01-01', date_to: '2026-01-02' };
+    component.filters = { event_type: 'x', category: 'operational', user: 'y', date_from: '2026-01-01', date_to: '2026-01-02' };
     component.clear();
     const req = backend.expectOne(list);
     expect(req.request.params.keys().sort()).toEqual(['limit', 'offset']);

@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING
 import uuid
 
-from sqlalchemy import Boolean, ForeignKey, Integer, String, Table, Column, DateTime
+from sqlalchemy import Boolean, ForeignKey, Integer, String, Table, Column, DateTime, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.core.soft_delete import SoftDeleteMixin
@@ -64,6 +64,17 @@ class UserAccount(Base, TimestampMixin, SoftDeleteMixin):
 
     employee: Mapped["Employee | None"] = relationship("Employee", back_populates="user_account", lazy="selectin")
     roles: Mapped[list["Role"]] = relationship("Role", secondary=user_role_association, back_populates="users")
+    critical_grants: Mapped[list["UserCriticalGrant"]] = relationship(
+        "UserCriticalGrant",
+        foreign_keys="UserCriticalGrant.user_id",
+        lazy="selectin",
+        cascade="all, delete-orphan",
+    )
+
+    @property
+    def critical_permissions(self) -> list[str]:
+        """Permissões críticas concedidas explicitamente a esta conta (nunca vêm de perfil)."""
+        return sorted(grant.permission.code for grant in self.critical_grants)
 
 
 class Role(Base, TimestampMixin):
@@ -85,8 +96,48 @@ class Permission(Base, TimestampMixin):
     id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
     code: Mapped[str] = mapped_column(String(100), unique=True, nullable=False)  # module.resource.action
     description: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    # Sincronizados com app/identity/permission_catalog.py pelo seed.
+    module: Mapped[str | None] = mapped_column(String(50), nullable=True)
+    label: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    risk: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    is_critical: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false", nullable=False)
+
+    @property
+    def module_label(self) -> str | None:
+        from app.identity.permission_catalog import MODULE_LABELS
+
+        return MODULE_LABELS.get(self.module or "", self.module)
+
+    @property
+    def risk_label(self) -> str | None:
+        from app.identity.permission_catalog import RISK_LABELS
+
+        return RISK_LABELS.get(self.risk or "", self.risk)
 
     roles: Mapped[list["Role"]] = relationship("Role", secondary=role_permission_association, back_populates="permissions")
+
+
+class UserCriticalGrant(Base):
+    """Concessão explícita e individual de uma permissão crítica (S5/A2). Perfis nunca carregam críticas."""
+    __tablename__ = "user_critical_grants"
+    __table_args__ = (UniqueConstraint("user_id", "permission_id", name="uq_user_critical_grants_user_permission"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("user_accounts.id", ondelete="CASCADE"), nullable=False, index=True
+    )
+    permission_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("permissions.id", ondelete="CASCADE"), nullable=False)
+    granted_by_user_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True
+    )
+    # setup (assistente de instalação), migration, cli (recuperação no servidor) ou api
+    granted_via: Mapped[str] = mapped_column(String(20), nullable=False)
+    reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    granted_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=lambda: datetime.now(timezone.utc)
+    )
+
+    permission: Mapped["Permission"] = relationship("Permission", lazy="joined")
 
 
 class PasswordResetRequest(Base):

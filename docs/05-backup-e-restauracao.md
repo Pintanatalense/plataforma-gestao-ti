@@ -16,22 +16,25 @@ Estratégia operacional de proteção de dados da **Plataforma de Gestão de TI*
 | Catálogo | tabela `db_backups` (arquivo, tamanho, SHA-256, status, quem gerou) |
 | Agendamento | job `backup.daily` do worker, **todo dia às 02:00** (não é cron); o resultado avisa os administradores (falha = prioridade crítica) |
 | Retenção | por quantidade: mantém os `BACKUP_MAX_KEEP=15` mais recentes com sucesso e apaga os demais ao gerar um novo. `BACKUP_RETENTION_DAYS` existe em `config.py`, mas **não é usado** (retenção por dias não está implementada) |
-| Escopo | **somente o banco de dados** (ver seção 7) |
+| Escopo | **banco** (`backup_gestao_ti_*.sql.gz`, incluindo o schema `evolution_api`) **e anexos + logomarca** (`arquivos_gestao_ti_*.tar.gz`, mesmo formato do `scripts/restore-backup.sh`). O pacote de arquivos fica só nos `BACKUP_FILES_MAX_KEEP=3` backups mais recentes (anexos ocupam espaço); os mais antigos ficam só com o banco. `BACKUP_INCLUDE_FILES=false` desliga o pacote. Links simbólicos não entram |
+| Fora do backup, de propósito | o `.env` (senhas e `APP_ENCRYPTION_KEY`: cópia cifrada à parte, seção 6) e o volume `evolution_instances` (sessão do WhatsApp: recriável lendo o QR code de novo, ~1 minuto) |
+| Papel do banco | o `pg_dump` roda com o papel da **aplicação** (`gestao_app`), que lê todas as tabelas, inclusive o schema da Evolution (só leitura); ver [ADR-022](decisions/ADR-022-papeis-de-banco.md) |
 
 ---
 
 ## 2. Gerar um backup
 
 ### 2.1. Pela interface
-Administração → **Backups do Banco de Dados** → **Gerar Backup Agora**. A tabela lista os arquivos, com download e exclusão.
+Administração → **Backups do Banco de Dados** → **Gerar Backup Agora**. A tabela lista os arquivos, com download do banco, download dos anexos e logomarca (ícone de pasta, nos backups que guardam o pacote) e exclusão.
 
 ### 2.2. Pela API
-Permissão `system.backup.manage` (gerar, listar, verificar, excluir); o download exige `system.backup.download`:
+Permissão `system.backup.manage` (gerar, listar, verificar, excluir); o download exige `system.backup.download`. As duas são **críticas**: valem só por concessão individual, mesmo para administradores (ver `docs/09`, seção 2):
 
 ```bash
 curl -X POST "http://localhost/api/v1/system/backups/generate" -H "Authorization: Bearer <TOKEN>"
 curl "http://localhost/api/v1/system/backups"                        -H "Authorization: Bearer <TOKEN>"
 curl "http://localhost/api/v1/system/backups/<ID>/download" -o backup.sql.gz -H "Authorization: Bearer <TOKEN>"
+curl "http://localhost/api/v1/system/backups/<ID>/download-files" -o arquivos.tar.gz -H "Authorization: Bearer <TOKEN>"
 curl -X DELETE "http://localhost/api/v1/system/backups/<ID>"         -H "Authorization: Bearer <TOKEN>"
 ```
 
@@ -54,7 +57,7 @@ docker compose exec -T postgres pg_dump -U postgres -d gestao_ti --clean --if-ex
 
 ## 3. Verificar a integridade
 
-* **API:** `GET /api/v1/system/backups/<ID>/verify` recalcula o SHA-256 do arquivo e compara com o registrado (`is_valid`). **Ainda não há botão na tela** (previsto em P3-4).
+* **API e tela:** `GET /api/v1/system/backups/<ID>/verify` (botão "Verificar integridade") recalcula o SHA-256 do banco **e do pacote de arquivos** e compara com o registrado (`is_valid` só é verdadeiro se os dois conferem; `files_valid` mostra o pacote).
 * **Linha de comando:** `docker compose exec backend sha256sum /data/backups/backup_gestao_ti_*.sql.gz`.
 
 A verificação só prova que o arquivo não mudou; **não prova que ele restaura**. Faça o teste da seção 5 periodicamente.
@@ -77,8 +80,8 @@ O segundo arquivo (anexos e logomarca) é opcional; sem ele só o banco é resta
 O que o script faz, em ordem (**nada é alterado antes do passo 3**):
 1. valida os arquivos (`gzip -t` / `tar -t`) e recusa um tar com caminhos fora de `data/attachments` e `app/static` (ou com `..`);
 2. grava cópias de segurança **no diretório atual** e confere que estão completas: `pre-restore-<data>.sql.gz` (banco) e, se for restaurar arquivos, `pre-restore-arquivos-<data>.tar.gz` (anexos e logo **atuais**). Se alguma falhar, **para antes de mexer em qualquer coisa**;
-3. para o `backend` **e o `worker`**;
-4. restaura o banco em transação única (`ON_ERROR_STOP`): se falhar, nada é aplicado e os serviços voltam;
+3. cria/atualiza os papéis de banco (o dump cita o papel dono e o da Evolution; ADR-022) e para o `backend` **e o `worker`**;
+4. restaura o banco em transação única (`ON_ERROR_STOP`): se falhar, nada é aplicado e os serviços voltam. Em seguida roda o `db-init`: devolve a posse das tabelas ao papel dono, reaplica as permissões da aplicação e aplica as migrations que faltarem (um backup de versão anterior sobe para a versão atual);
 5. sobe o `backend` e, se houver o segundo arquivo, extrai numa pasta temporária e **só então** troca o conteúdo de anexos/logomarca (inclusive arquivos ocultos); se a extração falhar, os arquivos atuais continuam intactos;
 6. sobe o `worker`.
 
@@ -91,9 +94,17 @@ Em servidor recriado do zero: instale (`scripts/install.sh`), garanta o **mesmo 
 ## 5. Provar que o backup restaura (sem afetar o ambiente)
 
 ```bash
-make verify-backup FILE=backups/backup_gestao_ti_AAAAMMDD_HHMMSS.sql.gz   # ou: scripts/verify-backup.sh ...
+make verify-backup FILE=backups/backup_gestao_ti_AAAAMMDD_HHMMSS.sql.gz FILES=backups/arquivos_gestao_ti_AAAAMMDD_HHMMSS.tar.gz
+# ou: scripts/verify-backup.sh <banco.sql.gz> [arquivos.tar.gz]
 ```
-Cria um banco temporário, aplica o backup nele, confere tabelas, usuários e a revisão de migration e **remove o banco temporário** (o banco em uso não é tocado). Saída esperada: `OK: N tabelas, N usuários, migration <rev>` (o número de tabelas muda com o esquema). Agende periodicamente: o SHA-256 só prova que o arquivo não mudou, não que ele restaura.
+Cria um banco temporário, aplica o backup nele, confere tabelas, usuários, revisão de migration e a **cadeia da auditoria** (ADR-023) e, com o pacote de arquivos, que **todo anexo registrado no banco está no pacote**. Depois **remove o banco temporário** (o banco em uso não é tocado). Saída esperada: `OK: N tabelas, N usuários, migration <rev>, auditoria íntegra, N anexo(s) no banco e todos no pacote`.
+
+**Agende** (o SHA-256 só prova que o arquivo não mudou, não que ele restaura). Exemplo de cron semanal no servidor, com os arquivos copiados do volume `backups_data`:
+```bash
+# /etc/cron.d/gestao-ti-verifica-backup  (domingo, 05:00)
+0 5 * * 0 root cd /opt/plataforma-gestao-ti && scripts/verify-backup.sh "$(ls -t backups/backup_gestao_ti_*.sql.gz | head -1)" "$(ls -t backups/arquivos_gestao_ti_*.tar.gz | head -1)" >> /var/log/gestao-ti-verifica-backup.log 2>&1
+```
+O teste não roda dentro do worker de propósito: criar um banco temporário exige o superusuário, que a aplicação não tem (ADR-022). O teste de fumaça do projeto (`scripts/smoke-test.sh`, item 11) faz esse ciclo inteiro a cada mudança: gera o backup pela tela, baixa o banco e o pacote, restaura num banco temporário e confere. **Simulado manual trimestral recomendado:** restauração completa em outra máquina (seção 4, "servidor recriado do zero").
 
 ---
 
@@ -101,17 +112,21 @@ Cria um banco temporário, aplica o backup nele, confere tabelas, usuários e a 
 
 As credenciais de SMTP, Telegram, WhatsApp, Slack e as chaves do pop-up do navegador ficam **cifradas no banco** com `APP_ENCRYPTION_KEY` (arquivo `.env`). Se o `.env` for perdido, o backup restaura os dados, mas essas credenciais ficam ilegíveis e precisam ser reconfiguradas.
 
-* Guarde uma cópia do `.env` (principalmente `APP_ENCRYPTION_KEY`, `SECRET_KEY`, `POSTGRES_PASSWORD`) **separada** dos backups, em local seguro.
+* Guarde uma cópia do `.env` **separada** dos backups e **cifrada**:
+  ```bash
+  make backup-secrets          # ou: scripts/backup-secrets.sh [pasta]   (padrão: ./backups-segredos)
+  ```
+  Gera `segredos_gestao_ti_<data>.env.enc` (AES-256, senha pedida pelo `openssl`) e `.sha256`, e confere que a cópia abre idêntica. O script recusa gravar dentro de `./backups`. Leve o arquivo para **fora do servidor** e guarde a senha em outro lugar (cofre de senhas): sem ela a cópia não abre. Para restaurar: `openssl enc -d -aes-256-cbc -pbkdf2 -iter 600000 -in segredos_....env.enc -out .env && chmod 600 .env`.
+* Guarde também a `APP_ENCRYPTION_KEY` offline (cofre ou impressa): é a única que não pode ser refeita.
 * Mudar `SECRET_KEY` apenas desloga todos; mudar `APP_ENCRYPTION_KEY` invalida as credenciais cifradas.
 
 ---
 
 ## 7. O que NÃO está coberto hoje (riscos conhecidos)
 
-1. **Anexos e logo não entram no backup da tela / do job das 02:00** (que cobrem só o banco). Use `make backup` (seção 2.3) para a cópia completa.
-2. **Sem cópia fora do servidor.** Os backups ficam no mesmo host do banco; falha do disco perde tudo. Copie periodicamente `./backups` (ou o volume `backups_data`) para outro local, idealmente criptografado.
-3. **Sem teste automático e agendado de restauração** e sem metas de **RPO/RTO** definidas. Defina-as e agende o `make verify-backup`.
-4. O backup **não é criptografado** e a geração pela tela carrega o dump em memória (atenção em bases grandes).
-5. Dumps `*.sql.gz`, `arquivos_*.tar.gz` e `pre-restore-*` podem conter dados reais: o `.gitignore` ignora `*.sql.gz` e `pre-restore-*`; nunca os coloque em repositório.
-
-Plano de correção do restante: `docs/plans/plano-diretor.md`, Fase 5.
+1. **Sem cópia fora do servidor automática.** Os backups ficam no mesmo host do banco; falha do disco perde tudo. Copie periodicamente o volume `backups_data` (e a cópia cifrada do `.env`) para outro local.
+2. **Teste de restauração agendado depende do cron do servidor** (seção 5) e não há metas de **RPO/RTO** definidas.
+3. O backup do banco e dos anexos **não é criptografado** (só a cópia do `.env` é); a geração pela tela carrega o dump em memória (atenção em bases grandes).
+4. **Rotação da `APP_ENCRYPTION_KEY`** (recifrar com uma chave nova) ainda não tem procedimento.
+5. O volume `evolution_instances` não entra: depois de restaurar em outra máquina, leia o QR code do WhatsApp de novo se a sessão não voltar.
+6. Dumps `*.sql.gz`, `arquivos_*.tar.gz`, `pre-restore-*` e as cópias `*.env.enc` podem conter dados reais ou segredos: o `.gitignore` ignora `*.sql.gz`, `pre-restore-*`, `backups-segredos/` e `*.env.enc`; nunca os coloque em repositório.

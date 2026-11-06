@@ -1,6 +1,6 @@
 """Contrato dos canais de entrega (ADR-013, D3)."""
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from typing import ClassVar, Literal, Protocol
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -55,10 +55,21 @@ class DeliveryResult:
 
 @dataclass(frozen=True)
 class Capabilities:
+    """O que a NOSSA integração com o canal faz hoje (não o que o provedor promete). A tela e o editor só oferecem o
+    que estiver aqui (ADR-025 §4): recurso ligado sem código que o envie seria uma promessa falsa."""
+
     rich_text: bool = False
     inbound: bool = False
     max_len: int | None = None
-    rate_per_second: float | None = None  # None = sem limite
+    rate_per_second: float | None = None  # teto do canal; None = sem limite. O administrador só pode baixar.
+    formatting: str = "plain"  # plain, html, whatsapp (*negrito*), slack (mrkdwn)
+    attachments: bool = False
+    typing: bool = False
+    delivery_receipts: bool = False  # o provedor confirma "entregue" (deliveries.provider_status)
+    read_receipts: bool = False  # e "lida"
+
+    def to_dict(self) -> dict:
+        return asdict(self)
 
 
 @dataclass(frozen=True)

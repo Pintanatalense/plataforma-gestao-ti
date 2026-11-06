@@ -30,6 +30,7 @@ from app.attachments.models import Attachment
 from app.core.security import hash_password
 from app.database import AsyncSessionLocal
 from app.identity.models import Permission, Role, UserAccount, user_role_association
+from app.identity.permission_catalog import sync_permission_catalog
 from app.inventory_audit.models import InventoryAudit, InventoryAuditItem
 from app.movements.models import AssetMovement, MovementType
 from app.notifications.models import Notification
@@ -41,62 +42,6 @@ from app.whatsapp.models import WhatsAppTemplate
 
 TEST_PASSWORD = "Teste@2026"
 
-SYSTEM_PERMISSIONS = [
-    # Organization
-    {"code": "organization.company.read", "description": "Ler dados da empresa"},
-    {"code": "organization.company.create", "description": "Inicializar a empresa"},
-    {"code": "organization.company.update", "description": "Editar dados da empresa"},
-    {"code": "organization.units.read", "description": "Ler unidades"},
-    {"code": "organization.units.create", "description": "Criar unidades"},
-    {"code": "organization.units.update", "description": "Editar unidades"},
-    {"code": "organization.sectors.read", "description": "Ler setores"},
-    {"code": "organization.sectors.create", "description": "Criar setores"},
-    {"code": "organization.sectors.update", "description": "Editar setores"},
-    {"code": "organization.employees.read", "description": "Ler colaboradores"},
-    {"code": "organization.employees.create", "description": "Criar colaboradores"},
-    {"code": "organization.employees.update", "description": "Editar colaboradores"},
-    
-    # Identity
-    {"code": "identity.users.read", "description": "Ler usuários"},
-    {"code": "identity.users.create", "description": "Criar usuários"},
-    {"code": "identity.users.update", "description": "Editar usuários"},
-    {"code": "identity.roles.read", "description": "Ler perfis"},
-    {"code": "identity.roles.create", "description": "Criar perfis"},
-    {"code": "identity.roles.update", "description": "Editar perfis"},
-
-    # Assets
-    {"code": "assets.read", "description": "Ler patrimônio e ativos"},
-    {"code": "assets.write", "description": "Criar/editar ativos e movimentações"},
-    {"code": "assets.read_own", "description": "Visualizar próprios ativos e equipamentos vinculados"},
-
-    # Stock
-    {"code": "stock.read", "description": "Ler estoque e insumos"},
-    {"code": "stock.write", "description": "Criar/editar insumos e movimentações de estoque"},
-
-    # Inventory
-    {"code": "inventory.read", "description": "Ler inventários periódicos"},
-    {"code": "inventory.write", "description": "Criar e conduzir inventários periódicos"},
-
-    # Auditoria
-    {"code": "audit.read", "description": "Visualizar logs de auditoria e trilha de conformidade"},
-
-    # Service Desk
-    {"code": "service_desk.tickets.manage", "description": "Atender e gerenciar chamados (técnico/setorial)"},
-    {"code": "service_desk.tickets.create", "description": "Abrir novos chamados de suporte"},
-    {"code": "service_desk.tickets.read", "description": "Visualizar próprios chamados"},
-    {"code": "service_desk.tickets.read_all", "description": "Visualizar todos os chamados da organização (Gestão)"},
-    {"code": "service_desk.reports.read", "description": "Acessar relatórios e métricas de desempenho/SLA"},
-    {"code": "service_desk.interactions.internal", "description": "Registrar e visualizar notas internas no chamado"},
-
-    # Sistema, Dados e Backups
-    {"code": "system.data.export", "description": "Exportar dados do sistema em formato CSV"},
-    {"code": "system.data.import", "description": "Importar dados no sistema via CSV"},
-    {"code": "system.backup.manage", "description": "Gerenciar e gerar backups do banco de dados"},
-    {"code": "system.backup.download", "description": "Baixar arquivos de backup do banco de dados"},
-
-    # Integrações
-    {"code": "integrations.whatsapp.manage", "description": "Configurar e gerenciar bot do WhatsApp"},
-]
 
 
 async def clean_test_database(session: AsyncSession) -> None:
@@ -108,7 +53,7 @@ async def clean_test_database(session: AsyncSession) -> None:
     for model in (DeliveryAttempt, Delivery, DomainEvent, InboundMessage, ConversationSession):
         await session.execute(delete(model))
     await session.execute(delete(Notification))
-    await session.execute(delete(AuditLog))
+    # a auditoria não é apagada: é só de inserção e sai apenas pela retenção (ADR-023)
     await session.execute(delete(Attachment))
     await session.execute(delete(InventoryAuditItem))
     await session.execute(delete(InventoryAudit))
@@ -141,21 +86,17 @@ async def clean_test_database(session: AsyncSession) -> None:
 
 async def sync_roles_and_permissions(session: AsyncSession) -> dict[str, Role]:
     """Garante todas as permissões e perfis estruturados."""
-    for p_data in SYSTEM_PERMISSIONS:
-        stmt = select(Permission).where(Permission.code == p_data["code"])
-        res = await session.execute(stmt)
-        if not res.scalar_one_or_none():
-            session.add(Permission(**p_data))
-    await session.flush()
+    # Catálogo único; críticas nunca entram em perfil, nem no Administrador da demonstração/QA (S5).
+    await sync_permission_catalog(session)
 
-    stmt_all = select(Permission)
+    stmt_all = select(Permission).where(Permission.is_critical.is_(False))
     all_perms = list((await session.execute(stmt_all)).scalars().all())
 
     async def _sync_role(name: str, desc: str, perm_codes: list[str] | None = None) -> Role:
         if perm_codes is None:
             perms = all_perms
         else:
-            stmt_p = select(Permission).where(Permission.code.in_(perm_codes))
+            stmt_p = select(Permission).where(Permission.code.in_(perm_codes), Permission.is_critical.is_(False))
             perms = list((await session.execute(stmt_p)).scalars().all())
 
         stmt_r = select(Role).options(selectinload(Role.permissions)).where(Role.name == name)
@@ -183,6 +124,9 @@ async def sync_roles_and_permissions(session: AsyncSession) -> dict[str, Role]:
 
     atendente_codes = solicitante_codes + [
         "service_desk.tickets.manage",
+        "service_desk.tickets.route_any_sector",
+    "service_desk.categories.manage",
+        "service_desk.templates.manage",
         "service_desk.interactions.internal",
         "assets.read",
         "stock.read",
@@ -601,6 +545,7 @@ async def seed_test(reset: bool = False) -> None:
                 status="IN_PROGRESS",
                 category_id=created_ticket_cats["Falha em Hardware / Equipamento"].id,
                 requester_id=emp_lucas.id,
+                created_by_user_id=created_users["solicitante@teste.local"].id,
                 assignee_id=user_carlos.id,
                 origin_unit_id=unit_filial.id,
                 origin_sector_id=sec_com.id,
@@ -640,6 +585,7 @@ async def seed_test(reset: bool = False) -> None:
                 status="OPENED",
                 category_id=created_ticket_cats["Acesso a Sistemas & Credenciais"].id,
                 requester_id=emp_fernanda.id,
+                created_by_user_id=created_users["solicitante.rh@teste.local"].id,
                 assignee_id=None,
                 origin_unit_id=unit_matriz.id,
                 origin_sector_id=sec_rh.id,
@@ -661,6 +607,7 @@ async def seed_test(reset: bool = False) -> None:
                 status="IN_PROGRESS",
                 category_id=created_ticket_cats["Suporte Geral & Dúvidas"].id,
                 requester_id=emp_mariana.id,
+                created_by_user_id=created_users["gestor@teste.local"].id,
                 assignee_id=user_juliana.id,
                 origin_unit_id=unit_filial.id,
                 origin_sector_id=sec_ops.id,
@@ -682,6 +629,7 @@ async def seed_test(reset: bool = False) -> None:
                 status="RESOLVED",
                 category_id=created_ticket_cats["Solicitação de Suprimentos & Periféricos"].id,
                 requester_id=emp_lucas.id,
+                created_by_user_id=created_users["solicitante@teste.local"].id,
                 assignee_id=user_carlos.id,
                 origin_unit_id=unit_filial.id,
                 origin_sector_id=sec_com.id,

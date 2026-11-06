@@ -22,8 +22,10 @@ async def _scenario(db: AsyncSession):
     other_sector = await make_sector(db, org.unit)
     cat = await make_ticket_category(db, org.sector)
     requester = await make_employee(db, org)
+    opener = await make_user(db, requester)
     ticket = Ticket(
-        title="Notebook novo", description="d", requester_id=requester.id, origin_unit_id=org.unit.id,
+        title="Notebook novo", description="d", requester_id=requester.id, created_by_user_id=opener.id,
+        origin_unit_id=org.unit.id,
         origin_sector_id=org.sector.id, responsible_sector_id=org.sector.id, category_id=cat.id,
     )
     db.add(ticket)

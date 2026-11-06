@@ -15,13 +15,16 @@
 #   make db-shell    - Abre psql no container do banco
 #   make backup        - Backup do banco (.sql.gz) + anexos e logomarca (.tar.gz) em ./backups
 #   make restore       - Restaura (FILE="banco.sql.gz" [FILES="arquivos.tar.gz"]) com backend e worker parados
-#   make verify-backup - Prova que um backup restaura, num banco temporário (FILE="banco.sql.gz")
+#   make verify-backup - Prova que um backup restaura, num banco temporário (FILE="banco.sql.gz" [FILES="arquivos.tar.gz"])
+#   make backup-secrets - Cópia cifrada do .env (senhas e APP_ENCRYPTION_KEY), à parte dos backups
+#   make ci-local      - Mesmas verificações do CI, em contêineres, só nas áreas alteradas (antes de publicar)
+#   make ci-local-full - Todas as verificações do CI (como a execução semanal)
 # =============================================================================
 
 install:
 	@scripts/install.sh
 
-.PHONY: install up down logs migrate migration seed test lint shell db-shell backup restore verify-backup
+.PHONY: install up down logs migrate migration seed test lint shell db-shell backup restore verify-backup backup-secrets ci-local ci-local-full
 
 # --- Docker ---
 up:
@@ -37,14 +40,15 @@ rebuild:
 	docker compose up -d --build
 
 # --- Banco de Dados ---
+# migrations rodam no db-init, com o papel dono (ADR-022): o backend não tem permissão de alterar a estrutura
 migrate:
-	docker compose exec backend alembic upgrade head
+	docker compose run --rm db-init
 
 migration:
 	docker compose exec backend alembic revision --autogenerate -m "$(MSG)"
 
 rollback:
-	docker compose exec backend alembic downgrade -1
+	docker compose run --rm db-init alembic downgrade -1
 
 db-shell:
 	docker compose exec postgres psql -U postgres -d gestao_ti
@@ -108,7 +112,11 @@ restore:
 	@scripts/restore-backup.sh "$(FILE)" "$(FILES)"
 
 verify-backup:
-	@scripts/verify-backup.sh "$(FILE)"
+	@scripts/verify-backup.sh "$(FILE)" "$(FILES)"
+
+# cópia cifrada do .env (pede a senha), à parte dos backups
+backup-secrets:
+	@scripts/backup-secrets.sh
 
 # --- Frontend ---
 fe-install:
@@ -119,3 +127,10 @@ fe-dev:
 
 fe-build:
 	cd frontend && npm run build
+
+# --- CI local (ver scripts/ci-local.sh; no Windows sem make: bash scripts/ci-local.sh) ---
+ci-local:
+	@scripts/ci-local.sh
+
+ci-local-full:
+	@scripts/ci-local.sh --all

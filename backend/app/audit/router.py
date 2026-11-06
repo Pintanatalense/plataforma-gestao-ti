@@ -3,13 +3,14 @@ MOD-12 — Auditoria (Router)
 """
 import uuid
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, Query, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.audit.chain import verify_chain
 from app.audit.repository import AuditRepository
-from app.audit.schemas import AuditLogOut
+from app.audit.schemas import AuditChainStatusOut, AuditLogOut
 from app.audit.services import AuditService
 from app.core.dependencies import require_permission
 from app.database import get_db
@@ -26,6 +27,7 @@ async def list_audit_logs(
     event_type: str | None = Query(None, max_length=100),
     entity_type: str | None = Query(None, max_length=50),
     user: str | None = Query(None, max_length=100, description="Trecho do e-mail do usuário"),
+    category: Literal["security", "operational"] | None = Query(None, description="Segurança ou operacional"),
     date_from: datetime | None = None,
     date_to: datetime | None = None,
     limit: int = Query(50, ge=1, le=200),
@@ -35,7 +37,7 @@ async def list_audit_logs(
     """Lista a trilha de auditoria (mais recentes primeiro), com filtros. O total vem em `X-Total-Count`."""
     items, total = await service.search(
         event_type=event_type, entity_type=entity_type, user=user,
-        date_from=date_from, date_to=date_to, limit=limit, offset=offset,
+        date_from=date_from, date_to=date_to, category=category, limit=limit, offset=offset,
     )
     response.headers["X-Total-Count"] = str(total)
     return items
@@ -48,6 +50,15 @@ async def list_audit_event_types(
 ):
     """Tipos de evento já registrados (alimenta o filtro da tela)."""
     return await service.event_types()
+
+
+@router.get("/integrity", response_model=list[AuditChainStatusOut])
+async def audit_integrity(
+    db: Annotated[AsyncSession, Depends(get_db)],
+    _: None = Depends(require_permission("audit.read")),
+):
+    """Recalcula a cadeia de hash de cada categoria (ADR-023). ``problem`` vazio = íntegra até ``last_pos``."""
+    return [AuditChainStatusOut(**vars(status)) for status in await verify_chain(db)]
 
 
 @router.get("/{entity_type}/{entity_id}", response_model=list[AuditLogOut])
