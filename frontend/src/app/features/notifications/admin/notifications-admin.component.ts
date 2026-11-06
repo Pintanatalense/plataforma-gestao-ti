@@ -3,12 +3,13 @@ import { RouterLink } from '@angular/router';
 import { MatTabsModule } from '@angular/material/tabs';
 import { ChannelsComponent } from './channels.component';
 import { DeliveriesComponent } from './deliveries.component';
+import { GatewaysComponent } from './gateways.component';
 import { RulesComponent } from './rules.component';
 
 @Component({
   selector: 'app-notifications-admin',
   standalone: true,
-  imports: [MatTabsModule, RouterLink, DeliveriesComponent, RulesComponent, ChannelsComponent],
+  imports: [MatTabsModule, RouterLink, DeliveriesComponent, RulesComponent, GatewaysComponent, ChannelsComponent],
   template: `
     <div class="page">
       <h1>Notificações — administração</h1>
@@ -16,6 +17,7 @@ import { RulesComponent } from './rules.component';
       <mat-tab-group animationDuration="0ms" mat-stretch-tabs="false">
         <mat-tab label="Entregas"><ng-template matTabContent><app-deliveries /></ng-template></mat-tab>
         <mat-tab label="Regras"><ng-template matTabContent><app-rules /></ng-template></mat-tab>
+        <mat-tab label="Gateways"><ng-template matTabContent><app-gateways /></ng-template></mat-tab>
         <mat-tab label="Saúde dos canais">
           <ng-template matTabContent>
             <p class="channels-link" data-testid="channels-link">

@@ -177,3 +177,22 @@ seção "Validação".
   `circuit_open` em `/admin/channels`); não foi preciso mudar nada.
 - Limitação aceita: uma confirmação que chega antes de o worker gravar o id da mensagem (milissegundos) é ignorada;
   a seguinte corrige o estado.
+
+### M2 — gateways (2026-10-27)
+
+- `Capabilities` ganhou `formatting`, `attachments`, `typing`, `delivery_receipts`, `read_receipts` e `to_dict()`.
+  Declaram o que a nossa integração faz hoje: só o WhatsApp lê confirmações; nenhum canal envia anexo ou "digitando"
+  ainda (M6). Formatos: e-mail `html`, WhatsApp `whatsapp`, Slack `slack`, demais `plain`.
+- `GET /notifications/admin/gateways`: por canal, ligado/configurado, capacidades e limites (teto, limite do
+  administrador, ritmo efetivo; no WhatsApp/Evolution também o intervalo e o teto por pessoa por hora, que continuam
+  sendo editados na aba WhatsApp). Nenhum segredo sai por aqui.
+- `PUT /notifications/admin/gateways/{canal}/limits`: só reduz (acima do teto → 400; canal sem teto, como a caixa de
+  entrada, → 400; `null` volta ao teto); auditado (`notifications.gateway_limits_updated`). Fica em
+  `channel_configs.config['limits']`, que `save_channel` preserva quando as abas de cada canal gravam o config do zero.
+  O dispatcher relê o limite a cada lote e aplica `min(teto, limite)`.
+- Checagem periódica: o job `whatsapp.health_check` (nome mantido, para a agenda e o histórico já existentes) passou a
+  checar também e-mail, Telegram, Slack e navegador habilitados, com o mesmo debounce (duas falhas seguidas → um
+  `channel.degraded` por queda; voltar a funcionar rearma). Se o circuito do envio já abriu para o canal, não avisa de
+  novo. Tempo máximo do job: 60 → 120 s. O e-mail não abre conexão SMTP na checagem (só confere a configuração).
+- Tela: aba **Gateways** em *Notificações — administração*.
+- Mapa de acesso: duas rotas novas com `perm:notifications.manage`.

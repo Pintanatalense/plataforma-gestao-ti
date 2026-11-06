@@ -81,7 +81,9 @@ def render_text(message: Message, base_url: str | None) -> str:
 
 class SlackAdapter:
     channel: ClassVar[str] = SLACK_CHANNEL
-    capabilities: ClassVar[Capabilities] = Capabilities(inbound=True, max_len=MAX_TEXT, rate_per_second=1.0)
+    capabilities: ClassVar[Capabilities] = Capabilities(
+        inbound=True, max_len=MAX_TEXT, rate_per_second=1.0, formatting="slack"
+    )
 
     def __init__(self, ctx: AdapterContext) -> None:
         self._session_factory = ctx.session_factory

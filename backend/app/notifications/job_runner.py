@@ -41,7 +41,7 @@ JOB_MAX_SECONDS: dict[str, int] = {
     "audit.retention": 1800,
     "audit.verify": 1800,
     "retention.cleanup": 900,
-    "whatsapp.health_check": 60,
+    "whatsapp.health_check": 120,  # WhatsApp + Telegram + Slack, cada um com tempo máximo de rede próprio
 }
 # Rodam em subprocesso próprio: chamam programas externos, podem demorar ou ter trecho bloqueante.
 ISOLATED_JOBS = {"backup.daily", "audit.retention", "audit.verify", "retention.cleanup"}

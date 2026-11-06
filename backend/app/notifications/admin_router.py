@@ -20,8 +20,12 @@ from app.core.dependencies import get_current_user_id, require_permission
 from app.core.exceptions import BusinessRuleException, NotFoundException
 from app.database import AsyncSessionLocal, get_db
 from app.identity.models import UserAccount
+from app.notifications.channel_store import LIMITS_KEY, StoredChannel, load_channel, rate_override, save_channel
 from app.notifications.channels import ADAPTERS, build_adapter
+from app.notifications.channels import whatsapp_evolution as evolution
 from app.notifications.channels.base import AdapterContext
+from app.notifications.channels.whatsapp import PROVIDER_EVOLUTION, WHATSAPP_CHANNEL, provider_of
+from app.notifications.dispatcher import effective_rate
 from app.notifications.fanout import enabled_channels, plan_event
 from app.notifications.models import (
     Delivery,
@@ -489,6 +493,63 @@ async def channel_health(db: DB):
         "events_waiting": {"count": unfanned[0], "oldest_at": unfanned[1]},
         "channels": channels,
     }
+
+
+class GatewayLimitsIn(BaseModel):
+    # None = volta ao teto do canal
+    rate_per_second: float | None = Field(None, gt=0)
+
+
+def _gateway_out(channel: str, stored: StoredChannel | None) -> dict[str, Any]:
+    capabilities = ADAPTERS[channel].capabilities
+    override = rate_override(stored.config if stored else None)
+    limits: dict[str, Any] = {
+        "ceiling_rate_per_second": capabilities.rate_per_second,
+        "rate_per_second": override,
+        "effective_rate_per_second": effective_rate(capabilities.rate_per_second, override),
+    }
+    out: dict[str, Any] = {
+        "channel": channel,
+        "enabled": True if channel == "in_app" else bool(stored and stored.enabled),
+        "configured": channel == "in_app" or stored is not None,
+        "capabilities": capabilities.to_dict(),
+        "limits": limits,
+    }
+    if channel == WHATSAPP_CHANNEL and stored is not None:
+        out["provider"] = provider_of(stored)
+        if out["provider"] == PROVIDER_EVOLUTION:  # editados na aba WhatsApp; aqui só leitura
+            limits["send_interval_seconds"] = stored.config.get("send_interval_seconds", evolution.DEFAULT_INTERVAL_SECONDS)
+            limits["max_per_hour_per_person"] = stored.config.get("max_per_hour", evolution.DEFAULT_MAX_PER_HOUR)
+    return out
+
+
+@router.get("/gateways")
+async def list_gateways(db: DB):
+    """Configuração, capacidades e limites de cada canal (ADR-025 M2). A saúde fica em `/channels`."""
+    return {"items": [_gateway_out(name, await load_channel(db, name)) for name in sorted(ADAPTERS)]}
+
+
+@router.put("/gateways/{channel}/limits")
+async def update_gateway_limits(channel: str, body: GatewayLimitsIn, db: DB, user_id: CurrentUser):
+    if channel not in ADAPTERS:
+        raise NotFoundException("Canal", channel)
+    ceiling = ADAPTERS[channel].capabilities.rate_per_second
+    if ceiling is None:
+        raise BusinessRuleException("Este canal não tem limite de envio para ajustar.")
+    if body.rate_per_second is not None and body.rate_per_second > ceiling:
+        raise BusinessRuleException(f"O limite só pode ser reduzido: o máximo deste canal é {ceiling:g} envio(s) por segundo.")
+    stored = await load_channel(db, channel)
+    if stored is None:
+        raise BusinessRuleException("Configure o canal antes de ajustar o limite.")
+    limits = {"rate_per_second": body.rate_per_second} if body.rate_per_second is not None else {}
+    await save_channel(db, channel, stored.enabled, {**stored.config, LIMITS_KEY: limits}, dict(stored.secrets))
+    await AuditRepository(db).create(
+        event_type="notifications.gateway_limits_updated", entity_type="notification",
+        entity_id=uuid.uuid5(uuid.NAMESPACE_OID, f"channel:{channel}"),
+        data={"channel": channel, "rate_per_second": body.rate_per_second}, user_id=user_id,
+    )
+    await db.commit()
+    return _gateway_out(channel, await load_channel(db, channel))
 
 
 @router.post("/channels/{channel}/test")
