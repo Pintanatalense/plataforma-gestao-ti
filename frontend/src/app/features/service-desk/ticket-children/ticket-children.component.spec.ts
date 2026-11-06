@@ -64,12 +64,14 @@ describe('Subchamados do chamado principal (ADR-026)', () => {
   it('cancels a step only with a justification of at least 10 characters', async () => {
     render(true);
     component.start('cancel', OVERVIEW.children[0] as never);
+    fixture.detectChanges();
     await fixture.whenStable();
     const confirm = el.querySelector('[data-testid="child-action-confirm"]') as HTMLButtonElement;
     const reason = el.querySelector('[data-testid="child-action-reason"]') as HTMLTextAreaElement;
     const type = async (text: string) => {
       reason.value = text;
       reason.dispatchEvent(new Event('input'));
+      fixture.detectChanges();
       await fixture.whenStable();
     };
     await type('curto');
