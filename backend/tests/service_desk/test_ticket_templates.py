@@ -166,9 +166,14 @@ async def test_migration_grants_templates_to_category_managers_and_reverts():
         await loop.run_in_executor(None, command.upgrade, cfg, "c2d3e4f5a6b7c")
         ids = {k: uuid.uuid4() for k in ("perm", "manager", "plain")}
         async with engine.begin() as conn:
+            # O catálogo de permissões já é semeado por migration anterior; cria só se ainda não existir.
             await conn.execute(text("INSERT INTO permissions (id, code, is_critical, created_at, updated_at) "
-                                    "VALUES (:i, 'service_desk.categories.manage', false, now(), now())"),
+                                    "VALUES (:i, 'service_desk.categories.manage', false, now(), now()) "
+                                    "ON CONFLICT (code) DO NOTHING"),
                                {"i": ids["perm"]})
+            ids["perm"] = (await conn.execute(text(
+                "SELECT id FROM permissions WHERE code = 'service_desk.categories.manage'"
+            ))).scalar_one()
             for key, name in (("manager", "Gere"), ("plain", "Pede")):
                 await conn.execute(text("INSERT INTO roles (id, name, created_at, updated_at) "
                                         "VALUES (:i, :n, now(), now())"), {"i": ids[key], "n": name})
