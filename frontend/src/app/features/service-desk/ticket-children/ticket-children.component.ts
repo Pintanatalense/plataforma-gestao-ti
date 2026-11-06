@@ -238,6 +238,7 @@ export class TicketChildrenComponent implements OnChanges {
     this.adding = true;
     this.newSpecs = [this.emptySpec()];
     this.addKey = newIdempotencyKey();  // a mesma chave nas novas tentativas desta inclusão
+    this.cdr.markForCheck();
   }
 
   confirmAdd(): void {
@@ -259,6 +260,7 @@ export class TicketChildrenComponent implements OnChanges {
     this.action = { kind, child };
     this.reason = '';
     this.replacement = this.emptySpec();
+    this.cdr.markForCheck();
   }
 
   actionTitle(): string {

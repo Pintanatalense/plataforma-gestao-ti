@@ -61,17 +61,21 @@ describe('Subchamados do chamado principal (ADR-026)', () => {
     expect(el.querySelectorAll('.actions button').length).toBe(0);
   });
 
-  it('cancels a step only with a justification of at least 10 characters', () => {
+  it('cancels a step only with a justification of at least 10 characters', async () => {
     render(true);
     component.start('cancel', OVERVIEW.children[0] as never);
-    fixture.detectChanges();
+    await fixture.whenStable();
     const confirm = el.querySelector('[data-testid="child-action-confirm"]') as HTMLButtonElement;
-    component.reason = 'curto';
-    fixture.detectChanges();
+    const reason = el.querySelector('[data-testid="child-action-reason"]') as HTMLTextAreaElement;
+    const type = async (text: string) => {
+      reason.value = text;
+      reason.dispatchEvent(new Event('input'));
+      await fixture.whenStable();
+    };
+    await type('curto');
     expect(confirm.disabled).toBe(true);
 
-    component.reason = 'Compra feita por outro canal';
-    fixture.detectChanges();
+    await type('Compra feita por outro canal');
     expect(confirm.disabled).toBe(false);
     component.confirmAction();
     const req = backend.expectOne('/api/v1/tickets/c1aaaaaaaa/cancel');
