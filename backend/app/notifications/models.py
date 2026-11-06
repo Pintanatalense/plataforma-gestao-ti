@@ -5,9 +5,9 @@ Caixa de entrada in-app (`notifications`) e hub de entrega (ADR-013): outbox de 
 entregas com retentativa, regras de roteamento, configuração de canais e agenda do worker.
 """
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
-from sqlalchemy import Boolean, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
+from sqlalchemy import Boolean, Date, DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -69,6 +69,10 @@ class NotificationRule(Base, TimestampMixin):
     audience: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     channels: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
     template_code: Mapped[str] = mapped_column(String(100), nullable=False)
+    # ADR-025 M5. {"after_minutes", "until", "audience", "channels"}; vazio = sem escalonamento (só chamados)
+    escalation: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    # Entrega que falhou de vez (DEAD) é refeita por este canal, uma vez
+    fallback_channel: Mapped[str | None] = mapped_column(String(30), nullable=True)
 
 
 class Delivery(Base):
@@ -93,6 +97,10 @@ class Delivery(Base):
     recipient_user_id: Mapped[uuid.UUID | None] = mapped_column(
         ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True
     )
+    # Envio da Central de Mensagens a que pertence (ADR-025 M3); nulo nas entregas de regra, robô e mensagem direta.
+    message_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("outbound_messages.id", ondelete="SET NULL"), nullable=True, index=True
+    )
     channel: Mapped[str] = mapped_column(String(30), nullable=False)
     address: Mapped[str] = mapped_column(String(255), nullable=False)
     # PENDING, SENDING, SENT, DEAD, SKIPPED, CANCELLED
@@ -108,10 +116,118 @@ class Delivery(Base):
     # gateway aceitou; nulo = o canal não informa ou ainda não informou.
     provider_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
     provider_status_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # ADR-025 M5: entrega de escalonamento confere esta condição no envio (sem valer mais, vira SKIPPED)
+    escalation_condition: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    # Entrega pelo canal alternativo: aponta para a original que falhou de vez
+    fallback_of_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("deliveries.id", ondelete="SET NULL"), nullable=True
+    )
     last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
     idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=_utcnow, nullable=False)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class MessageTemplate(Base, TimestampMixin):
+    """Modelo reutilizável da Central de Mensagens (ADR-025 §3). Corpo em marcação neutra (`**negrito**`, `- item`,
+    links) e variáveis `{{nome}}`; cada canal o recebe no formato que suporta. As respostas rápidas do chamado
+    continuam em `wa_templates`."""
+
+    __tablename__ = "message_templates"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    code: Mapped[str] = mapped_column(String(60), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    channels: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)  # vazio = qualquer canal
+    subject: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    is_active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True
+    )
+
+
+class OutboundMessage(Base, TimestampMixin):
+    """Um envio da Central (manual ou teste): o que foi pedido, a quem e quantos ficaram de fora. É o histórico que
+    sobrevive à limpeza de 90 dias das entregas; o andamento de cada destinatário fica em `deliveries.message_id`."""
+
+    __tablename__ = "outbound_messages"
+    __table_args__ = (Index("ix_outbound_messages_author_created", "created_by", "created_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    kind: Mapped[str] = mapped_column(String(20), nullable=False, default="manual")  # manual, test, scheduled
+    # Ocorrência de um agendamento (M4): de qual agendamento e para que instante estava marcada
+    schedule_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("message_schedules.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    scheduled_for: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    channel: Mapped[str] = mapped_column(String(30), nullable=False)
+    template_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("message_templates.id", ondelete="SET NULL"), nullable=True
+    )
+    subject: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    variables: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, default="normal")
+    # [{user_id, email, outcome: queued | no_address | out_of_scope | inactive}] no momento do envio
+    recipients: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    queued_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    skipped_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="QUEUED")  # QUEUED, CANCELLED
+    cancelled_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True
+    )
+
+
+class MessageSchedule(Base, TimestampMixin):
+    """Envio da Central marcado para depois, uma vez ou recorrente (ADR-025 M4). O job `messages.schedules` cria uma
+    `outbound_messages` por ocorrência, com a chave `schedule_id|instante`, e avança `next_run_at` na mesma transação.
+
+    Recorrência: `once` (em `run_at`), `daily`, `weekly` (`weekdays`, 0 = segunda) ou `monthly` (`month_day`; em mês
+    mais curto, o último dia), sempre às `time_of_day` no fuso `timezone`. Com `calendar_id` (calendário do SLA), dia
+    sem expediente ou feriado é pulado (`non_business_rule = skip`) ou vai para o próximo dia útil (`next`)."""
+
+    __tablename__ = "message_schedules"
+    __table_args__ = (Index("ix_message_schedules_due", "status", "next_run_at"),)
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True, default=uuid.uuid4)
+    name: Mapped[str] = mapped_column(String(150), nullable=False)
+    channel: Mapped[str] = mapped_column(String(30), nullable=False)
+    template_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("message_templates.id", ondelete="SET NULL"), nullable=True
+    )
+    subject: Mapped[str] = mapped_column(String(200), nullable=False, default="")
+    body: Mapped[str] = mapped_column(Text, nullable=False)
+    variables: Mapped[dict] = mapped_column(JSONB, nullable=False, default=dict)
+    priority: Mapped[str] = mapped_column(String(20), nullable=False, default="normal")
+    recipient_ids: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+
+    recurrence: Mapped[str] = mapped_column(String(20), nullable=False)  # once, daily, weekly, monthly
+    run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)  # só em once
+    time_of_day: Mapped[str | None] = mapped_column(String(5), nullable=True)  # HH:MM nas recorrentes
+    weekdays: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    month_day: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    timezone: Mapped[str] = mapped_column(String(64), nullable=False)
+    starts_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    ends_on: Mapped[date | None] = mapped_column(Date, nullable=True)
+    calendar_id: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("sla_calendars.id", ondelete="RESTRICT"), nullable=True
+    )
+    non_business_rule: Mapped[str] = mapped_column(String(10), nullable=False, default="skip")  # skip, next
+
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="ACTIVE")  # ACTIVE, PAUSED, DONE, CANCELLED
+    next_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_run_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    last_outcome: Mapped[str | None] = mapped_column(String(20), nullable=True)  # sent, failed, missed
+    last_error: Mapped[str | None] = mapped_column(Text, nullable=True)
+    runs_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    idempotency_key: Mapped[str] = mapped_column(String(64), nullable=False, unique=True)
+    created_by: Mapped[uuid.UUID | None] = mapped_column(
+        ForeignKey("user_accounts.id", ondelete="SET NULL"), nullable=True
+    )
 
 
 class DeliveryAttempt(Base):

@@ -11,7 +11,7 @@ from datetime import date, datetime, time, timedelta, timezone
 from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 from sqlalchemy import and_, func, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -26,6 +26,9 @@ from app.notifications.channels import whatsapp_evolution as evolution
 from app.notifications.channels.base import AdapterContext
 from app.notifications.channels.whatsapp import PROVIDER_EVOLUTION, WHATSAPP_CHANNEL, provider_of
 from app.notifications.dispatcher import effective_rate
+from app.notifications.event_catalog import BY_CODE as EVENT_CATALOG
+from app.notifications.event_catalog import ESCALATION_UNTIL, accepts_escalation
+from app.notifications.event_catalog import as_options as catalog_options
 from app.notifications.fanout import enabled_channels, plan_event
 from app.notifications.models import (
     Delivery,
@@ -70,10 +73,13 @@ def _like_escape(text: str) -> str:
     return text.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
-def _origin_of(rule_id: object, event_type: str | None) -> str:
-    """De onde veio a entrega: regra, mensagem direta de uma pessoa, resposta do robô ou outra rotina do sistema."""
-    if rule_id is not None:
+def _origin_of(d: Delivery, event_type: str | None) -> str:
+    """De onde veio a entrega: regra, Central de Mensagens, mensagem direta de uma pessoa, resposta do robô ou outra
+    rotina do sistema."""
+    if d.rule_id is not None:
         return "rule"
+    if d.message_id is not None:
+        return "message"
     if event_type and event_type.endswith(".direct_message"):
         return "direct"
     if event_type == "conversation.reply":
@@ -84,12 +90,15 @@ def _origin_of(rule_id: object, event_type: str | None) -> str:
 def _origin_clause(origin: str):
     if origin == "rule":
         return Delivery.rule_id.is_not(None)
+    if origin == "message":
+        return and_(Delivery.rule_id.is_(None), Delivery.message_id.is_not(None))
+    unattached = and_(Delivery.rule_id.is_(None), Delivery.message_id.is_(None))
     if origin == "direct":
-        return and_(Delivery.rule_id.is_(None), DomainEvent.event_type.like("%.direct_message"))
+        return and_(unattached, DomainEvent.event_type.like("%.direct_message"))
     if origin == "conversation":
-        return and_(Delivery.rule_id.is_(None), DomainEvent.event_type == "conversation.reply")
+        return and_(unattached, DomainEvent.event_type == "conversation.reply")
     return and_(
-        Delivery.rule_id.is_(None),
+        unattached,
         DomainEvent.event_type.not_like("%.direct_message"),
         DomainEvent.event_type != "conversation.reply",
     )
@@ -114,7 +123,7 @@ def _delivery_out(d: Delivery, event_type: str | None, email: str | None) -> dic
         "sent_at": d.sent_at,
         "provider_status": d.provider_status,
         "provider_status_at": d.provider_status_at,
-        "origin": _origin_of(d.rule_id, event_type),
+        "origin": _origin_of(d, event_type),
     }
 
 
@@ -127,7 +136,7 @@ async def list_deliveries(
     recipient: str | None = Query(None, description="trecho do e-mail do destinatário"),
     date_from: date | None = None,
     date_to: date | None = None,
-    origin: Literal["rule", "direct", "conversation", "system"] | None = None,
+    origin: Literal["rule", "message", "direct", "conversation", "system"] | None = None,
     provider_status: Literal["accepted", "delivered", "read", "failed", "none"] | None = Query(
         None, description="confirmação do provedor; 'none' = sem confirmação"
     ),
@@ -250,6 +259,29 @@ async def cancel_delivery(delivery_id: uuid.UUID, db: DB, user_id: CurrentUser):
 # --- Regras ---------------------------------------------------------------------------------------
 
 
+def _check_selectors(value: list[str]) -> list[str]:
+    for selector in value:
+        if selector in FIXED_SELECTORS:
+            continue
+        if selector.startswith("role:") and len(selector) > 5:
+            continue
+        if selector.startswith("user:"):
+            try:
+                uuid.UUID(selector[5:])
+                continue
+            except ValueError:
+                pass
+        raise ValueError(f"Seletor de audiência inválido: {selector}")
+    return value
+
+
+def _check_channels(value: list[str]) -> list[str]:
+    invalid = [c for c in value if c not in ADAPTERS and c != "preferred"]
+    if invalid:
+        raise ValueError(f"Canais desconhecidos: {invalid}. Disponíveis: {sorted(ADAPTERS)} e 'preferred'")
+    return value
+
+
 class RuleIn(BaseModel):
     name: str = Field(min_length=1, max_length=150)
     enabled: bool = True
@@ -279,27 +311,12 @@ class RuleIn(BaseModel):
     @field_validator("audience")
     @classmethod
     def _audience(cls, value: list[str]) -> list[str]:
-        for selector in value:
-            if selector in FIXED_SELECTORS:
-                continue
-            if selector.startswith("role:") and len(selector) > 5:
-                continue
-            if selector.startswith("user:"):
-                try:
-                    uuid.UUID(selector[5:])
-                    continue
-                except ValueError:
-                    pass
-            raise ValueError(f"Seletor de audiência inválido: {selector}")
-        return value
+        return _check_selectors(value)
 
     @field_validator("channels")
     @classmethod
     def _channels(cls, value: list[str]) -> list[str]:
-        invalid = [c for c in value if c not in ADAPTERS and c != "preferred"]
-        if invalid:
-            raise ValueError(f"Canais desconhecidos: {invalid}. Disponíveis: {sorted(ADAPTERS)} e 'preferred'")
-        return value
+        return _check_channels(value)
 
     @field_validator("template_code")
     @classmethod
@@ -307,6 +324,41 @@ class RuleIn(BaseModel):
         if value != "generic" and value not in TEMPLATES:
             raise ValueError(f"Modelo desconhecido: {value}")
         return value
+
+    escalation: dict[str, Any] = {}
+    fallback_channel: str | None = None
+
+    @field_validator("fallback_channel")
+    @classmethod
+    def _fallback(cls, value: str | None) -> str | None:
+        if value is not None and value not in ADAPTERS:
+            raise ValueError(f"Canal alternativo desconhecido: {value}")
+        return value or None
+
+    @model_validator(mode="after")
+    def _escalation(self) -> "RuleIn":
+        """Escalonamento (ADR-013 §6.3): só em evento de chamado, com prazo, condição e a quem escalar."""
+        esc = self.escalation
+        if not esc:
+            return self
+        if not accepts_escalation(self.event_type):
+            raise ValueError("Escalonamento só vale para eventos de chamado (abertura, atribuição e SLA).")
+        unknown = set(esc) - {"after_minutes", "until", "audience", "channels"}
+        if unknown:
+            raise ValueError(f"Campos de escalonamento desconhecidos: {sorted(unknown)}")
+        minutes = esc.get("after_minutes")
+        if not isinstance(minutes, int) or isinstance(minutes, bool) or not 5 <= minutes <= 10080:
+            raise ValueError("Escalonamento: o prazo vai de 5 minutos a 7 dias (after_minutes).")
+        if esc.get("until", "first_response") not in ESCALATION_UNTIL:
+            raise ValueError(f"Escalonamento: condição deve ser uma de {sorted(ESCALATION_UNTIL)}.")
+        audience = esc.get("audience")
+        if not isinstance(audience, list) or not audience:
+            raise ValueError("Escalonamento: escolha a quem escalar.")
+        _check_selectors(audience)
+        if esc.get("channels"):
+            _check_channels(esc["channels"])
+        self.escalation = {"until": "first_response", **esc}
+        return self
 
 
 def _rule_out(r: NotificationRule) -> dict[str, Any]:
@@ -321,6 +373,9 @@ def _rule_out(r: NotificationRule) -> dict[str, Any]:
         "audience": r.audience or [],
         "channels": r.channels or [],
         "template_code": r.template_code,
+        "escalation": r.escalation or {},
+        "fallback_channel": r.fallback_channel,
+        "in_catalog": r.event_type in EVENT_CATALOG or r.event_type.endswith(".*"),
     }
 
 
@@ -340,6 +395,7 @@ async def list_rules(db: DB):
             "channels": [*sorted(ADAPTERS), "preferred"],
             "templates": ["generic", *sorted(TEMPLATES)],
             "selectors": [*sorted(FIXED_SELECTORS), "role:<perfil>", "user:<id>"],
+            **catalog_options(),
         },
     }
 
@@ -409,6 +465,7 @@ async def simulate(body: SimulationIn, db: DB):
                 "channel": p.channel,
                 "title": p.message.get("title"),
                 "send_at": p.next_attempt_at,
+                "escalation_until": p.escalation_condition,
             }
             for p in plans
         ]

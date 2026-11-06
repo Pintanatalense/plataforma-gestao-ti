@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import uuid
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -134,6 +134,16 @@ class SlaAdminService:
         used = (await self.session.execute(select(SlaPolicy.name).where(SlaPolicy.calendar_id == calendar.id))).scalars().all()
         if used:
             raise ConflictException(f"O calendário é usado pelas políticas: {', '.join(sorted(used))}")
+        from app.notifications.models import MessageSchedule
+
+        schedules = select(MessageSchedule).where(MessageSchedule.calendar_id == calendar.id)
+        open_names = [s.name for s in (await self.session.execute(schedules)).scalars() if s.status in ("ACTIVE", "PAUSED")]
+        if open_names:
+            raise ConflictException(f"O calendário é usado pelos agendamentos de mensagens: {', '.join(sorted(open_names))}")
+        # agendamentos já encerrados só guardavam a referência: perdem o vínculo, não impedem a exclusão
+        await self.session.execute(
+            update(MessageSchedule).where(MessageSchedule.calendar_id == calendar.id).values(calendar_id=None)
+        )
         await self._audit("sla.calendar_deleted", "sla_calendar", calendar.id, {"name": calendar.name})
         await self.session.delete(calendar)
         await self.session.flush()

@@ -160,9 +160,14 @@ async def test_seeded_rules_route_each_event_to_the_same_people_and_channels(db_
     assert await routing("audit.integrity_failed", {}) == _each("audit.integrity_failed", "admin", "in_app email")
     assert await routing("channel.degraded", {"channel": "email"}) == _each("channel.degraded", "admin", "in_app email")
 
-    # Eventos sem regra semeada hoje (M5 do ADR-025 decide se ganham uma).
-    for silent in ("ticket.asset_delivered", "ticket.asset_returned", "job.failed"):
-        assert await routing(silent, _ticket_payload(people)) == set(), silent
+    # Ganharam regra semeada no M5 do ADR-025 (antes não iam a ninguém).
+    assert await routing("ticket.asset_delivered", _ticket_payload(people), actor="attendant") == (
+        _each("ticket.asset_delivered.requester", "requester", "in_app email telegram")
+    )
+    assert await routing("ticket.asset_returned", _ticket_payload(people), actor="assignee") == (
+        _each("ticket.asset_returned.sector", "attendant", "in_app")
+    )
+    assert await routing("job.failed", {"job": "sla.check"}) == _each("job.failed", "admin", "in_app email")
 
 
 async def test_unverified_address_and_disabled_channel_never_receive(db_session: AsyncSession, people):
@@ -223,5 +228,6 @@ async def test_rules_listing_keeps_its_fields(client: AsyncClient, people):
     assert {"items", "options"} <= set(listing)
     assert set(listing["items"][0]) == {
         "id", "code", "is_system", "name", "enabled", "event_type", "condition", "audience", "channels", "template_code",
+        "escalation", "fallback_channel", "in_catalog",  # acrescentados no M5 (ADR-025)
     }
     assert {"channels"} <= set(listing["options"])

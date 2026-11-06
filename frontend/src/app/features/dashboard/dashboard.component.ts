@@ -1,4 +1,6 @@
 import { Component, OnInit, inject, ChangeDetectorRef } from '@angular/core';
+import { PT_BR } from '../../core/i18n/pt-br';
+import { SLA_PRIORITIES } from '../service-desk/sla.service';
 import { CommonModule } from '@angular/common';
 import { RouterModule } from '@angular/router';
 import { MatCardModule } from '@angular/material/card';
@@ -43,6 +45,7 @@ export class Dashboard implements OnInit {
   private cdr = inject(ChangeDetectorRef);
 
   today = new Date();
+  readonly ptBr = PT_BR;
 
   /**
    * Estado de cada fonte de dados. Uma fonte que falhou NÃO vira zero: o cartão mostra "—" e o painel avisa
@@ -190,6 +193,8 @@ export class Dashboard implements OnInit {
         return 'Aberto';
       case 'IN_PROGRESS':
         return 'Em Atendimento';
+      case 'PENDING':
+        return 'Pendente';
       case 'RESOLVED':
         return 'Resolvido';
       case 'CLOSED':
@@ -197,6 +202,10 @@ export class Dashboard implements OnInit {
       default:
         return status;
     }
+  }
+
+  getPriorityLabel(priority: string): string {
+    return SLA_PRIORITIES.find((p) => p.code === priority)?.label ?? priority;
   }
 
   getPriorityClass(priority: string): string {

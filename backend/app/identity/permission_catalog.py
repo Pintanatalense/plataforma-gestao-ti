@@ -162,6 +162,24 @@ CATALOG: tuple[PermissionSpec, ...] = (
         "Administrar o hub de notificações: entregas, regras, canais e agenda",
         "administracao",
     ),
+    PermissionSpec(
+        "notifications.messages.send",
+        "Enviar mensagens",
+        "Enviar mensagens pela Central de Mensagens a pessoas do próprio setor (com Administrar notificações, a qualquer pessoa)",
+        "alteracao",
+    ),
+    PermissionSpec(
+        "notifications.messages.schedule",
+        "Agendar mensagens",
+        "Agendar envios da Central de Mensagens, uma vez ou recorrentes, e pausar ou cancelar os próprios agendamentos",
+        "alteracao",
+    ),
+    PermissionSpec(
+        "notifications.messages.read",
+        "Ver histórico de mensagens",
+        "Ver todos os envios da Central de Mensagens, não só os próprios",
+        "leitura",
+    ),
     PermissionSpec("integrations.whatsapp.manage", "Administrar WhatsApp", "Configurar e gerenciar bot do WhatsApp", "administracao"),
 )
 

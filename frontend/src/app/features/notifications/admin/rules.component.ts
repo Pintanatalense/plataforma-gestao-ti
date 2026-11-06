@@ -12,6 +12,7 @@ import { MatCheckboxModule } from '@angular/material/checkbox';
 import { MatSnackBar, MatSnackBarModule } from '@angular/material/snack-bar';
 import {
   NotificationsAdminService,
+  RuleEscalation,
   RuleInput,
   RuleItem,
   RulesResponse,
@@ -36,12 +37,29 @@ interface RuleForm {
   template_code: string;
   min_priority: string;
   exclude_actor: boolean;
+  escalate: boolean;
+  escalation_minutes: number;
+  escalation_until: 'first_response' | 'resolved';
+  escalation_audienceText: string;
+  escalation_channels: string[];
+  fallback_channel: string | null;
 }
 
 const EMPTY_FORM: RuleForm = {
   id: null, isSystem: false, name: '', enabled: true, event_type: '', audienceText: '',
-  channels: ['in_app'], template_code: 'generic', min_priority: '', exclude_actor: true
+  channels: ['in_app'], template_code: 'generic', min_priority: '', exclude_actor: true,
+  escalate: false, escalation_minutes: 60, escalation_until: 'first_response', escalation_audienceText: 'admins',
+  escalation_channels: [], fallback_channel: null
 };
+
+/** Campos que a API recebe, sem perder escalonamento e canal alternativo de quem só liga ou desliga a regra. */
+export function ruleInputOf(r: RuleItem, enabled = r.enabled): RuleInput {
+  return {
+    name: r.name, enabled, event_type: r.event_type, condition: r.condition, audience: r.audience,
+    channels: r.channels, template_code: r.template_code, escalation: r.escalation ?? {},
+    fallback_channel: r.fallback_channel ?? null
+  };
+}
 
 @Component({
   selector: 'app-rules',
@@ -64,9 +82,13 @@ const EMPTY_FORM: RuleForm = {
             <tr data-testid="rule-row">
               <td><mat-slide-toggle [checked]="r.enabled" (change)="toggle(r, $event.checked)" aria-label="Ativar regra" /></td>
               <td>{{ r.name }} @if (r.is_system) { <span class="chip">padrão</span> }</td>
-              <td><code>{{ r.event_type }}</code></td>
+              <td>
+                {{ eventLabel(r.event_type) }}
+                @if (!r.in_catalog) { <span class="chip warn" title="Evento fora do catálogo: confira se ele existe">fora do catálogo</span> }
+                @if (r.escalation?.after_minutes) { <span class="chip" data-testid="rule-escalation">escalona em {{ r.escalation.after_minutes }} min</span> }
+              </td>
               <td>{{ r.audience.join(', ') }}</td>
-              <td>{{ r.channels.join(', ') }}</td>
+              <td>{{ r.channels.join(', ') }}{{ r.fallback_channel ? ' · se falhar: ' + r.fallback_channel : '' }}</td>
               <td class="row-actions">
                 <button mat-icon-button (click)="edit(r)" aria-label="Editar"><mat-icon>edit</mat-icon></button>
                 @if (!r.is_system) {
@@ -87,8 +109,16 @@ const EMPTY_FORM: RuleForm = {
           <input matInput [(ngModel)]="f.name" name="name" />
         </mat-form-field>
         <mat-form-field appearance="outline">
-          <mat-label>Evento (ex.: ticket.created ou ticket.*)</mat-label>
-          <input matInput [(ngModel)]="f.event_type" name="event_type" />
+          <mat-label>Evento</mat-label>
+          <mat-select [(ngModel)]="f.event_type" name="event_type" data-testid="rule-event">
+            @for (e of options()?.events ?? []; track e.code) {
+              <mat-option [value]="e.code">{{ e.area }} · {{ e.label }}</mat-option>
+            }
+            @if (f.event_type && !isCatalogEvent(f.event_type)) {
+              <mat-option [value]="f.event_type">{{ f.event_type }} (fora do catálogo)</mat-option>
+            }
+          </mat-select>
+          <mat-hint>{{ f.event_type }}</mat-hint>
         </mat-form-field>
         <mat-form-field appearance="outline">
           <mat-label>Quem recebe (separe por vírgula)</mat-label>
@@ -119,6 +149,42 @@ const EMPTY_FORM: RuleForm = {
           </mat-select>
         </mat-form-field>
         <mat-checkbox [(ngModel)]="f.exclude_actor" name="exclude_actor">Não avisar quem causou o evento</mat-checkbox>
+        <mat-form-field appearance="outline">
+          <mat-label>Se a entrega falhar de vez, tentar por</mat-label>
+          <mat-select [(ngModel)]="f.fallback_channel" name="fallback" data-testid="rule-fallback">
+            <mat-option [value]="null">Nenhum outro canal</mat-option>
+            @for (c of fallbackChannels(); track c) { <mat-option [value]="c">{{ c }}</mat-option> }
+          </mat-select>
+          <mat-hint>Uma tentativa a mais, por outro canal, para quem ainda não recebeu este aviso por ele.</mat-hint>
+        </mat-form-field>
+        @if (acceptsEscalation(f.event_type)) {
+          <mat-checkbox [(ngModel)]="f.escalate" name="escalate" data-testid="rule-escalate">Escalonar se ninguém agir</mat-checkbox>
+          @if (f.escalate) {
+            <div class="sim-row" data-testid="rule-escalation-form">
+              <mat-form-field appearance="outline">
+                <mat-label>Depois de (minutos)</mat-label>
+                <input matInput type="number" min="5" max="10080" [(ngModel)]="f.escalation_minutes" name="esc_minutes" />
+              </mat-form-field>
+              <mat-form-field appearance="outline">
+                <mat-label>Escalonar</mat-label>
+                <mat-select [(ngModel)]="f.escalation_until" name="esc_until">
+                  @for (u of untilOptions(); track u.key) { <mat-option [value]="u.key">{{ u.label }}</mat-option> }
+                </mat-select>
+              </mat-form-field>
+            </div>
+            <mat-form-field appearance="outline">
+              <mat-label>Escalonar para (separe por vírgula)</mat-label>
+              <input matInput [(ngModel)]="f.escalation_audienceText" name="esc_audience" />
+              <mat-hint>Ex.: admins, role:Gestão. A condição é conferida na hora: se já resolveram, não sai.</mat-hint>
+            </mat-form-field>
+            <div class="checks">
+              <span>Canais do escalonamento (vazio = os mesmos da regra):</span>
+              @for (c of options()?.channels ?? []; track c) {
+                <mat-checkbox [checked]="f.escalation_channels.includes(c)" (change)="setEscalationChannel(f, c, $event.checked)">{{ c }}</mat-checkbox>
+              }
+            </div>
+          }
+        }
         <mat-slide-toggle [(ngModel)]="f.enabled" name="enabled">Regra ativa</mat-slide-toggle>
         @if (error()) {
           <p class="error" role="alert">{{ error() }}</p>
@@ -160,7 +226,7 @@ const EMPTY_FORM: RuleForm = {
       @if (simulated(); as sim) {
         <ul data-testid="sim-result">
           @for (d of sim; track $index) {
-            <li><strong>{{ d.recipient_email }}</strong> — {{ d.channel }} — "{{ d.title }}" ({{ d.rule }}) · envio {{ d.send_at | date: 'dd/MM HH:mm' }}</li>
+            <li><strong>{{ d.recipient_email }}</strong> — {{ d.channel }} — "{{ d.title }}" ({{ d.rule }}) · envio {{ d.send_at | date: 'dd/MM HH:mm' }}{{ d.escalation_until ? ' · escalonamento, se ainda valer' : '' }}</li>
           } @empty {
             <li>Nenhuma regra ativa entregaria este evento a alguém.</li>
           }
@@ -174,7 +240,8 @@ const EMPTY_FORM: RuleForm = {
     .grid { width: 100%; border-collapse: collapse; font-size: 13px; }
     .grid th { text-align: left; padding: 8px; border-bottom: 2px solid #e2e8f0; color: #475569; }
     .grid td { padding: 8px; border-bottom: 1px solid #f1f5f9; vertical-align: middle; }
-    .chip { padding: 1px 8px; border-radius: 12px; font-size: 11px; background: #e2e8f0; }
+    .chip { padding: 1px 8px; border-radius: 12px; font-size: 11px; background: #e2e8f0; margin-left: 4px; }
+    .chip.warn { background: #fef3c7; color: #92400e; }
     .row-actions { white-space: nowrap; text-align: right; }
     .card { display: flex; flex-direction: column; gap: 8px; border: 1px solid #e2e8f0; border-radius: 8px; padding: 16px; margin-top: 16px; background: #fff; }
     .card h3 { margin: 0; }
@@ -223,6 +290,7 @@ export class RulesComponent implements OnInit {
   edit(r: RuleItem): void {
     this.error.set('');
     const condition = r.condition as { min_priority?: string; exclude_actor?: boolean };
+    const esc = r.escalation as Partial<RuleEscalation>;
     this.form.set({
       id: r.id,
       isSystem: r.is_system,
@@ -233,12 +301,44 @@ export class RulesComponent implements OnInit {
       channels: [...r.channels],
       template_code: r.template_code,
       min_priority: condition.min_priority ?? '',
-      exclude_actor: condition.exclude_actor ?? true
+      exclude_actor: condition.exclude_actor ?? true,
+      escalate: !!esc.after_minutes,
+      escalation_minutes: esc.after_minutes ?? EMPTY_FORM.escalation_minutes,
+      escalation_until: esc.until ?? 'first_response',
+      escalation_audienceText: (esc.audience ?? ['admins']).join(', '),
+      escalation_channels: [...(esc.channels ?? [])],
+      fallback_channel: r.fallback_channel ?? null
     });
   }
 
   setChannel(f: RuleForm, channel: string, checked: boolean): void {
     f.channels = checked ? [...new Set([...f.channels, channel])] : f.channels.filter((c) => c !== channel);
+  }
+
+  setEscalationChannel(f: RuleForm, channel: string, checked: boolean): void {
+    f.escalation_channels = checked
+      ? [...new Set([...f.escalation_channels, channel])]
+      : f.escalation_channels.filter((c) => c !== channel);
+  }
+
+  isCatalogEvent(code: string): boolean {
+    return (this.options()?.events ?? []).some((e) => e.code === code);
+  }
+
+  eventLabel(code: string): string {
+    return (this.options()?.events ?? []).find((e) => e.code === code)?.label ?? code;
+  }
+
+  acceptsEscalation(code: string): boolean {
+    return code === 'ticket.*' || !!(this.options()?.events ?? []).find((e) => e.code === code)?.escalation;
+  }
+
+  untilOptions(): { key: string; label: string }[] {
+    return Object.entries(this.options()?.escalation_until ?? {}).map(([key, label]) => ({ key, label }));
+  }
+
+  fallbackChannels(): string[] {
+    return (this.options()?.channels ?? []).filter((c) => c !== 'preferred');
   }
 
   private toInput(f: RuleForm, base?: RuleItem): RuleInput {
@@ -247,6 +347,15 @@ export class RulesComponent implements OnInit {
     delete condition['exclude_actor'];
     if (f.min_priority) condition['min_priority'] = f.min_priority;
     if (!f.exclude_actor) condition['exclude_actor'] = false;
+    const escalate = f.escalate && this.acceptsEscalation(f.event_type);
+    const escalation: RuleEscalation | Record<string, never> = escalate
+      ? {
+          after_minutes: Number(f.escalation_minutes),
+          until: f.escalation_until,
+          audience: parseList(f.escalation_audienceText),
+          ...(f.escalation_channels.length ? { channels: f.escalation_channels } : {})
+        }
+      : {};
     return {
       name: f.name.trim(),
       enabled: f.enabled,
@@ -254,7 +363,9 @@ export class RulesComponent implements OnInit {
       condition,
       audience: parseList(f.audienceText),
       channels: f.channels,
-      template_code: f.template_code
+      template_code: f.template_code,
+      escalation,
+      fallback_channel: f.fallback_channel
     };
   }
 
@@ -275,11 +386,7 @@ export class RulesComponent implements OnInit {
   }
 
   toggle(r: RuleItem, enabled: boolean): void {
-    const body: RuleInput = {
-      name: r.name, enabled, event_type: r.event_type, condition: r.condition,
-      audience: r.audience, channels: r.channels, template_code: r.template_code
-    };
-    this.api.updateRule(r.id, body).subscribe({
+    this.api.updateRule(r.id, ruleInputOf(r, enabled)).subscribe({
       next: () => this.load(),
       error: () => {
         this.snack.open('Não foi possível alterar a regra.', 'OK', { duration: 4000 });

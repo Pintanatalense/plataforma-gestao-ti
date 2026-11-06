@@ -32,6 +32,7 @@ DEFAULT_JOBS: dict[str, str] = {
     "audit.seal": "every:1",
     "audit.verify": "daily:04:30",
     "sla.check": "every:5",
+    "messages.schedules": "every:1",
 }
 
 
@@ -185,6 +186,16 @@ async def job_sla_check(session_factory: SessionFactory) -> None:
                     result.breaches, result.warnings, result.breach_notices)
 
 
+async def job_message_schedules(session_factory: SessionFactory) -> None:
+    """Envia as ocorrências vencidas dos agendamentos da Central de Mensagens (ADR-025 M4)."""
+    from app.notifications.schedules import run_due_schedules
+
+    result = await run_due_schedules(session_factory)
+    if result.sent or result.failed or result.missed or result.paused:
+        logger.info("Agendamentos: %d enviados, %d com falha, %d perdidos, %d pausados",
+                    result.sent, result.failed, result.missed, result.paused)
+
+
 async def job_whatsapp_health(session_factory: SessionFactory) -> None:
     """Vigia a saúde dos canais a cada 5 minutos. O nome continua o de quando só olhava o WhatsApp (a agenda e o
     histórico de execuções já o conhecem); desde o ADR-025 M2 cobre também os outros canais habilitados."""
@@ -296,6 +307,7 @@ JOBS: dict[str, Callable[[SessionFactory], Awaitable[None]]] = {
     "audit.seal": job_audit_seal,
     "audit.verify": job_audit_verify,
     "sla.check": job_sla_check,
+    "messages.schedules": job_message_schedules,
 }
 
 

@@ -327,6 +327,19 @@ async def test_ticket_asset_lifecycle_integration(client: AsyncClient, db_sessio
     ticket_movs = [m for m in movs if m.get("ticket_id") == ticket_id]
     assert len(ticket_movs) >= 4
 
+    # 9. Entrega e devolução também vão ao outbox de notificações (ADR-025 M5), com o patrimônio no payload
+    from sqlalchemy import select
+
+    from app.notifications.models import DomainEvent
+
+    events = (
+        await db_session.execute(
+            select(DomainEvent).where(DomainEvent.event_type.in_(("ticket.asset_delivered", "ticket.asset_returned")))
+        )
+    ).scalars().all()
+    assert sorted(e.event_type for e in events) == ["ticket.asset_delivered", "ticket.asset_returned"]
+    assert all(e.payload["ticket_id"] == ticket_id and e.payload["asset_id"] == asset_id and e.payload["asset_tag"] for e in events)
+
 
 async def test_inspection_failure_sends_to_maintenance(client: AsyncClient, db_session: AsyncSession):
     data = await setup_test_data(db_session)

@@ -22,11 +22,11 @@ import sys
 import uuid
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 
 from app.notifications.channels.base import SessionFactory
-from app.notifications.models import JobRun, ScheduledJob
+from app.notifications.models import AutomationMark, JobRun, ScheduledJob
 
 logger = logging.getLogger(__name__)
 
@@ -45,6 +45,8 @@ JOB_MAX_SECONDS: dict[str, int] = {
 }
 # Rodam em subprocesso próprio: chamam programas externos, podem demorar ou ter trecho bloqueante.
 ISOLATED_JOBS = {"backup.daily", "audit.retention", "audit.verify", "retention.cleanup"}
+# Já avisam a própria falha com evento específico (não duplicar com `job.failed`).
+OWN_FAILURE_EVENT = {"backup.daily"}
 _TARGET_PREFIXES = ("app.", "tests.")
 
 
@@ -60,10 +62,11 @@ def _now() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _schedule_retry(job: ScheduledJob, attempt: int, status: str, now: datetime) -> None:
+def _schedule_retry(job: ScheduledJob, attempt: int, status: str, now: datetime) -> bool:
+    """Agenda a nova tentativa. Retorna True quando esta foi a última tentativa e falhou."""
     if status == "ok":
         job.retry_attempt = 0
-        return
+        return False
     if attempt < MAX_ATTEMPTS:
         job.retry_attempt = attempt
         retry_at = now + RETRY_BASE * (2 ** (attempt - 1))
@@ -71,9 +74,27 @@ def _schedule_retry(job: ScheduledJob, attempt: int, status: str, now: datetime)
         if retry_at < next_run:
             job.next_run_at = retry_at
         logger.warning("Job %s: %s na tentativa %d; nova tentativa até %s", job.name, status, attempt, job.next_run_at)
-    else:
-        job.retry_attempt = 0
-        logger.error("Job %s: %s na tentativa %d (última); volta à agenda normal", job.name, status, attempt)
+        return False
+    job.retry_attempt = 0
+    logger.error("Job %s: %s na tentativa %d (última); volta à agenda normal", job.name, status, attempt)
+    return True
+
+
+async def _announce_final_failure(session, job: ScheduledJob, status: str, error: str | None, attempt: int) -> None:
+    """`job.failed` no outbox (ADR-025 M5), na mesma transação que registra o resultado. O backup tem aviso próprio."""
+    if job.name in OWN_FAILURE_EVENT:
+        return
+    from app.notifications.outbox import emit_event
+
+    mark = f"job.failed.{job.name}"
+    if await session.get(AutomationMark, mark) is not None:  # já avisado; rearma quando o job voltar a dar certo
+        return
+    session.add(AutomationMark(key=mark))
+    await emit_event(
+        session, event_type="job.failed", entity_type="job", entity_id=None,
+        payload={"job": job.name, "status": status, "error": (error or "")[:300], "attempts": attempt},
+        priority="high",
+    )
 
 
 async def recover_interrupted(session_factory: SessionFactory) -> int:
@@ -96,7 +117,8 @@ async def recover_interrupted(session_factory: SessionFactory) -> int:
             job = await session.get(ScheduledJob, run.job_name)
             if job is not None:
                 job.last_run_at, job.last_status, job.last_error = now, "interrupted", run.error
-                _schedule_retry(job, run.attempt, "interrupted", now)
+                if _schedule_retry(job, run.attempt, "interrupted", now):
+                    await _announce_final_failure(session, job, "interrupted", run.error, run.attempt)
         await session.commit()
     for run in stale:
         logger.warning("Job %s: execução %s interrompida (concessão vencida)", run.job_name, run.id)
@@ -216,7 +238,11 @@ async def _finish(session_factory: SessionFactory, name: str, run_id: uuid.UUID,
         job = (await session.execute(select(ScheduledJob).where(ScheduledJob.name == name).with_for_update())).scalar_one_or_none()
         if job is not None:
             job.last_run_at, job.last_status, job.last_error = now, status, error
-            _schedule_retry(job, run.attempt if run is not None else 1, status, now)
+            attempt = run.attempt if run is not None else 1
+            if _schedule_retry(job, attempt, status, now):
+                await _announce_final_failure(session, job, status, error, attempt)
+            elif status == "ok":
+                await session.execute(delete(AutomationMark).where(AutomationMark.key == f"job.failed.{name}"))
         await session.commit()
 
 

@@ -196,3 +196,93 @@ seção "Validação".
   novo. Tempo máximo do job: 60 → 120 s. O e-mail não abre conexão SMTP na checagem (só confere a configuração).
 - Tela: aba **Gateways** em *Notificações — administração*.
 - Mapa de acesso: duas rotas novas com `perm:notifications.manage`.
+
+### M3 — envio manual, modelos e prévia (2026-10-27)
+
+- Migration `e2f3a4b5c6d7e`: `message_templates`, `outbound_messages`, `deliveries.message_id` (nulo no que já
+  existia) e as permissões `notifications.messages.send` e `notifications.messages.read`, concedidas só aos perfis que
+  já tinham `notifications.manage` (o Administrador as recebe pelo seed). Downgrade remove tudo isso e não toca nas
+  entregas. `notifications.messages.schedule` fica para o M4, junto com o recurso.
+- `notifications/messages.py`: marcação neutra (`**negrito**`, `- item`, links) → texto do canal (`*negrito*` no
+  WhatsApp e no Slack; sem marcas no texto simples) ou HTML escapado no e-mail (moldura `html_frame`, extraída de
+  `templates._html_card` sem mudar a saída dos e-mails atuais). Variáveis `{{nome}}`, `{{email}}`, `{{empresa}}`,
+  `{{data}}`, `{{hora}}` são preenchidas por destinatário; as demais o remetente informa, e faltar alguma é 422.
+- Alcance: com só `send`, pessoas do próprio setor (sem setor, só a si); com `notifications.manage` ou
+  `service_desk.tickets.read_all`, qualquer pessoa ativa. Cada destinatário recebe um resultado na prévia e no
+  histórico: `queued`, `no_address` (não vinculou o canal), `out_of_scope`, `inactive`, `unknown`.
+- API `/notifications/messages`: `GET /recipients` (canais verificados, nunca o endereço), `POST /preview` (não grava;
+  texto pelas funções `render_text` dos próprios adapters), `POST` com `Idempotency-Key` obrigatória (repetir devolve
+  o mesmo envio, 200), `POST /test` (só para si; 10 por hora, à parte), `GET`, `GET /{id}`, `POST /{id}/cancel` (só o
+  autor ou quem administra; cancela as PENDING), CRUD de `/templates` (só `notifications.manage`). Tetos:
+  `MESSAGES_MAX_RECIPIENTS` (50) e `MESSAGES_MAX_PER_HOUR` (20) por pessoa. Envio, cancelamento e modelos auditados.
+- Painel de entregas: origem nova `message` (entregas da Central).
+- Tela `/notifications/messages` (menu Notificações > Central de mensagens): Nova mensagem (só envia depois da prévia;
+  qualquer mudança a invalida; a chave de idempotência vale até o envio dar certo), Histórico e Modelos.
+- Não unificado: as respostas rápidas do chamado (`wa_templates`, `whatsapp/template_service.py`) mantêm a própria
+  substituição de variáveis, que é específica de chamado.
+
+### M4 — agendamento (2026-10-27)
+
+- Migration `f3a4b5c6d7e8f`: `message_schedules`, `outbound_messages.schedule_id`/`scheduled_for` (nulos no que já
+  existia) e a permissão `notifications.messages.schedule`, concedida só aos perfis que já tinham
+  `notifications.manage`. Downgrade remove tudo isso; os envios já feitos continuam no histórico.
+- Recorrência (`notifications/schedules.py`, funções puras): uma vez (`run_at` com fuso), todo dia, dias da semana ou
+  dia do mês (mês mais curto: último dia), sempre num horário `HH:MM` no fuso do agendamento (padrão `APP_TIMEZONE`),
+  com início e fim opcionais. Calendário do SLA opcional: dia sem expediente ou feriado é pulado (`skip`) ou vai para
+  o próximo dia útil (`next`); várias datas que caem no mesmo dia útil viram uma ocorrência só. O calendário só vale
+  para os recorrentes.
+- Job `messages.schedules` (a cada minuto): agendamentos vencidos com `SKIP LOCKED`, em lotes; cada ocorrência vira
+  um envio `kind = scheduled` pelo mesmo `enqueue` do envio manual, com a chave `schedule_id|instante`, e
+  `next_run_at` avança na mesma transação. Testado contra PostgreSQL: quatro execuções simultâneas geram um envio;
+  falha no meio não deixa nada pela metade e a execução seguinte envia.
+- A cada ocorrência valem as permissões e o setor **atuais** de quem agendou (`load_access_context`): sem conta ativa
+  ou sem `schedule`, o agendamento é pausado com o motivo; pessoa que saiu do setor ou desvinculou o canal fica de
+  fora; ninguém alcançável ou teto por hora estourado é `failed` e o agendamento segue.
+- Parada do worker: a ocorrência sai atrasada até `MESSAGES_SCHEDULE_TOLERANCE_MINUTES` (60); depois é `missed`
+  (registrada, não enviada). De várias perdidas seguidas só a mais recente ainda pode sair.
+- Desvio do texto do ADR: a "janela de horário" virou horário fixo + tolerância; uma janela separada não acrescentava
+  nada com recorrência mínima diária.
+- API `/notifications/messages/schedules`: `GET /calendars` (nome e fuso, sem exigir a permissão do SLA),
+  `POST /occurrences` (próximas 5 datas), `POST` com `Idempotency-Key`, `GET`, `GET /{id}` (próximos envios e os
+  últimos 20 feitos), `PUT /{id}` com `version` (409 se outra pessoa alterou), `POST /{id}/pause|resume|cancel`.
+  Retomar vale a partir de agora (o que venceu pausado não sai). Teto `MESSAGES_MAX_ACTIVE_SCHEDULES` (20 abertos por
+  pessoa). Criar, editar, pausar, retomar, cancelar e cada envio agendado passam pela auditoria. Calendário do SLA
+  usado por agendamento aberto não pode ser excluído (409); dos encerrados, o vínculo é desfeito.
+- Agendar usa a busca de pessoas e a prévia do envio, então pede também `notifications.messages.send`.
+- Tela: em Nova mensagem, "Quando enviar: Agora / Agendar" (nome, repetição, dias, calendário, "Ver próximas datas";
+  só agenda depois da prévia); aba nova Agendamentos (situação, próximo envio, último resultado com o motivo,
+  pausar/retomar/cancelar, detalhe com próximos envios e envios feitos). O Histórico mostra o tipo "Agendado".
+- Não feito nesta etapa: editar um agendamento pela tela (a API aceita; hoje se cancela e cria outro).
+  **Feito depois (2026-10-28):** botão Editar no detalhe da aba Agendamentos (nome, prioridade, assunto, texto e
+  regra; canal, destinatários, variáveis e modelo ficam), com "Ver próximas datas" e a `version` lida (409 vira
+  aviso na tela). Os campos da regra viraram um componente só (`schedule-rule-fields.component.ts`), usado ao criar
+  e ao editar. Manter o mesmo modelo na edição não passa de novo pela checagem do modelo (desativado depois não
+  impede mudar o horário); trocar para um modelo desativado continua barrado.
+
+### M5 — eventos novos, catálogo, escalonamento e canal alternativo (2026-10-27)
+
+- Eventos novos no outbox: `ticket.asset_delivered` e `ticket.asset_returned` (ao lado da auditoria que já existia,
+  com patrimônio e nome no payload) e `job.failed` na falha da última tentativa de um job (exceto `backup.daily`, que
+  já tem `backup.failed`). `job.failed` sai **uma vez por queda** (marca `job.failed.<job>` em `automation_marks`,
+  apagada quando o job volta a dar certo), para não avisar a cada 5 minutos.
+- Regras semeadas novas (o seed só cria as que faltam; editadas não mudam): equipamento entregue → solicitante
+  (caixa de entrada, e-mail, preferido); devolvido → atendentes do setor (caixa de entrada); rotina com falha →
+  administradores (caixa de entrada, e-mail). O teste de caracterização do M0 foi atualizado de "ninguém" para isso.
+- Catálogo (`notifications/event_catalog.py`): rótulo, área, campos de payload e se aceita escalonamento.
+  `GET /notifications/admin/rules` devolve o catálogo nas opções e `in_catalog` em cada regra; a tela escolhe o evento
+  numa lista e marca as regras fora do catálogo (continuam valendo).
+- Escalonamento (ADR-013 §6.3), só em eventos de chamado com `escalation: {after_minutes (5–10080), until
+  (first_response | resolved), audience, channels?}`: o fan-out cria as entregas de escalonamento para daqui a
+  `after_minutes` (`deliveries.escalation_condition`); o despacho confere na hora, por
+  `service_desk/notification_conditions.py` (o hub não importa models de chamados, ADR-004): `first_response` vale
+  enquanto ninguém além do solicitante responder em público (nota interna não conta); `resolved`, enquanto o chamado
+  não for resolvido ou encerrado. Sem valer, a entrega vira `SKIPPED` com o motivo. Erro ao conferir: envia.
+  O simulador mostra as entregas de escalonamento.
+- Canal alternativo (`notification_rules.fallback_channel`): entrega da regra que vira `DEAD` é refeita uma vez pelo
+  outro canal (`deliveries.fallback_of_id`), só se o canal está habilitado, a pessoa tem endereço verificado nele e
+  ainda não recebe este evento por lá. A entrega alternativa não gera outra.
+- Migration `a5b6c7d8e9f0a`: as quatro colunas, vazias no que já existe. Downgrade cancela escalonamentos pendentes
+  (sairiam sem conferir a condição) e remove só as colunas.
+- Ligar ou desligar uma regra na tela agora reenvia escalonamento e canal alternativo (sem isso, o botão os apagaria).
+- Corrigido de passagem: teste da M3 que procurava o texto "777" na resposta falhava quando um UUID sorteado o
+  continha; passou a conferir as chaves de cada pessoa.
