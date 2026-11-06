@@ -65,7 +65,7 @@ O canal tem **dois provedores** (escolha na aba **Administração > Canais de co
 >
 > **Chamado aberto pelo bot:** fica no nome do colaborador ligado ao usuário que vinculou o número, com a descrição começando por `[Aberto via chat]`, e aparece para ele em *Chamados* (atualize a lista) e na opção `2` do bot, e para a gestão. Se não aparecer, confira se a tela aberta é a da mesma instalação em que o número foi vinculado (ex.: porta 8090 × 8080).
 
-> Neste provedor não há janela de 24 h nem template: o texto vai livre. A sessão do número fica no PostgreSQL (schema `evolution_api`) e no volume `evolution_instances`. **Homologação pendente:** os formatos exatos de erro da Evolution e o comportamento de reinício ainda precisam ser confirmados com um chip real (ADR-019, fase C5).
+> Neste provedor não há janela de 24 h nem template: o texto vai livre. A sessão do número fica no PostgreSQL (schema `evolution_api`) e no volume `evolution_instances`. **Homologado em 24/10/2026** (Evolution v2.3.7, Docker Desktop, número descartável): conexão por QR code, envio de teste, vínculo com `vincular CÓDIGO`, menu e abertura de chamado pelo WhatsApp (com a confirmação de volta), alerta programado de estoque baixo, bloqueio do caminho de entrada no Nginx (404 pela internet) e aviso de sessão caída aos administradores. **Ainda não exercitados com a Evolution real:** o teto de 10 mensagens por hora por pessoa e uma queda de sessão provocada de propósito. Sem sessão pareada o envio não é tentado: o sistema falha na hora com "WhatsApp desconectado" em vez de esperar o limite de tempo da Evolution.
 
 **Meta Cloud API (oficial)** — seções 2.1 a 2.6, abaixo.
 
