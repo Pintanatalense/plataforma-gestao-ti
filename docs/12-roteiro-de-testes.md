@@ -160,6 +160,25 @@ Funciona em `http://localhost` (contexto seguro) ou em HTTPS com certificado con
 6. **Desativar** no cartão e conferir que o teste passa a ser recusado.
 7. Com certificado autoassinado (`-Https`): sem importar `certs/server.crt` o cartão deve avisar/falhar; depois de importar e reiniciar o navegador, funciona em `https://nome-do-certificado`.
 
+## Etapa 10c — Chamados vinculados entre setores
+
+Valida o chamado principal com etapas (subchamados) para vários setores e, principalmente, que **um setor não enxerga o que é de outro**. Precisa de ao menos 4 setores, cada um com **um atendente** (perfil *Atendente*), **um solicitante** (perfil *Solicitante*) e **uma categoria** cujo setor padrão é o dele. Chame-os A, B, C e D.
+
+1. Como solicitante de A, abra um chamado na categoria de A com **3 etapas**: B (obrigatória), C (obrigatória) e D (opcional). **Esperado:** o principal e as 3 etapas existem; cada etapa caiu no setor da sua categoria.
+2. **Isolamento (o mais importante).** Entre com cada pessoa e confira:
+   - o atendente de B vê **só** a etapa B (nem a de C, nem a de D, e **não** abre o principal);
+   - o atendente de A vê o principal; o solicitante de A vê o principal e as 3 etapas;
+   - o solicitante de C (que não participa) **não** vê nada deste processo, nem na lista;
+   - o atendente de B **não** consegue alterar nem comentar na etapa de C (a resposta é recusa, não erro).
+3. **Notas internas.** O atendente de B escreve uma nota interna na etapa B. **Esperado:** o solicitante de A não a vê; o setor B vê.
+4. **Anexo restrito.** O atendente de B anexa dois arquivos à etapa B, um marcado como *restrito*. **Esperado:** o solicitante lista só o público, o download do restrito responde "não encontrado", o setor C não baixa nenhum dos dois, e o solicitante **não** consegue marcar anexo como restrito.
+5. **Encerramento.** Tente resolver o principal com etapas obrigatórias pendentes. **Esperado:** recusado. Resolva a etapa B; **cancele** a etapa C (sem justificativa deve ser recusado) e tente resolver o principal de novo: **ainda recusado** (etapa cancelada não conta como concluída). **Substitua** a etapa C por uma nova em outro setor (D), resolva as etapas de D e então resolva o principal: **aceito**.
+6. **Idempotência.** Reenvie a abertura com a mesma `Idempotency-Key` (um UUID): devolve o mesmo principal, sem duplicar.
+7. **Direcionamento.** Quem não tem *Direcionar chamados a qualquer setor* não consegue abrir um chamado de A direto para o setor B (recusado). Quem tem consegue.
+8. **SLA por etapa.** Ligue políticas diferentes às categorias de B e C. **Esperado:** cada etapa mostra o prazo e a política da **sua** categoria; o principal (categoria sem política) fica "não se aplica"; a primeira resposta do setor B conta só na etapa B; pausar a etapa C não pausa a B.
+
+> Resultado da validação automatizada em 07/11/2026 (ambiente de desenvolvimento, 4 setores, 8 usuários): 68 de 68 verificações passaram. Foram exercitados os passos 1 a 8.
+
 ## Etapa 11 — Atualização de uma instalação antiga (só se houver uma)
 
 Se existir instalação anterior com dados reais:
