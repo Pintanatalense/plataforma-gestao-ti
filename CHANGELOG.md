@@ -4,6 +4,10 @@ Formato baseado em [Keep a Changelog](https://keepachangelog.com/pt-BR/1.1.0/); 
 
 ## [Não lançado]
 
+### Documentação
+
+- **Chamados vinculados:** roteiro de teste entre setores (Etapa 10c do `docs/12`), seção no manual de utilização, validação registrada no ADR-026 e a solução do erro 500 que aparece em desenvolvimento quando o código é atualizado sem reconstruir a imagem (`docs/10`, item 5b).
+
 ## [0.2.0] — 2026-11-06
 
 Central de Mensagens completa (envio, agendamento, gateways, escalonamento), chamados vinculados entre setores, SLA nos chamados, worker com agenda independente, backup com anexos e restauração testada.

@@ -60,6 +60,17 @@ Durante o atendimento:
 
 ---
 
+### 3.3. Chamados vinculados: um processo que passa por vários setores
+
+Quando uma solicitação envolve mais de um departamento (por exemplo, admissão: RH, TI e Compras), abra **um chamado principal** com **etapas** (subchamados), uma para cada setor.
+
+- **Quem acompanha o quê.** O solicitante e quem abriu o principal acompanham e comentam em **todas** as etapas. Cada setor vê e atende **só a sua etapa**: não vê as etapas dos outros nem o principal.
+- **Cada etapa é um chamado completo:** fila, SLA, notas internas e anexos próprios. Anexos e notas marcados como restritos ficam só com o setor da etapa.
+- **Obrigatórias e opcionais.** O principal só pode ser resolvido quando todas as etapas **obrigatórias** terminarem.
+- **Cancelar e substituir.** Uma etapa pode ser cancelada com justificativa (obrigatória) e substituída por outra, inclusive em outro setor. Etapa cancelada **não** conta como concluída até ser substituída ou dispensada.
+- **Incluir depois.** Dá para acrescentar etapas depois da abertura, até o principal ser encerrado.
+- **Modelos de atendimento** (*Service Desk > Modelos de Atendimento*) pré-preenchem as etapas de processos que se repetem.
+
 ## 4. Finalização e Encerramento
 
 1. O técnico altera o status para **RESOLVED** e descreve o parecer técnico da solução.

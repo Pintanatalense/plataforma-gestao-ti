@@ -197,6 +197,18 @@ um modelo.
   - **Anexos:** opção "Restrito ao setor" para quem atende.
   - **Modelos:** tela em *Service Desk > Modelos de Atendimento*.
 
+## Validação em ambiente (2026-11-07)
+
+Além dos testes automatizados, o fluxo foi exercitado pela API num ambiente de desenvolvimento com **4 setores de teste** (cada um com atendente, solicitante e categoria), 68 verificações, todas aprovadas:
+
+- **Isolamento:** a etapa de um setor não aparece, nem na lista nem por link direto, para os atendentes de outros setores nem para solicitantes de fora; o atendente de uma etapa não abre o principal; ações cruzadas (alterar, comentar, incluir etapa) são recusadas.
+- **Notas e anexos:** nota interna e anexo restrito de um setor não chegam ao solicitante nem a outro setor; o solicitante não consegue marcar anexo como restrito.
+- **Encerramento:** o principal não resolve com etapa obrigatória pendente, nem com etapa cancelada; a substituição por etapa em outro setor destrava o encerramento.
+- **Idempotência e roteamento:** a mesma chave não duplica; direcionar a outro setor exige a permissão.
+- **SLA por etapa:** cada etapa usa a política da sua categoria; a resposta de um setor e a pausa de outro não interferem.
+
+O roteiro para repetir isso à mão está na Etapa 10c de `docs/12-roteiro-de-testes.md`.
+
 ## Critérios de aceite
 
 Os critérios estão em `backend/tests/service_desk/test_linked_tickets.py`:
