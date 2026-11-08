@@ -1,5 +1,7 @@
 # MOD-06 — Movimentações
 
+> Estado real e dono das regras: ver [mapa lógico](../architecture/mapa-logico-gero.md).
+
 O módulo de movimentações gerencia o histórico e o rastreamento das transições dos ativos de TI (MOD-05).
 
 ## Modelagem

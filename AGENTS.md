@@ -18,6 +18,16 @@ independente que confirma o trabalho, não a ferramenta para encontrar erros. A 
   podem ser commits ou branches separados durante o trabalho, mas são publicadas juntas num PR só. O responsável
   testa o módulo completo no sistema, e o portão completo roda uma vez por PR, não uma vez por etapa.
 
+## Antes de implementar: reuso e dono das regras
+
+- Consulte `docs/architecture/mapa-logico-gero.md` e identifique a capacidade, o dono da regra e o contrato reutilizável.
+- Registre no plano ou no PR: reutilizar, estender, adaptar ou criar, com justificativa. Criar um novo dono de regra exige justificativa explícita.
+- Informe se a mudança altera dado oficial, apenas consulta/projeta ou apenas coordena um processo.
+- Verifique consumidores e testes; inclua cenários negativos de permissão quando houver acesso.
+- Atualize o mapa no mesmo PR que alterar capacidade, contrato, dono, tabela, rota, evento ou permissão.
+- O mapa é índice de evidências; em divergência com código e testes, vale o código e o mapa é corrigido por PR.
+- Na revisão, confira o registro de reuso contra o diff: novo dono de regra sem justificativa ou contrato duplicado impede a aprovação técnica.
+
 ## 2. Durante o desenvolvimento
 
 - Escreva ou ajuste os testes junto com o código, incluindo o cenário de falha.

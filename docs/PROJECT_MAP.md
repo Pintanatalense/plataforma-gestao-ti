@@ -1,5 +1,7 @@
 # PROJECT_MAP — Plataforma de Gestão de TI
 
+> Estado atual e dono das regras: ver [mapa lógico](architecture/mapa-logico-gero.md).
+
 > **Documento histórico (instantâneo de 2026-10-15/21).** Descreve o repositório antes das fases A–G e do PR de endurecimento da importação GLPI; os achados abertos não foram reconciliados com o estado atual. Para o diagnóstico vigente e o plano atual, veja `docs/plans/plano-evolucao.md`.
 
 > Mapa operacional do repositório. Base original: commit `a544af7` (2026-10-14). Atualizado na Fase 0 (branch `fix/phase-0-hardening`): deploy, anexos, auth, WhatsApp, backup/restore, estoque, auditoria.

@@ -1,5 +1,7 @@
 # MOD-05 — Gestão Patrimonial (Ativos)
 
+> Estado real e dono das regras: ver [mapa lógico](../architecture/mapa-logico-gero.md).
+
 Este módulo é responsável por gerenciar o ciclo de vida e características técnicas dos ativos de TI (computadores, monitores, servidores, celulares, etc).
 
 ## Decisões de Arquitetura

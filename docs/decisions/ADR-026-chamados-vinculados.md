@@ -91,7 +91,7 @@ principal e em `GET /tickets/{id}/children`.
 |---|---|---|
 | `track` | quem vê o principal | `GET /tickets/{id}/children`: resumo de cada filho (status, setor, categoria, obrigatório, responsável, prazo e atraso), sem descrição, interações nem anexos |
 | `shared` | solicitante e criador do principal, em todos os filhos; criador de um filho, só nele | detalhe do filho, com interações públicas, e comentário público |
-| `internal` | setor do filho, responsável, `read_all` | notas internas do filho |
+| `internal` | setor do filho ou responsável, sempre com a permissão de notas internas (`tickets.manage` ou `interactions.internal`); `read_all` só vale somada a `tickets.manage` | notas internas do filho |
 
 **Regras complementares:**
 - O atendente do setor do principal recebe 403 no detalhe dos filhos de outros setores.

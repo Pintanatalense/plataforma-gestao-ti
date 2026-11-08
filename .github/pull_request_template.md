@@ -13,6 +13,14 @@
 - [ ] Autorização e validação de entradas verificadas — ou "não se aplica"
 - [ ] Documentação e/ou ADR atualizados — ou "não se aplica"
 
+## Reuso e dono das regras
+<!-- Consulte docs/architecture/mapa-logico-gero.md antes de implementar. Se o PR só corrige bug interno
+     sem mudar contrato, dono, tabela, rota, evento ou permissão, escreva "sem mudança de capacidade". -->
+- [ ] Capacidade(s) do mapa tocadas (CAP-___) e decisão: **reutilizar | estender | adaptar | criar** — por quê
+- [ ] O dono da regra continua o mesmo — ou a mudança está justificada e o mapa atualizado neste PR
+- [ ] Consumidores verificados (busca dos símbolos alterados) e testes de regressão/negativos listados
+- [ ] Mapa lógico atualizado neste PR — ou "sem mudança de capacidade"
+
 ## Limitações e riscos residuais
 <!-- O que continua sem cobertura; impacto em instalações existentes. -->
 
