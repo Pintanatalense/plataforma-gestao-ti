@@ -1,5 +1,7 @@
 # MOD-04: Service Desk
 
+> Estado real e dono das regras: ver [mapa lógico](../architecture/mapa-logico-gero.md).
+
 ## Visão Geral
 O módulo **Service Desk** é responsável por centralizar e gerenciar as solicitações de suporte, incidentes e dúvidas dos colaboradores da organização. Ele serve como o canal oficial de comunicação entre os usuários finais e a equipe de TI, permitindo um acompanhamento claro de status, prazos (SLAs) e histórico de resoluções.
 
@@ -33,5 +35,5 @@ Os chamados seguirão, por padrão, a seguinte máquina de estados de status:
 ## Integrações (Dependências)
 - **MOD-02 (Organização):** Identificação dos departamentos e filiais afetados, assim como a matriz do funcionário (colaborador) solicitante.
 - **MOD-03 (Identidade):** Controle de Acesso (técnicos vs colaboradores).
-- *(Futuro)* **MOD-05/06 (Ativos):** Possibilidade de vincular o chamado a um ativo de TI específico (computador, impressora) (ver `DEC-006`).
-- *(Futuro)* **MOD-10 (Anexos):** Suporte ao envio de capturas de tela (screenshots) e logs via storage isolado (S3 ou local).
+- **MOD-05/06 (Ativos):** O chamado pode ser vinculado a ativos de TI (tabela `sd_ticket_assets`; ver `DEC-006`).
+- **MOD-10 (Anexos):** Envio de arquivos ao chamado, com anexo restrito ao setor que atende (ver ADR-026).
