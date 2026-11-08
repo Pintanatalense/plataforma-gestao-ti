@@ -85,6 +85,22 @@ O canal usa somente a API oficial da Meta (veja `docs/04-configuracao-de-integra
 
 ---
 
+## 5b. Erro 500 ao criar ou salvar chamado depois de atualizar o código
+
+**Sintoma:** a tela mostra "Erro interno do servidor" ao abrir chamado; no log do backend aparece `column "..." of relation "sd_ticket" does not exist` (ou outra coluna ausente).
+
+**Causa:** o código novo está rodando, mas o banco ainda não recebeu as migrations. Acontece no ambiente de **desenvolvimento**, onde a pasta `backend/app` é montada no contêiner: ao trocar de versão no Git, o código muda na hora, mas a imagem (que traz as migrations) e o `db-init` continuam os antigos.
+
+**Solução:** faça backup e reconstrua, o que roda o `db-init` e as migrations:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.dev.yml up -d --build
+docker compose logs db-init            # deve listar "Running upgrade ..."
+docker compose exec backend alembic current   # deve terminar em (head)
+```
+
+Em produção isso não ocorre: o código vai dentro da imagem e as migrations rodam no `db-init` a cada `up`.
+
 ## 6. Critérios para Escalonamento de Incidentes
 
 | Nível de Severidade | Critério de Ocorrência | Ação Imediata |
