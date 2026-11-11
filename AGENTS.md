@@ -6,6 +6,10 @@ Regras para qualquer agente (Claude Code, Codex, Hermes e outros) que altere est
 **Princípio:** o agente descobre e corrige os próprios erros **antes** de publicar. O CI do GitHub é a validação
 independente que confirma o trabalho, não a ferramenta para encontrar erros. A decisão de integrar é sempre humana.
 
+## Governança obrigatória entre projetos
+
+Antes de alterar código, documentação, dados ou integração envolvendo Gestão TI, GERO ou ORION, leia [ADR-GOV-001 — Independência dos projetos](docs/decisions/ADR-GOV-001-governanca-interprojetos.md). É proibido compartilhar banco entre projetos, sincronizar código automaticamente ou misturar escopos/backlogs. Reuso somente manual, seletivo, validado e aprovado; integração somente por contrato documentado. Nenhum agente pode dispensar esta regra.
+
 ## 1. Antes de começar
 
 - Confira o estado real: `git status`, `gh pr list`, a branch atual. Não presuma que um PR ou branch ainda está como
